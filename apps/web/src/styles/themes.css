@@ -1,49 +1,19 @@
 /* GalMail theme + layout system.
-   Themes are pure CSS-variable swaps via [data-theme="..."].
+   Two themes via [data-theme="dark"|"light"].
    Layouts switch grid templates via [data-layout="..."] plus React conditional rendering.
 */
 
 :root {
-  /* Extended design tokens (defaults = Linear). Overridden per-theme below. */
-  --radius: 10px;
-  --radius-lg: 14px;
-  --radius-sm: 8px;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18);
-  --shadow-pop: 0 24px 80px rgba(0, 0, 0, 0.45);
-  --density-pad: 1rem;
-  --gap-panes: 0;
-  --content-font: var(--font);
-  --avatar-style: "initials";
-  --priority-bar: var(--accent);
-  --kbd-bg: rgba(255, 255, 255, 0.06);
-  --kbd-border: var(--line);
-  --selection-bg: rgba(61, 214, 198, 0.18);
-  --topbar-bg: rgba(11, 31, 26, 0.72);
-  --surface-card: var(--bg2);
-}
-
-/* ===================== THEME: linear ===================== */
-[data-theme="linear"] {
-  --bg0: #08090a;
-  --bg1: #0d0e10;
-  --bg2: #161719;
-  --ink: #e6e8ec;
-  --muted: #6a7180;
-  --accent: #5e6ad2;
-  --accent-dim: #3d44a8;
-  --warn: #e6b35a;
-  --danger: #e07a6c;
-  --line: rgba(255, 255, 255, 0.06);
-  --focus: rgba(94, 106, 210, 0.4);
-  --font: "DM Sans", "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Extended design tokens (defaults = Dark). Overridden per-theme below. */
   --radius: 8px;
   --radius-lg: 10px;
   --radius-sm: 6px;
   --shadow-card: none;
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.5);
   --density-pad: 0.75rem;
+  --gap-panes: 0;
   --content-font: var(--font);
+  --chrome-font: var(--font);
   --avatar-style: "initials";
   --priority-bar: var(--accent);
   --kbd-bg: rgba(255, 255, 255, 0.05);
@@ -51,175 +21,93 @@
   --selection-bg: rgba(94, 106, 210, 0.16);
   --topbar-bg: rgba(8, 9, 10, 0.82);
   --surface-card: var(--bg2);
-  color-scheme: dark;
+  --sidebar-w: 220px;
+  --sidebar-rail: 0px;
 }
 
-/* ===================== THEME: tesla ===================== */
-[data-theme="tesla"] {
-  --bg0: #ffffff;
-  --bg1: #f7f7f7;
-  --bg2: #ffffff;
-  --ink: #1a1a1a;
-  --muted: #86868b;
-  --accent: #e82127;
-  --accent-dim: #b7181d;
-  --warn: #e82127;
-  --danger: #e82127;
-  --line: rgba(0, 0, 0, 0.08);
-  --focus: rgba(232, 33, 39, 0.25);
-  --font: "DM Sans", "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --radius: 20px;
-  --radius-lg: 24px;
-  --radius-sm: 14px;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04);
-  --shadow-pop: 0 20px 60px rgba(0, 0, 0, 0.12);
-  --density-pad: 1.5rem;
+/* ===================== THEME: dark (Linear-inspired) ===================== */
+[data-theme="dark"] {
+  --bg0: #08090a;
+  --bg1: #0d0e10;
+  --bg2: #161719;
+  --bg3: #1c1e22;
+  --ink: #e6e8ec;
+  --muted: #6a7180;
+  --muted-strong: #8a90a0;
+  --accent: #5e6ad2;
+  --accent-dim: #3d44a8;
+  --accent-soft: rgba(94, 106, 210, 0.14);
+  --warn: #e6b35a;
+  --danger: #e07a6c;
+  --line: rgba(255, 255, 255, 0.06);
+  --line-strong: rgba(255, 255, 255, 0.1);
+  --focus: rgba(94, 106, 210, 0.4);
+  --font: "Inter", "DM Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --radius-sm: 6px;
+  --shadow-card: none;
+  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --density-pad: 0.7rem;
   --content-font: var(--font);
+  --chrome-font: var(--font);
   --avatar-style: "initials";
   --priority-bar: var(--accent);
-  --kbd-bg: rgba(0, 0, 0, 0.04);
-  --kbd-border: rgba(0, 0, 0, 0.1);
-  --selection-bg: rgba(232, 33, 39, 0.08);
-  --topbar-bg: rgba(255, 255, 255, 0.85);
-  --surface-card: #ffffff;
-  color-scheme: light;
-}
-
-/* ===================== THEME: pocketcasts ===================== */
-[data-theme="pocketcasts"] {
-  --bg0: #1a0e2e;
-  --bg1: #2a1842;
-  --bg2: #3d2360;
-  --ink: #f0e6ff;
-  --muted: #a890c4;
-  --accent: #c935f0;
-  --accent-dim: #8a1fb0;
-  --warn: #ffb347;
-  --danger: #ff5c8a;
-  --line: rgba(240, 230, 255, 0.12);
-  --focus: rgba(201, 53, 240, 0.4);
-  --font: "DM Sans", "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --radius: 14px;
-  --radius-lg: 18px;
-  --radius-sm: 10px;
-  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.3);
-  --shadow-pop: 0 24px 70px rgba(0, 0, 0, 0.55);
-  --density-pad: 1rem;
-  --content-font: var(--font);
-  --avatar-style: "initials";
-  --priority-bar: var(--accent);
-  --kbd-bg: rgba(240, 230, 255, 0.08);
-  --kbd-border: rgba(240, 230, 255, 0.18);
-  --selection-bg: rgba(201, 53, 240, 0.2);
-  --topbar-bg: rgba(26, 14, 46, 0.82);
+  --kbd-bg: rgba(255, 255, 255, 0.05);
+  --kbd-border: rgba(255, 255, 255, 0.12);
+  --selection-bg: rgba(94, 106, 210, 0.16);
+  --topbar-bg: rgba(8, 9, 10, 0.86);
   --surface-card: var(--bg2);
   color-scheme: dark;
 }
 
-/* ===================== THEME: readwise ===================== */
-[data-theme="readwise"] {
-  --bg0: #f6f1e7;
-  --bg1: #ffffff;
+/* ===================== THEME: light (Readwise Reader-inspired) =========== */
+[data-theme="light"] {
+  --bg0: #f4ede0;
+  --bg1: #fbf6ec;
   --bg2: #fdfaf3;
+  --bg3: #f1e8d6;
   --ink: #2b2620;
   --muted: #8a7e6a;
-  --accent: #f0c040;
-  --accent-dim: #d4a020;
+  --muted-strong: #5d5346;
+  --accent: #c98a1e;
+  --accent-dim: #a36d12;
+  --accent-soft: rgba(201, 138, 30, 0.14);
   --warn: #c97a2a;
   --danger: #c0492d;
   --line: rgba(43, 38, 32, 0.1);
-  --focus: rgba(212, 160, 32, 0.3);
-  --font: "DM Sans", "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --line-strong: rgba(43, 38, 32, 0.18);
+  --focus: rgba(201, 138, 30, 0.34);
+  /* Chrome stays clean sans-serif; reading pane uses serif via --content-font. */
+  --font: "Inter", "DM Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
   --radius: 6px;
   --radius-lg: 10px;
   --radius-sm: 4px;
-  --shadow-card: 0 1px 2px rgba(43, 38, 32, 0.06);
-  --shadow-pop: 0 16px 50px rgba(43, 38, 32, 0.14);
-  --density-pad: 1.5rem;
-  --content-font: "Iowan Old Style", "Charter", Georgia, "Times New Roman", serif;
+  --shadow-card: 0 1px 2px rgba(43, 38, 32, 0.05);
+  --shadow-pop: 0 18px 50px rgba(43, 38, 32, 0.16);
+  --density-pad: 1rem;
+  --content-font: "Iowan Old Style", "Charter", "Source Serif Pro", "Georgia",
+    "Times New Roman", serif;
+  --chrome-font: var(--font);
   --avatar-style: "initials";
   --priority-bar: var(--warn);
   --kbd-bg: rgba(43, 38, 32, 0.05);
-  --kbd-border: rgba(43, 38, 32, 0.15);
+  --kbd-border: rgba(43, 38, 32, 0.16);
   --selection-bg: rgba(240, 192, 64, 0.22);
-  --topbar-bg: rgba(246, 241, 231, 0.9);
+  --topbar-bg: rgba(244, 237, 224, 0.9);
   --surface-card: var(--bg1);
-  color-scheme: light;
-}
-
-/* ===================== THEME: robinhood ===================== */
-[data-theme="robinhood"] {
-  --bg0: #000000;
-  --bg1: #0a0a0a;
-  --bg2: #141414;
-  --ink: #ffffff;
-  --muted: #6b6b6b;
-  --accent: #00c805;
-  --accent-dim: #009304;
-  --warn: #ff5000;
-  --danger: #ff5000;
-  --line: rgba(255, 255, 255, 0.08);
-  --focus: rgba(0, 200, 5, 0.3);
-  --font: "DM Sans", "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --radius: 4px;
-  --radius-lg: 6px;
-  --radius-sm: 3px;
-  --shadow-card: none;
-  --shadow-pop: 0 16px 50px rgba(0, 0, 0, 0.7);
-  --density-pad: 0.7rem;
-  --content-font: var(--font);
-  --avatar-style: "initials";
-  --priority-bar: var(--accent);
-  --kbd-bg: rgba(255, 255, 255, 0.04);
-  --kbd-border: rgba(255, 255, 255, 0.12);
-  --selection-bg: rgba(0, 200, 5, 0.14);
-  --topbar-bg: rgba(0, 0, 0, 0.9);
-  --surface-card: var(--bg2);
-  color-scheme: dark;
-}
-
-/* ===================== THEME: airbnb ===================== */
-[data-theme="airbnb"] {
-  --bg0: #ffffff;
-  --bg1: #f7f7f7;
-  --bg2: #ffffff;
-  --ink: #222222;
-  --muted: #717171;
-  --accent: #ff385c;
-  --accent-dim: #d0314d;
-  --warn: #ff385c;
-  --danger: #c0492d;
-  --line: rgba(0, 0, 0, 0.08);
-  --focus: rgba(255, 56, 92, 0.25);
-  --font: "DM Sans", "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --radius: 16px;
-  --radius-lg: 20px;
-  --radius-sm: 12px;
-  --shadow-card: 0 6px 20px rgba(0, 0, 0, 0.08);
-  --shadow-pop: 0 24px 70px rgba(0, 0, 0, 0.16);
-  --density-pad: 1.1rem;
-  --content-font: var(--font);
-  --avatar-style: "photo";
-  --priority-bar: var(--accent);
-  --kbd-bg: rgba(0, 0, 0, 0.04);
-  --kbd-border: rgba(0, 0, 0, 0.1);
-  --selection-bg: rgba(255, 56, 92, 0.1);
-  --topbar-bg: rgba(255, 255, 255, 0.9);
-  --surface-card: #ffffff;
   color-scheme: light;
 }
 
 /* ===================== Layout grids ===================== */
 .app[data-layout="three-panel"] .shell {
-  grid-template-columns: 220px minmax(280px, 1fr) minmax(320px, 1.2fr);
+  grid-template-columns: 220px minmax(300px, 1fr) minmax(360px, 1.3fr);
 }
 .app[data-layout="two-panel"] .shell {
-  grid-template-columns: var(--sidebar-w, 56px) minmax(300px, 1fr) minmax(360px, 1.3fr);
+  /* Always-mode reserves the rail width; auto-mode reserves nothing (overlay). */
+  grid-template-columns: var(--sidebar-rail) minmax(300px, 1fr) minmax(360px, 1.3fr);
 }
 .app[data-layout="fullscreen"] .shell {
   grid-template-columns: 1fr;
@@ -229,34 +117,98 @@
   display: none;
 }
 
-/* Sidebar rail (2-panel). Auto = hidden until hover. */
+/* ---------------------------------------------------------------------------
+   Sidebar behavior.
+
+   3-panel: always visible, normal flow.
+   2-panel "always": a slim icon rail (48px) that expands on hover into the
+                     220px panel. Reserved space in the grid so list never
+                     reflows jankily.
+   2-panel "auto":   completely hidden (rail = 0px in grid). A thin hover
+                     trigger strip sits at the left edge; moving the cursor
+                     into it reveals the full sidebar as an overlay. The
+                     sidebar stays open while the pointer is anywhere over it
+                     or the trigger, and collapses with a short grace delay
+                     once the pointer leaves — no flicker, no stuck state.
+
+   The "is-open" state is driven by a data attribute on the .shell container
+   so a single CSS rule controls geometry and the transition is one-shot.
+---------------------------------------------------------------------------- */
+
 .app[data-layout="two-panel"] .sidebar {
-  position: relative;
-  width: var(--sidebar-w, 56px);
-  min-width: 56px;
-  overflow: visible;
-  z-index: 5;
-  transition: width 160ms ease;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--sidebar-w);
+  z-index: 25;
+  background: var(--bg1);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  /* Geometry transitions only — opacity is handled separately so content
+     can fade slightly without a layout jump. */
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+
+/* "always": reserve a 48px rail in the grid; sidebar starts collapsed to rail. */
+.app[data-layout="two-panel"][data-sidebar="always"] {
+  --sidebar-rail: 48px;
+}
+.app[data-layout="two-panel"][data-sidebar="always"] .sidebar {
+  width: 48px;
+  transform: translateX(0);
+}
+.app[data-layout="two-panel"][data-sidebar="always"] .shell[data-sidebar-open="true"] .sidebar {
+  width: var(--sidebar-w);
+}
+
+/* "auto": reserve nothing; sidebar lives as an overlay that slides in. */
+.app[data-layout="two-panel"][data-sidebar="auto"] {
+  --sidebar-rail: 0px;
 }
 .app[data-layout="two-panel"][data-sidebar="auto"] .sidebar {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 56px;
-  background: transparent;
-}
-.app[data-layout="two-panel"][data-sidebar="auto"] .sidebar:hover,
-.app[data-layout="two-panel"][data-sidebar="always"] .sidebar:hover {
-  width: 220px;
-  background: var(--bg1);
+  transform: translateX(-100%);
   box-shadow: var(--shadow-pop);
 }
-.app[data-layout="two-panel"] .sidebar .nav-label {
-  opacity: 0;
-  white-space: nowrap;
-  transition: opacity 120ms ease 60ms;
+.app[data-layout="two-panel"][data-sidebar="auto"] .shell[data-sidebar-open="true"] .sidebar {
+  transform: translateX(0);
 }
-.app[data-layout="two-panel"] .sidebar:hover .nav-label {
+
+/* Edge hover trigger for auto mode. Invisible 8px strip at the left edge. */
+.sidebar-hover-trigger {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  z-index: 24;
+  /* Needs to be hoverable but invisible. */
+  background: transparent;
+}
+.app[data-layout="two-panel"][data-sidebar="auto"] .sidebar-hover-trigger {
+  display: block;
+}
+.app[data-layout="two-panel"][data-sidebar="always"] .sidebar-hover-trigger,
+.app[data-layout="fullscreen"] .sidebar-hover-trigger,
+.app[data-layout="three-panel"] .sidebar-hover-trigger {
+  display: none;
+}
+
+/* Collapsed rail labels: hidden until open. */
+.app[data-layout="two-panel"] .sidebar .nav-label,
+.app[data-layout="two-panel"] .sidebar .nav-suffix {
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 120ms ease 40ms;
+}
+.app[data-layout="two-panel"] .shell[data-sidebar-open="true"] .sidebar .nav-label,
+.app[data-layout="two-panel"] .shell[data-sidebar-open="true"] .sidebar .nav-suffix {
   opacity: 1;
+  pointer-events: auto;
 }
 .app[data-layout="two-panel"] .sidebar .nav-item {
   display: flex;
@@ -289,18 +241,28 @@
   display: none;
 }
 
-/* ===================== Theme-aware overrides of base components ===================== */
+/* ===================== Theme-aware base ===================== */
 
 .app {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 55%),
-    linear-gradient(180deg, var(--bg0), color-mix(in srgb, var(--bg0) 85%, #000) 70%);
+  background: var(--bg0);
   color: var(--ink);
+}
+
+[data-theme="dark"] .app {
+  background:
+    radial-gradient(900px 480px at 8% -8%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+    var(--bg0);
+}
+[data-theme="light"] .app {
+  background:
+    radial-gradient(900px 480px at 8% -8%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+    var(--bg0);
 }
 
 .topbar {
   background: var(--topbar-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
 }
 
 .btn {
@@ -347,7 +309,7 @@
   border: 1px solid var(--line);
 }
 
-/* kbd badges (Linear principle) */
+/* kbd badges (Linear principle — kept for both themes, subtle in Light) */
 .kbd {
   display: inline-flex;
   align-items: center;
@@ -360,82 +322,89 @@
   color: var(--muted);
 }
 
-/* Reading body uses content font (serif for Readwise) */
+/* Reading body uses the content font (serif in Light, sans in Dark — like Readwise). */
 .reading .body {
   font-family: var(--content-font);
-  line-height: 1.65;
+  line-height: 1.7;
 }
 
-/* Theme: Linear — denser, smaller type, kbd-heavy */
-[data-theme="linear"] .thread-from { font-size: 0.86rem; }
-[data-theme="linear"] .thread-subject { font-size: 0.84rem; }
-[data-theme="linear"] .thread-snippet { font-size: 0.76rem; }
-[data-theme="linear"] .thread { padding: 0.55rem 0.6rem; margin-bottom: 0.2rem; }
-[data-theme="linear"] .reading h1 { font-size: 1.15rem; letter-spacing: -0.01em; }
-[data-theme="linear"] .brand-name { letter-spacing: 0; }
+/* ===================== Dark theme refinements ===================== */
+[data-theme="dark"] .thread-from { font-size: 0.86rem; }
+[data-theme="dark"] .thread-subject { font-size: 0.84rem; }
+[data-theme="dark"] .thread-snippet { font-size: 0.76rem; color: var(--muted); }
+[data-theme="dark"] .thread { padding: 0.55rem 0.65rem; margin-bottom: 0.2rem; }
+[data-theme="dark"] .reading h1 { font-size: 1.15rem; letter-spacing: -0.01em; }
+[data-theme="dark"] .brand-name { letter-spacing: 0; }
+[data-theme="dark"] .thread.unread .thread-from { color: var(--ink); font-weight: 600; }
+[data-theme="dark"] .thread.unread .thread-subject { color: var(--ink); }
+[data-theme="dark"] .thread.selected { background: var(--accent-soft); }
+[data-theme="dark"] .nav-item.active,
+[data-theme="dark"] .nav-item:hover { background: var(--accent-soft); color: var(--ink); }
+[data-theme="dark"] .reading { padding: 1.5rem 1.6rem; }
+[data-theme="dark"] .reading .meta { color: var(--muted); }
 
-/* Theme: Tesla — sparse, huge radius, lots of space */
-[data-theme="tesla"] .thread { padding: 1rem 1.1rem; margin-bottom: 0.6rem; background: var(--surface-card); }
-[data-theme="tesla"] .thread:hover { border-color: var(--line); }
-[data-theme="tesla"] .reading h1 { font-size: 1.6rem; font-weight: 600; }
-[data-theme="tesla"] .top-actions .btn { padding: 0.6rem 1.1rem; }
+/* ===================== Light theme refinements (Readwise) ================ */
+[data-theme="light"] .thread {
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.3rem;
+  background: transparent;
+  border: 1px solid transparent;
+}
+[data-theme="light"] .thread:hover {
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
+}
+[data-theme="light"] .thread.selected {
+  background: var(--selection-bg);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+[data-theme="light"] .thread.unread { border-left: 3px solid var(--accent); padding-left: calc(0.85rem - 2px); }
+[data-theme="light"] .thread.unread .thread-from { color: var(--ink); font-weight: 600; }
+[data-theme="light"] .thread-from { color: var(--muted-strong); }
+[data-theme="light"] .thread-subject { color: var(--ink); }
+[data-theme="light"] .thread-snippet { color: var(--muted); }
+[data-theme="light"] .reading { padding: 2.4rem 3rem; }
+[data-theme="light"] .reading .reading-toolbar { margin-bottom: 1.4rem; }
+[data-theme="light"] .reading h1 {
+  font-family: var(--content-font);
+  font-weight: 600;
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+}
+[data-theme="light"] .reading .meta { color: var(--muted); font-size: 0.86rem; }
+[data-theme="light"] .reading .body {
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+[data-theme="light"] .nav-item.active,
+[data-theme="light"] .nav-item:hover {
+  background: var(--selection-bg);
+  color: var(--ink);
+}
+[data-theme="light"] .brand-name { letter-spacing: 0; }
 
-/* Theme: Pocket Casts — bold headings, vibrant */
-[data-theme="pocketcasts"] .brand-name { font-weight: 800; letter-spacing: -0.01em; }
-[data-theme="pocketcasts"] .reading h1 { font-weight: 800; font-size: 1.5rem; }
-[data-theme="pocketcasts"] .thread-from { font-weight: 700; }
-[data-theme="pocketcasts"] .thread.unread .thread-from { color: var(--accent); }
-[data-theme="pocketcasts"] .provider-pill { color: var(--accent); border-color: rgba(201,53,240,0.4); }
-
-/* Theme: Readwise — serif body, generous margins, highlighter */
-[data-theme="readwise"] .reading .body { font-size: 1.02rem; }
-[data-theme="readwise"] .reading { padding: 2.2rem 2.5rem; }
-[data-theme="readwise"] .reading h1 { font-family: var(--content-font); font-weight: 600; }
-[data-theme="readwise"] .thread.unread .thread-from { color: var(--ink); font-weight: 600; }
-[data-theme="readwise"] .thread.unread { border-left: 3px solid var(--accent); }
-
-/* Theme: Robinhood — true black, sharp, green/red priority, data-dense */
-[data-theme="robinhood"] .thread { border-radius: 3px; padding: 0.5rem 0.6rem; margin-bottom: 0.12rem; }
-[data-theme="robinhood"] .thread-from { font-size: 0.84rem; font-weight: 600; }
-[data-theme="robinhood"] .thread-meta { font-family: var(--mono); font-size: 0.72rem; }
-[data-theme="robinhood"] .thread.unread .thread-from { color: var(--ink); }
-[data-theme="robinhood"] .thread.unread .thread-subject { color: var(--accent); }
-[data-theme="robinhood"] .reading h1 { font-size: 1.2rem; font-weight: 700; }
-[data-theme="robinhood"] .brand-name { font-family: var(--mono); letter-spacing: 0.04em; }
-
-/* Theme: Airbnb — warm, soft shadows, coral, friendly */
-[data-theme="airbnb"] .thread { padding: 0.9rem 1rem; margin-bottom: 0.5rem; background: var(--surface-card); }
-[data-theme="airbnb"] .reading h1 { font-size: 1.5rem; font-weight: 700; }
-[data-theme="airbnb"] .brand-name { color: var(--accent); font-weight: 800; }
-[data-theme="airbnb"] .btn-primary { background: linear-gradient(180deg, var(--accent), var(--accent-dim)); color: #fff; }
-
-/* ===================== Avatars (Airbnb photographic principle) ===================== */
+/* ===================== Avatars ===================== */
 .avatar {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   flex: none;
   display: grid;
   place-items: center;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   color: #fff;
   background: var(--accent-dim);
   overflow: hidden;
 }
-[data-theme="airbnb"] .avatar,
-[data-theme="airbnb"][data-avatar="photo"] .avatar {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-  background-image: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #000));
-}
 .thread-row {
   display: flex;
-  gap: 0.65rem;
+  gap: 0.6rem;
   align-items: flex-start;
 }
 .thread-row .thread-main { flex: 1; min-width: 0; }
 
-/* ===================== Priority sparkline (Robinhood principle) ===================== */
+/* ===================== Priority sparkline ===================== */
 .priority-spark {
   display: inline-flex;
   align-items: flex-end;
@@ -443,6 +412,7 @@
   height: 14px;
   width: 22px;
   flex: none;
+  opacity: 0.7;
 }
 .priority-spark i {
   flex: 1;
@@ -454,7 +424,7 @@
 .priority-spark.mid i { background: var(--accent); opacity: 0.8; }
 .priority-spark.low i { background: var(--muted); opacity: 0.4; }
 
-/* ===================== Settings bar (theme + layout switcher) ===================== */
+/* ===================== Settings bar ===================== */
 .settings-bar {
   display: flex;
   gap: 0.5rem;
@@ -536,10 +506,30 @@
 }
 .menu-sub button.active {
   background: var(--accent);
-  color: color-mix(in srgb, var(--accent) 60%, #000);
+  color: #fff;
   border-color: transparent;
   font-weight: 600;
 }
+
+/* Theme toggle button (sun/moon). */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  color: var(--ink);
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+.theme-toggle:hover { border-color: var(--accent-dim); background: var(--bg3); }
+.theme-toggle:active { transform: translateY(1px); }
+.theme-toggle .theme-toggle-icon { font-size: 0.95rem; line-height: 1; }
 
 /* ===================== Picture-in-Picture compose ===================== */
 .pip {
@@ -599,4 +589,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app[data-layout="two-panel"] .sidebar,
+  .menu-pop, .pip, .compose-card, .modal-card {
+    transition: none !important;
+    animation: none !important;
+  }
 }

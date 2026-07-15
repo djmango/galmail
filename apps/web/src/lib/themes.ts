@@ -1,22 +1,23 @@
 /**
- * Theme + layout definitions for the GalMail interactive mockups.
+ * Theme + layout definitions for GalMail.
  *
- * Themes are pure CSS-variable swaps (see styles/themes.css). Each theme
- * captures the *design principles* of a reference app — palette, roundedness,
- * typography, density, shadow style — without literally cloning it.
+ * Two intentional themes:
+ *  - "dark"  : Linear-inspired. Dark charcoal, near-black surfaces, single
+ *              indigo accent, dense, small crisp sans-serif, kbd badges, flat,
+ *              no shadows.
+ *  - "light" : Readwise Reader-inspired. Cream/paper background, serif body
+ *              typography for the reading pane, sans-serif chrome, generous
+ *              margins, highlighter accents, calm and literary.
+ *
+ * Themes are pure CSS-variable swaps (see styles/themes.css) applied via
+ * [data-theme="..."] on the app root.
  */
 
-export type ThemeId =
-  | "linear"
-  | "tesla"
-  | "pocketcasts"
-  | "readwise"
-  | "robinhood"
-  | "airbnb";
+export type ThemeId = "dark" | "light";
 
 export interface ThemeMeta {
   id: ThemeId;
-  /** Short label shown in the settings switcher. */
+  /** Short label shown in the toggle. */
   label: string;
   /** One-line description of the design principle. */
   blurb: string;
@@ -30,52 +31,20 @@ export interface ThemeMeta {
 
 export const THEMES: ThemeMeta[] = [
   {
-    id: "linear",
-    label: "Linear",
-    blurb: "Dark charcoal, indigo accent, dense, flat, kbd badges.",
+    id: "dark",
+    label: "Dark",
+    blurb: "Charcoal surfaces, single indigo accent, dense, flat, kbd badges.",
     inspiredBy: "Linear",
     scheme: "dark",
     swatch: ["#08090a", "#161719", "#5e6ad2"],
   },
   {
-    id: "tesla",
-    label: "Tesla",
-    blurb: "Pure white/black, sparse, large rounded cards, negative space.",
-    inspiredBy: "Tesla",
-    scheme: "light",
-    swatch: ["#ffffff", "#f7f7f7", "#e82127"],
-  },
-  {
-    id: "pocketcasts",
-    label: "Pocket Casts",
-    blurb: "Deep purple/navy, vibrant, card-based, bold headings.",
-    inspiredBy: "Pocket Casts",
-    scheme: "dark",
-    swatch: ["#1a0e2e", "#3d2360", "#c935f0"],
-  },
-  {
-    id: "readwise",
-    label: "Readwise",
-    blurb: "Cream paper, serif body, generous margins, highlighter accents.",
+    id: "light",
+    label: "Light",
+    blurb: "Cream paper, serif reading, generous margins, highlighter accents.",
     inspiredBy: "Readwise Reader",
     scheme: "light",
     swatch: ["#f6f1e7", "#fdfaf3", "#f0c040"],
-  },
-  {
-    id: "robinhood",
-    label: "Robinhood",
-    blurb: "True black, monochrome + green/red priority, data-dense, sharp.",
-    inspiredBy: "Robinhood",
-    scheme: "dark",
-    swatch: ["#000000", "#141414", "#00c805"],
-  },
-  {
-    id: "airbnb",
-    label: "Airbnb",
-    blurb: "Warm, photographic avatars, large rounded cards, coral, friendly.",
-    inspiredBy: "Airbnb",
-    scheme: "light",
-    swatch: ["#ffffff", "#ffffff", "#ff385c"],
   },
 ];
 
@@ -113,6 +82,25 @@ export const SIDEBAR_LABELS: Record<SidebarMode, string> = {
   always: "Always · icon rail",
 };
 
-export const DEFAULT_THEME: ThemeId = "linear";
+export const DEFAULT_THEME: ThemeId = "dark";
 export const DEFAULT_LAYOUT: LayoutMode = "three-panel";
 export const DEFAULT_SIDEBAR: SidebarMode = "auto";
+
+const THEME_STORAGE_KEY = "galmail.theme";
+
+/** Load persisted theme, falling back to the default / OS preference. */
+export function loadPersistedTheme(): ThemeId {
+  if (typeof localStorage === "undefined") return DEFAULT_THEME;
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  if (stored === "dark" || stored === "light") return stored;
+  const prefersLight =
+    typeof matchMedia !== "undefined" &&
+    matchMedia("(prefers-color-scheme: light)").matches;
+  return prefersLight ? "light" : DEFAULT_THEME;
+}
+
+/** Persist the user's theme choice. */
+export function persistTheme(theme: ThemeId): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+}

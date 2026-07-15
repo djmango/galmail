@@ -10,7 +10,8 @@ import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
 import {
   DEFAULT_LAYOUT,
   DEFAULT_SIDEBAR,
-  DEFAULT_THEME,
+  loadPersistedTheme,
+  persistTheme,
   type LayoutMode,
   type ThemeId,
 } from "./lib/themes";
@@ -21,12 +22,8 @@ import { RemoteOptInModal } from "./components/RemoteOptInModal";
 import { SettingsBar, type SettingsState } from "./components/SettingsBar";
 
 const THEME_LABELS: Record<ThemeId, string> = {
-  linear: "Linear · dark + dense",
-  tesla: "Tesla · sparse + white",
-  pocketcasts: "Pocket Casts · purple",
-  readwise: "Readwise · paper + serif",
-  robinhood: "Robinhood · black + green",
-  airbnb: "Airbnb · warm + coral",
+  dark: "Dark",
+  light: "Light",
 };
 
 const LAYOUT_LABELS: Record<LayoutMode, string> = {
@@ -34,6 +31,17 @@ const LAYOUT_LABELS: Record<LayoutMode, string> = {
   "two-panel": "2-panel auto sidebar",
   "three-panel": "3-panel traditional",
 };
+
+function formatMessageDate(raw: string): string {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 export function App() {
   const [runtime, setRuntime] = useState<GalMailRuntime | null>(null);
@@ -47,15 +55,56 @@ export function App() {
   const [optInOpen, setOptInOpen] = useState(false);
   const [status, setStatus] = useState("Hydrating local inbox…");
   const [consent, setConsent] = useState<RemoteProcessingConsent | null>(null);
-  const [settings, setSettings] = useState<SettingsState>({
-    theme: DEFAULT_THEME,
+  const [settings, setSettings] = useState<SettingsState>(() => ({
+    theme: loadPersistedTheme(),
     layout: DEFAULT_LAYOUT,
     sidebar: DEFAULT_SIDEBAR,
-  });
+  }));
   const [, startTransition] = useTransition();
   const threadListRef = useRef<HTMLElement>(null);
   const overlayRef = useRef({ paletteOpen: false, composeOpen: false, optInOpen: false });
   overlayRef.current = { paletteOpen, composeOpen, optInOpen };
+
+  // Persist theme choice whenever it changes.
+  useEffect(() => {
+    persistTheme(settings.theme);
+  }, [settings.theme]);
+
+  // --- Sidebar open/closed state for 2-panel modes -----------------------
+  // Drives [data-sidebar-open] on .shell. A single shared grace timer makes
+  // hover-expand feel stable: entering the trigger OR the sidebar cancels any
+  // pending close; leaving schedules a short close after which it collapses.
+  // No flicker, no stuck state, and the sidebar is marked `inert` while hidden
+  // in "auto" mode so it can never trap keyboard focus off-screen.
+  const isTwoPanel = settings.layout === "two-panel";
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarCloseTimer = useRef<number | null>(null);
+  const cancelSidebarClose = () => {
+    if (sidebarCloseTimer.current != null) {
+      window.clearTimeout(sidebarCloseTimer.current);
+      sidebarCloseTimer.current = null;
+    }
+  };
+  const openSidebar = () => {
+    cancelSidebarClose();
+    setSidebarOpen(true);
+  };
+  const scheduleSidebarClose = () => {
+    cancelSidebarClose();
+    sidebarCloseTimer.current = window.setTimeout(() => {
+      setSidebarOpen(false);
+      sidebarCloseTimer.current = null;
+    }, 220);
+  };
+  // When leaving 2-panel mode, drop any pending timer and reset state so the
+  // next time we return to 2-panel we start from a clean (closed) baseline.
+  useEffect(() => {
+    if (!isTwoPanel) {
+      cancelSidebarClose();
+      setSidebarOpen(false);
+    }
+  }, [isTwoPanel]);
+  useEffect(() => () => cancelSidebarClose(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -246,6 +295,9 @@ export function App() {
   const updateSettings = (next: Partial<SettingsState>) =>
     setSettings((cur) => ({ ...cur, ...next }));
 
+  const toggleTheme = () =>
+    setSettings((cur) => ({ ...cur, theme: cur.theme === "dark" ? "light" : "dark" }));
+
   const openCompose = (initial?: ComposeDraft) => {
     setComposeInitial(initial);
     setComposeOpen(true);
@@ -325,6 +377,18 @@ export function App() {
           </div>
         </div>
         <div className="top-actions">
+          <button
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            title={`Switch to ${settings.theme === "dark" ? "Light" : "Dark"} theme`}
+            aria-label={`Switch to ${settings.theme === "dark" ? "Light" : "Dark"} theme`}
+            aria-pressed={settings.theme === "dark"}
+          >
+            <span className="theme-toggle-icon" aria-hidden>
+              {settings.theme === "dark" ? "☾" : "☀"}
+            </span>
+          </button>
           <SettingsBar state={settings} onChange={updateSettings} />
           <button
             className="btn"
@@ -366,11 +430,25 @@ export function App() {
         </div>
       </header>
 
-      <div className="shell">
+      <div
+        className="shell"
+        data-sidebar-open={isTwoPanel ? sidebarOpen : undefined}
+      >
+        {isTwoPanel && (
+          <div
+            className="sidebar-hover-trigger"
+            aria-hidden="true"
+            onMouseEnter={openSidebar}
+            onMouseLeave={scheduleSidebarClose}
+          />
+        )}
         <aside
           className="sidebar panel"
           aria-label="Folders"
           data-hidden={layout === "fullscreen" ? "true" : undefined}
+          inert={isTwoPanel && settings.sidebar === "auto" && !sidebarOpen}
+          onMouseEnter={isTwoPanel ? openSidebar : undefined}
+          onMouseLeave={isTwoPanel ? scheduleSidebarClose : undefined}
         >
           <button
             className="nav-item active"
@@ -415,6 +493,15 @@ export function App() {
             >
               ← Back to inbox
             </button>
+          )}
+          {!(layout === "fullscreen" && selectedId) && (
+            <div className="thread-list-head">
+              <span className="thread-list-title">Inbox</span>
+              <span className="thread-list-count">
+                {threads.filter((t) => t.unreadCount > 0).length} unread ·{" "}
+                {threads.length}
+              </span>
+            </div>
           )}
           {threads.map((t) => {
             const name = t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown";
@@ -515,16 +602,31 @@ export function App() {
               </div>
               <h1>{message.subject}</h1>
               <div className="meta">
-                {message.from.name ?? message.from.email} · {message.date} ·{" "}
-                {message.provider}
+                <span className="meta-from">
+                  {message.from.name ?? message.from.email}
+                </span>
+                <span className="meta-dot" aria-hidden>·</span>
+                <span className="meta-date">{formatMessageDate(message.date)}</span>
+                <span className="meta-dot" aria-hidden>·</span>
+                <span className="provider-pill">{message.provider}</span>
               </div>
               <div className="body">{message.bodyText ?? message.snippet}</div>
             </>
           ) : (
-            <p className="meta">
-              Select a thread. Keys: j/k navigate, e archive, i inbox, u read, Esc back, c
-              compose.
-            </p>
+            <div className="reading-empty">
+              <p className="meta">No thread selected.</p>
+              <p className="meta meta-hint">
+                Keys: <span className="kbd">J</span>{" "}
+                <span className="kbd">K</span> navigate ·{" "}
+                <span className="kbd">E</span> archive ·{" "}
+                <span className="kbd">I</span> inbox ·{" "}
+                <span className="kbd">U</span> read ·{" "}
+                <span className="kbd">R</span> reply ·{" "}
+                <span className="kbd">C</span> compose ·{" "}
+                <span className="kbd">⌘K</span> commands ·{" "}
+                <span className="kbd">Esc</span> back
+              </p>
+            </div>
           )}
         </section>
       </div>
