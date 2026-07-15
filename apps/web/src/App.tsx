@@ -7,9 +7,33 @@ import {
   shortcutTooltip,
 } from "@galmail/keyboard";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
+import {
+  DEFAULT_LAYOUT,
+  DEFAULT_SIDEBAR,
+  DEFAULT_THEME,
+  type LayoutMode,
+  type ThemeId,
+} from "./lib/themes";
 import { CommandPalette } from "./components/CommandPalette";
-import { ComposeModal } from "./components/ComposeModal";
+import { ComposeModal, type ComposeDraft } from "./components/ComposeModal";
+import { ComposePiP, type PipDraft } from "./components/ComposePiP";
 import { RemoteOptInModal } from "./components/RemoteOptInModal";
+import { SettingsBar, type SettingsState } from "./components/SettingsBar";
+
+const THEME_LABELS: Record<ThemeId, string> = {
+  linear: "Linear · dark + dense",
+  tesla: "Tesla · sparse + white",
+  pocketcasts: "Pocket Casts · purple",
+  readwise: "Readwise · paper + serif",
+  robinhood: "Robinhood · black + green",
+  airbnb: "Airbnb · warm + coral",
+};
+
+const LAYOUT_LABELS: Record<LayoutMode, string> = {
+  fullscreen: "1-panel fullscreen",
+  "two-panel": "2-panel auto sidebar",
+  "three-panel": "3-panel traditional",
+};
 
 export function App() {
   const [runtime, setRuntime] = useState<GalMailRuntime | null>(null);
@@ -18,9 +42,16 @@ export function App() {
   const [message, setMessage] = useState<MailMessage | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeInitial, setComposeInitial] = useState<ComposeDraft | undefined>(undefined);
+  const [pipDrafts, setPipDrafts] = useState<PipDraft[]>([]);
   const [optInOpen, setOptInOpen] = useState(false);
   const [status, setStatus] = useState("Hydrating local inbox…");
   const [consent, setConsent] = useState<RemoteProcessingConsent | null>(null);
+  const [settings, setSettings] = useState<SettingsState>({
+    theme: DEFAULT_THEME,
+    layout: DEFAULT_LAYOUT,
+    sidebar: DEFAULT_SIDEBAR,
+  });
   const [, startTransition] = useTransition();
   const threadListRef = useRef<HTMLElement>(null);
   const overlayRef = useRef({ paletteOpen: false, composeOpen: false, optInOpen: false });
@@ -167,7 +198,10 @@ export function App() {
     });
     reg.on("archive", archiveSelected);
     reg.on("mark_read_toggle", toggleReadSelected);
-    reg.on("compose", () => setComposeOpen(true));
+    reg.on("compose", () => {
+      setComposeInitial(undefined);
+      setComposeOpen(true);
+    });
     reg.on("command_palette", () => setPaletteOpen(true));
     reg.on("search", () => setPaletteOpen(true));
     reg.on("undo", () => setStatus("Undo stack scaffolded — last action reversible in v0.2"));
@@ -206,6 +240,58 @@ export function App() {
     };
   }, [runtime, threads, selectedIndex, selectedId]);
 
+  const layout = settings.layout;
+  const fullscreenList = layout === "fullscreen" && !selectedId;
+
+  const updateSettings = (next: Partial<SettingsState>) =>
+    setSettings((cur) => ({ ...cur, ...next }));
+
+  const openCompose = (initial?: ComposeDraft) => {
+    setComposeInitial(initial);
+    setComposeOpen(true);
+  };
+
+  const minimizeCompose = (draft: ComposeDraft) => {
+    const id = `pip_${Date.now()}`;
+    setPipDrafts((d) => [...d, { id, ...draft }]);
+    setComposeOpen(false);
+    setComposeInitial(undefined);
+    setStatus(`Draft minimized to floating window (${pipDrafts.length + 1} PiP)`);
+  };
+
+  const expandPip = (id: string) => {
+    const d = pipDrafts.find((x) => x.id === id);
+    if (!d) return;
+    openCompose({ to: d.to, subject: d.subject, body: d.body });
+    setPipDrafts((d) => d.filter((x) => x.id !== id));
+  };
+
+  const closePip = (id: string) => setPipDrafts((d) => d.filter((x) => x.id !== id));
+
+  const sendPip = async (id: string) => {
+    const d = pipDrafts.find((x) => x.id === id);
+    if (!d || !runtime) return;
+    await runtime.sync.enqueue({
+      accountId: runtime.gmailAccountId,
+      kind: "send",
+      targetIds: [],
+      payload: { to: d.to, subject: d.subject, body: d.body } as unknown as Record<string, unknown>,
+    });
+    const provider = runtime.accounts[0]!.provider;
+    await provider.sendDraft(runtime.gmailAccountId, {
+      id: `draft_${Date.now()}`,
+      accountId: runtime.gmailAccountId,
+      to: [{ email: d.to }],
+      subject: d.subject,
+      bodyHtml: `<p>${d.body}</p>`,
+      bodyText: d.body,
+      updatedAt: new Date().toISOString(),
+    });
+    await runtime.sync.flushOutbox(runtime.gmailAccountId);
+    setPipDrafts((x) => x.filter((p) => p.id !== id));
+    setStatus("Sent PiP draft via fixture provider + outbox");
+  };
+
   if (!runtime) {
     return (
       <div className="app">
@@ -225,13 +311,21 @@ export function App() {
   };
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      data-theme={settings.theme}
+      data-layout={settings.layout}
+      data-sidebar={settings.sidebar}
+    >
       <header className="topbar">
         <div className="brand">
           <div className="brand-name">GalMail</div>
-          <div className="brand-tag">Privacy-first · keyboard-first · local-first</div>
+          <div className="brand-tag">
+            {THEME_LABELS[settings.theme]} · {LAYOUT_LABELS[settings.layout]}
+          </div>
         </div>
         <div className="top-actions">
+          <SettingsBar state={settings} onChange={updateSettings} />
           <button
             className="btn"
             type="button"
@@ -239,16 +333,16 @@ export function App() {
             aria-keyshortcuts="Meta+K Control+K"
             onClick={() => setPaletteOpen(true)}
           >
-            Commands ⌘K
+            Commands <span className="kbd">⌘K</span>
           </button>
           <button
             className="btn"
             type="button"
             title={tip("compose")}
             aria-keyshortcuts="C"
-            onClick={() => setComposeOpen(true)}
+            onClick={() => openCompose()}
           >
-            Compose
+            Compose <span className="kbd">C</span>
           </button>
           <button
             className="btn"
@@ -273,7 +367,11 @@ export function App() {
       </header>
 
       <div className="shell">
-        <aside className="sidebar panel">
+        <aside
+          className="sidebar panel"
+          aria-label="Folders"
+          data-hidden={layout === "fullscreen" ? "true" : undefined}
+        >
           <button
             className="nav-item active"
             type="button"
@@ -281,15 +379,22 @@ export function App() {
             aria-keyshortcuts="I"
             onClick={() => runtime.commands.dispatch("go_to_inbox")}
           >
-            Unified inbox
+            <span className="nav-icon" aria-hidden>📥</span>
+            <span className="nav-label">Unified inbox</span>
           </button>
           <button className="nav-item" type="button" title="Gmail labels">
-            Gmail labels
+            <span className="nav-icon" aria-hidden>🏷️</span>
+            <span className="nav-label">Gmail labels</span>
           </button>
           <button className="nav-item" type="button" title="Outlook folders">
-            Outlook folders
+            <span className="nav-icon" aria-hidden>📁</span>
+            <span className="nav-label">Outlook folders</span>
           </button>
-          <p className="warn" style={{ marginTop: "1.5rem", fontSize: "0.78rem" }}>
+          <button className="nav-item" type="button" title="Floating drafts">
+            <span className="nav-icon" aria-hidden>🪟</span>
+            <span className="nav-label">PiP drafts · {pipDrafts.length}</span>
+          </button>
+          <p className="warn warn-note" style={{ marginTop: "1.5rem", fontSize: "0.78rem" }}>
             Fixture mode — no OAuth secrets required. See .env.example for live providers.
           </p>
         </aside>
@@ -299,34 +404,78 @@ export function App() {
           aria-label="Thread list"
           tabIndex={-1}
           ref={threadListRef}
+          data-fullscreen={fullscreenList ? "true" : "false"}
         >
-          {threads.map((t) => (
+          {layout === "fullscreen" && selectedId && (
             <button
-              key={`${t.accountId}:${t.id}`}
+              className="btn back-btn"
               type="button"
-              className={`thread ${selectedId === t.id ? "selected" : ""} ${
-                t.unreadCount > 0 ? "unread" : ""
-              }`}
-              onClick={() => setSelectedId(t.id)}
+              title="Back to list · Esc"
+              onClick={() => setSelectedId(null)}
             >
-              <div className="thread-top">
-                <span className="thread-from">
-                  {t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown"}
-                  <span className="provider-pill">{t.provider}</span>
-                </span>
-                <span className="thread-meta">
-                  {new Date(t.lastMessageAt).toLocaleString()}
-                </span>
-              </div>
-              <div className="thread-subject">{t.subject}</div>
-              <div className="thread-snippet">{t.snippet}</div>
+              ← Back to inbox
             </button>
-          ))}
+          )}
+          {threads.map((t) => {
+            const name = t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown";
+            const initials = name.slice(0, 2).toUpperCase();
+            const priority = t.unreadCount > 0 ? "high" : "low";
+            return (
+              <button
+                key={`${t.accountId}:${t.id}`}
+                type="button"
+                className={`thread ${selectedId === t.id ? "selected" : ""} ${
+                  t.unreadCount > 0 ? "unread" : ""
+                }`}
+                onClick={() => setSelectedId(t.id)}
+              >
+                <div className="thread-row">
+                  <span className="avatar" aria-hidden>{initials}</span>
+                  <div className="thread-main">
+                    <div className="thread-top">
+                      <span className="thread-from">
+                        {name}
+                        <span className="provider-pill">{t.provider}</span>
+                      </span>
+                      <span className="thread-meta">
+                        {new Date(t.lastMessageAt).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                    </div>
+                    <div className="thread-subject">{t.subject}</div>
+                    <div className="thread-snippet">{t.snippet}</div>
+                  </div>
+                  <span className={`priority-spark ${priority}`} aria-hidden title="Priority">
+                    <i style={{ height: "30%" }} />
+                    <i style={{ height: "55%" }} />
+                    <i style={{ height: "80%" }} />
+                    <i style={{ height: "45%" }} />
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </section>
 
-        <section className="reading-pane panel reading" aria-label="Reading pane">
+        <section
+          className="reading-pane panel reading"
+          aria-label="Reading pane"
+          data-fullscreen={layout === "fullscreen" && selectedId ? "true" : "false"}
+        >
           {message ? (
             <>
+              {layout === "fullscreen" && (
+                <button
+                  className="btn back-btn"
+                  type="button"
+                  title="Back to list · Esc"
+                  onClick={() => setSelectedId(null)}
+                >
+                  ← Back to inbox
+                </button>
+              )}
               <div className="reading-toolbar">
                 <button
                   className="btn"
@@ -335,7 +484,7 @@ export function App() {
                   aria-keyshortcuts="E"
                   onClick={() => runtime.commands.dispatch("archive")}
                 >
-                  Archive
+                  Archive <span className="kbd">E</span>
                 </button>
                 <button
                   className="btn"
@@ -351,9 +500,17 @@ export function App() {
                   type="button"
                   title={tip("reply")}
                   aria-keyshortcuts="R"
-                  onClick={() => setComposeOpen(true)}
+                  onClick={() =>
+                    openCompose({
+                      to: message.from.email,
+                      subject: message.subject.startsWith("Re:")
+                        ? message.subject
+                        : `Re: ${message.subject}`,
+                      body: "",
+                    })
+                  }
                 >
-                  Reply
+                  Reply <span className="kbd">R</span>
                 </button>
               </div>
               <h1>{message.subject}</h1>
@@ -397,7 +554,12 @@ export function App() {
 
       {composeOpen && (
         <ComposeModal
-          onClose={() => setComposeOpen(false)}
+          initialDraft={composeInitial}
+          onClose={() => {
+            setComposeOpen(false);
+            setComposeInitial(undefined);
+          }}
+          onMinimize={minimizeCompose}
           onSend={async (draft) => {
             await runtime.sync.enqueue({
               accountId: runtime.gmailAccountId,
@@ -417,10 +579,18 @@ export function App() {
             });
             await runtime.sync.flushOutbox(runtime.gmailAccountId);
             setComposeOpen(false);
+            setComposeInitial(undefined);
             setStatus("Sent via fixture provider + outbox");
           }}
         />
       )}
+
+      <ComposePiP
+        drafts={pipDrafts}
+        onExpand={expandPip}
+        onClose={closePip}
+        onSend={sendPip}
+      />
 
       {optInOpen && consent && (
         <RemoteOptInModal
