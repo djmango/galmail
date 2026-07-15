@@ -224,6 +224,21 @@ textarea {
   margin-left: 0.35rem;
 }
 
+.reading-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.thread-list:focus {
+  outline: none;
+}
+
+.thread-list:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
 .reading h1 {
   font-size: 1.35rem;
   margin: 0 0 0.5rem;

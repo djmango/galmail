@@ -73,7 +73,12 @@ export function RemoteOptInModal(props: {
           >
             Save
           </button>
-          <button className="btn" type="button" onClick={props.onClose}>
+          <button
+            className="btn"
+            type="button"
+            title="Cancel · Esc"
+            onClick={props.onClose}
+          >
             {props.copy.cancelLabel}
           </button>
         </div>

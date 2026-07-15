@@ -43,10 +43,20 @@ export function ComposeModal(props: {
           onChange={(e) => setBody(e.target.value)}
         />
         <div className="top-actions">
-          <button className="btn btn-primary" type="submit" disabled={busy}>
+          <button
+            className="btn btn-primary"
+            type="submit"
+            disabled={busy}
+            title="Send"
+          >
             {busy ? "Sending…" : "Send"}
           </button>
-          <button className="btn" type="button" onClick={props.onClose}>
+          <button
+            className="btn"
+            type="button"
+            title="Cancel · Esc"
+            onClick={props.onClose}
+          >
             Cancel
           </button>
         </div>

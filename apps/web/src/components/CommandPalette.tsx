@@ -27,7 +27,11 @@ export function CommandPalette(props: {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") props.onClose();
+            if (e.key === "Escape") {
+              // App-level layered Escape handler owns dismiss + focus restore.
+              e.preventDefault();
+              return;
+            }
             if (e.key === "Enter" && filtered[0]) props.onRun(filtered[0].id);
           }}
         />
@@ -36,13 +40,19 @@ export function CommandPalette(props: {
             key={c.id}
             type="button"
             className={`palette-item ${i === 0 ? "active" : ""}`}
+            title={`${c.title} · ${c.defaultKeys.join(" · ")}`}
             onClick={() => props.onRun(c.id)}
           >
             <span>{c.title}</span>
             <span className="kbd">{c.defaultKeys.join(" · ")}</span>
           </button>
         ))}
-        <button className="btn" type="button" onClick={props.onClose}>
+        <button
+          className="btn"
+          type="button"
+          title="Close · Esc"
+          onClick={props.onClose}
+        >
           Close
         </button>
       </div>

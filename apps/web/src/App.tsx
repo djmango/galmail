@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { MailMessage, MailThread, RemoteProcessingConsent } from "@galmail/core-api";
 import { REMOTE_OPT_IN_DISCLOSURE_VERSION } from "@galmail/remote-opt-in";
+import {
+  isEditableTarget,
+  keysForCommand,
+  shortcutTooltip,
+} from "@galmail/keyboard";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeModal } from "./components/ComposeModal";
@@ -17,6 +22,9 @@ export function App() {
   const [status, setStatus] = useState("Hydrating local inbox…");
   const [consent, setConsent] = useState<RemoteProcessingConsent | null>(null);
   const [, startTransition] = useTransition();
+  const threadListRef = useRef<HTMLElement>(null);
+  const overlayRef = useRef({ paletteOpen: false, composeOpen: false, optInOpen: false });
+  overlayRef.current = { paletteOpen, composeOpen, optInOpen };
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +36,7 @@ export function App() {
       setSelectedId(rt.threads[0]?.id ?? null);
       setStatus(`Local hydrate complete · ${rt.threads.length} threads · blind mode`);
       const c = await rt.remoteOptIn.getConsent(rt.gmailAccountId);
-      setConsent(c);
+      if (!cancelled) setConsent(c);
 
       // Deltas after hydrate (Linear-style).
       await rt.sync.pullDeltas(rt.gmailAccountId);
@@ -59,6 +67,10 @@ export function App() {
     [threads, selectedId],
   );
 
+  const focusThreadList = () => {
+    threadListRef.current?.focus();
+  };
+
   useEffect(() => {
     if (!runtime) return;
     const reg = runtime.commands;
@@ -83,6 +95,68 @@ export function App() {
         .then(() => setStatus("Archived (optimistic + outbox flushed)"));
     };
 
+    const toggleReadSelected = () => {
+      const thread = threads[selectedIndex];
+      if (!thread?.messageIds[0]) return;
+      const markingUnread = thread.unreadCount === 0;
+      startTransition(() => {
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === thread.id
+              ? { ...t, unreadCount: markingUnread ? 1 : 0 }
+              : t,
+          ),
+        );
+      });
+      setMessage((m) => (m ? { ...m, unread: markingUnread } : m));
+      void runtime.sync
+        .enqueue({
+          accountId: thread.accountId,
+          kind: markingUnread ? "mark_unread" : "mark_read",
+          targetIds: [thread.messageIds[0]],
+        })
+        .then(() => runtime.sync.flushOutbox(thread.accountId))
+        .then(() =>
+          setStatus(markingUnread ? "Marked unread" : "Marked read"),
+        );
+    };
+
+    const goToInbox = () => {
+      setPaletteOpen(false);
+      setComposeOpen(false);
+      setOptInOpen(false);
+      setSelectedId(threads[0]?.id ?? null);
+      setStatus("Inbox");
+      requestAnimationFrame(() => focusThreadList());
+    };
+
+    const handleBack = () => {
+      const overlays = overlayRef.current;
+      // Layered dismiss — most specific first (Superhuman "Back").
+      if (overlays.paletteOpen) {
+        setPaletteOpen(false);
+        requestAnimationFrame(() => focusThreadList());
+        return;
+      }
+      if (overlays.composeOpen) {
+        setComposeOpen(false);
+        requestAnimationFrame(() => focusThreadList());
+        return;
+      }
+      if (overlays.optInOpen) {
+        setOptInOpen(false);
+        requestAnimationFrame(() => focusThreadList());
+        return;
+      }
+      if (selectedId) {
+        setSelectedId(null);
+        setStatus("Selection cleared");
+        requestAnimationFrame(() => focusThreadList());
+        return;
+      }
+      focusThreadList();
+    };
+
     reg.on("navigate_down", () => {
       const next = threads[Math.min(threads.length - 1, selectedIndex + 1)];
       if (next) setSelectedId(next.id);
@@ -92,34 +166,45 @@ export function App() {
       if (prev) setSelectedId(prev.id);
     });
     reg.on("archive", archiveSelected);
+    reg.on("mark_read_toggle", toggleReadSelected);
     reg.on("compose", () => setComposeOpen(true));
     reg.on("command_palette", () => setPaletteOpen(true));
     reg.on("search", () => setPaletteOpen(true));
     reg.on("undo", () => setStatus("Undo stack scaffolded — last action reversible in v0.2"));
+    reg.on("go_to_inbox", goToInbox);
+    reg.on("back", handleBack);
 
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
+      const editable = isEditableTarget(e.target);
+
+      // Escape always dismisses layered UI, including inside composer/palette inputs.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        handleBack();
         return;
       }
+
+      // Don't steal typing in compose/search fields for other shortcuts.
+      if (editable) return;
+
       const id = reg.match({
         key: e.key,
         metaKey: e.metaKey,
         ctrlKey: e.ctrlKey,
         altKey: e.altKey,
+        shiftKey: e.shiftKey,
       });
-      if (!id) return;
+      if (!id || id === "back") return;
       e.preventDefault();
       reg.dispatch(id);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [runtime, threads, selectedIndex]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      reg.clearPending();
+    };
+  }, [runtime, threads, selectedIndex, selectedId]);
 
   if (!runtime) {
     return (
@@ -134,6 +219,11 @@ export function App() {
     );
   }
 
+  const tip = (id: Parameters<typeof keysForCommand>[0], title?: string) => {
+    const def = runtime.commands.list().find((c) => c.id === id);
+    return shortcutTooltip(title ?? def?.title ?? id, keysForCommand(id));
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -142,18 +232,36 @@ export function App() {
           <div className="brand-tag">Privacy-first · keyboard-first · local-first</div>
         </div>
         <div className="top-actions">
-          <button className="btn" type="button" onClick={() => setPaletteOpen(true)}>
+          <button
+            className="btn"
+            type="button"
+            title={tip("command_palette")}
+            aria-keyshortcuts="Meta+K Control+K"
+            onClick={() => setPaletteOpen(true)}
+          >
             Commands ⌘K
           </button>
-          <button className="btn" type="button" onClick={() => setComposeOpen(true)}>
+          <button
+            className="btn"
+            type="button"
+            title={tip("compose")}
+            aria-keyshortcuts="C"
+            onClick={() => setComposeOpen(true)}
+          >
             Compose
           </button>
-          <button className="btn" type="button" onClick={() => setOptInOpen(true)}>
+          <button
+            className="btn"
+            type="button"
+            title="Remote processing"
+            onClick={() => setOptInOpen(true)}
+          >
             Remote processing
           </button>
           <button
             className="btn btn-primary"
             type="button"
+            title="Link device"
             onClick={async () => {
               const { inviteCode } = await runtime.devices.createInvite();
               setStatus(`Device invite: ${inviteCode} (expires in 15m)`);
@@ -166,13 +274,19 @@ export function App() {
 
       <div className="shell">
         <aside className="sidebar panel">
-          <button className="nav-item active" type="button">
+          <button
+            className="nav-item active"
+            type="button"
+            title={tip("go_to_inbox")}
+            aria-keyshortcuts="I"
+            onClick={() => runtime.commands.dispatch("go_to_inbox")}
+          >
             Unified inbox
           </button>
-          <button className="nav-item" type="button">
+          <button className="nav-item" type="button" title="Gmail labels">
             Gmail labels
           </button>
-          <button className="nav-item" type="button">
+          <button className="nav-item" type="button" title="Outlook folders">
             Outlook folders
           </button>
           <p className="warn" style={{ marginTop: "1.5rem", fontSize: "0.78rem" }}>
@@ -180,7 +294,12 @@ export function App() {
           </p>
         </aside>
 
-        <section className="thread-list panel" aria-label="Thread list">
+        <section
+          className="thread-list panel"
+          aria-label="Thread list"
+          tabIndex={-1}
+          ref={threadListRef}
+        >
           {threads.map((t) => (
             <button
               key={`${t.accountId}:${t.id}`}
@@ -208,6 +327,35 @@ export function App() {
         <section className="reading-pane panel reading" aria-label="Reading pane">
           {message ? (
             <>
+              <div className="reading-toolbar">
+                <button
+                  className="btn"
+                  type="button"
+                  title={tip("archive")}
+                  aria-keyshortcuts="E"
+                  onClick={() => runtime.commands.dispatch("archive")}
+                >
+                  Archive
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  title={tip("mark_read_toggle")}
+                  aria-keyshortcuts="U"
+                  onClick={() => runtime.commands.dispatch("mark_read_toggle")}
+                >
+                  {message.unread ? "Mark read" : "Mark unread"}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  title={tip("reply")}
+                  aria-keyshortcuts="R"
+                  onClick={() => setComposeOpen(true)}
+                >
+                  Reply
+                </button>
+              </div>
               <h1>{message.subject}</h1>
               <div className="meta">
                 {message.from.name ?? message.from.email} · {message.date} ·{" "}
@@ -216,7 +364,10 @@ export function App() {
               <div className="body">{message.bodyText ?? message.snippet}</div>
             </>
           ) : (
-            <p className="meta">Select a thread. Keys: j/k navigate, e archive, c compose.</p>
+            <p className="meta">
+              Select a thread. Keys: j/k navigate, e archive, i inbox, u read, Esc back, c
+              compose.
+            </p>
           )}
         </section>
       </div>
