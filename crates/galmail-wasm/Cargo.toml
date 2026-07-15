@@ -1,0 +1,18 @@
+[package]
+name = "galmail-wasm"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Bounded Wasm bindings for GalMail browser core helpers"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+galmail-core = { path = "../galmail-core" }
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

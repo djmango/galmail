@@ -1,0 +1,90 @@
+{
+  "accountId": "gmail:demo",
+  "provider": "gmail",
+  "email": "demo@galmail.local",
+  "labels": [
+    { "id": "INBOX", "name": "Inbox", "kind": "system", "providerNativeId": "INBOX" },
+    { "id": "STARRED", "name": "Starred", "kind": "system", "providerNativeId": "STARRED" },
+    { "id": "SENT", "name": "Sent", "kind": "system", "providerNativeId": "SENT" },
+    { "id": "label_work", "name": "Work", "kind": "label", "providerNativeId": "Label_Work" }
+  ],
+  "threads": [
+    {
+      "id": "t_welcome",
+      "subject": "Welcome to GalMail",
+      "snippet": "Your privacy-first inbox is ready.",
+      "participants": [{ "email": "hello@galmail.local", "name": "GalMail" }],
+      "messageIds": ["m_welcome"],
+      "labelIds": ["INBOX"],
+      "unreadCount": 1,
+      "lastMessageAt": "2026-07-15T10:00:00.000Z"
+    },
+    {
+      "id": "t_security",
+      "subject": "Security keys and recovery",
+      "snippet": "Store your recovery key offline.",
+      "participants": [{ "email": "security@galmail.local", "name": "GalMail Security" }],
+      "messageIds": ["m_security"],
+      "labelIds": ["INBOX", "label_work"],
+      "unreadCount": 1,
+      "lastMessageAt": "2026-07-15T11:30:00.000Z"
+    },
+    {
+      "id": "t_keyboard",
+      "subject": "Keyboard triage cheat sheet",
+      "snippet": "j/k navigate, e archive, c compose, Cmd+K palette",
+      "participants": [{ "email": "tips@galmail.local", "name": "Tips" }],
+      "messageIds": ["m_keyboard"],
+      "labelIds": ["INBOX"],
+      "unreadCount": 0,
+      "lastMessageAt": "2026-07-14T09:00:00.000Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m_welcome",
+      "threadId": "t_welcome",
+      "subject": "Welcome to GalMail",
+      "snippet": "Your privacy-first inbox is ready.",
+      "from": { "email": "hello@galmail.local", "name": "GalMail" },
+      "to": [{ "email": "demo@galmail.local" }],
+      "date": "2026-07-15T10:00:00.000Z",
+      "unread": true,
+      "starred": false,
+      "labelIds": ["INBOX"],
+      "hasAttachments": false,
+      "bodyText": "Welcome to GalMail.\n\nDefault mode is blind zero-access. Remote processing is per-account opt-in only.",
+      "bodyHtml": "<p>Welcome to <strong>GalMail</strong>.</p><p>Default mode is blind zero-access. Remote processing is per-account opt-in only.</p>"
+    },
+    {
+      "id": "m_security",
+      "threadId": "t_security",
+      "subject": "Security keys and recovery",
+      "snippet": "Store your recovery key offline.",
+      "from": { "email": "security@galmail.local", "name": "GalMail Security" },
+      "to": [{ "email": "demo@galmail.local" }],
+      "date": "2026-07-15T11:30:00.000Z",
+      "unread": true,
+      "starred": true,
+      "labelIds": ["INBOX", "label_work", "STARRED"],
+      "hasAttachments": false,
+      "bodyText": "Generate a vault key on-device. Keep the recovery key offline. GalMail is not subpoena-proof.",
+      "bodyHtml": "<p>Generate a vault key on-device. Keep the recovery key offline.</p><p><em>GalMail is not subpoena-proof.</em></p>"
+    },
+    {
+      "id": "m_keyboard",
+      "threadId": "t_keyboard",
+      "subject": "Keyboard triage cheat sheet",
+      "snippet": "j/k navigate, e archive, c compose, Cmd+K palette",
+      "from": { "email": "tips@galmail.local", "name": "Tips" },
+      "to": [{ "email": "demo@galmail.local" }],
+      "date": "2026-07-14T09:00:00.000Z",
+      "unread": false,
+      "starred": false,
+      "labelIds": ["INBOX"],
+      "hasAttachments": false,
+      "bodyText": "j/k navigate\ne archive\nc compose\ncmd+k command palette\nu undo",
+      "bodyHtml": "<pre>j/k navigate\ne archive\nc compose\ncmd+k command palette\nu undo</pre>"
+    }
+  ]
+}

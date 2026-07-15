@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/galmail-core",
+  "crates/galmail-wasm",
+]
+# Tauri shell builds via apps/web/src-tauri (separate from default workspace tests).
+# Run: pnpm tauri:dev / cargo build --manifest-path apps/web/src-tauri/Cargo.toml

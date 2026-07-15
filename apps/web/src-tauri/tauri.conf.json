@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "GalMail",
+  "version": "0.1.0",
+  "identifier": "app.galmail.client",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @galmail/web dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm --filter @galmail/web build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "GalMail",
+        "width": 1280,
+        "height": 840,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:* http://localhost:*"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": [],
+    "iOS": {
+      "developmentTeam": ""
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  },
+
+  "plugins": {}
+}

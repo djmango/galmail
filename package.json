@@ -1,0 +1,22 @@
+{
+  "name": "galmail",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GalMail — privacy-first, keyboard-first email for Gmail and Microsoft 365",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @galmail/web dev",
+    "build": "pnpm -r --filter './packages/*' build && pnpm --filter @galmail/web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint --if-present",
+    "bench": "pnpm --filter @galmail/core-api bench",
+    "relay:dev": "pnpm --filter @galmail/blind-relay dev",
+    "tauri:dev": "pnpm --filter @galmail/web tauri:dev",
+    "core:test": "cargo test --manifest-path crates/galmail-core/Cargo.toml",
+    "core:build": "cargo build --manifest-path crates/galmail-core/Cargo.toml"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
