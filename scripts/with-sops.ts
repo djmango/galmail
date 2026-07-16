@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 /**
- * Run a command with secrets/dev.json decrypted into the environment via
- * `sops exec-env`. Never writes a .env file.
+ * Decrypt secrets/dev.json and run a command with those values in the
+ * environment. Never writes a .env file.
  *
  * Usage: bun scripts/with-sops.ts -- <command> [args...]
+ *
+ * Note: `sops exec-env` cannot pass command arguments (e.g. `--filter`) on
+ * sops 3.13, so we decrypt explicitly and spawn the command ourselves.
  */
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -25,16 +28,20 @@ if (!env.SOPS_AGE_SSH_PRIVATE_KEY_FILE && !env.SOPS_AGE_KEY_FILE) {
   }
 }
 
+async function run(command: string[], childEnv: Record<string, string | undefined>) {
+  const child = Bun.spawn(command, {
+    cwd: root,
+    env: childEnv,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  process.exit(await child.exited);
+}
+
 if (!existsSync(secretsFile)) {
   if (env.CI || env.GALMAIL_ALLOW_MISSING_SOPS === "1") {
-    const child = Bun.spawn(args, {
-      cwd: root,
-      env,
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    process.exit(await child.exited);
+    await run(args, env);
   }
   console.error(
     `missing ${secretsFile}\n` +
@@ -47,11 +54,31 @@ if (!existsSync(secretsFile)) {
   process.exit(1);
 }
 
-const child = Bun.spawn(["sops", "exec-env", secretsFile, ...args], {
+const decrypted = Bun.spawnSync(["sops", "-d", secretsFile], {
   cwd: root,
   env,
   stdin: "inherit",
-  stdout: "inherit",
+  stdout: "pipe",
   stderr: "inherit",
 });
-process.exit(await child.exited);
+
+if (decrypted.exitCode !== 0) {
+  process.exit(decrypted.exitCode ?? 1);
+}
+
+let secrets: Record<string, unknown>;
+try {
+  secrets = JSON.parse(decrypted.stdout.toString()) as Record<string, unknown>;
+} catch {
+  console.error("secrets/dev.json did not decrypt to valid JSON");
+  process.exit(1);
+}
+
+const merged: Record<string, string | undefined> = { ...env };
+for (const [key, value] of Object.entries(secrets)) {
+  if (key === "sops") continue;
+  if (value === null || value === undefined) continue;
+  merged[key] = typeof value === "string" ? value : JSON.stringify(value);
+}
+
+await run(args, merged);
