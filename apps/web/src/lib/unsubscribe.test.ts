@@ -8,6 +8,9 @@ import {
 import {
   capabilityForMessage,
   unsubscribeButtonVisible,
+  unsubscribeFailureStatus,
+  unsubscribeSenderLabel,
+  unsubscribeSuccessStatus,
   unsubscribeTooltip,
 } from "./unsubscribe";
 
@@ -67,5 +70,24 @@ describe("unsubscribe UI helpers", () => {
     expect(capability.kind).toBe("body_heuristic");
     expect(unsubscribeButtonVisible(capability)).toBe(true);
     expect(unsubscribeTooltip(capability)).toContain("message");
+  });
+
+  it("formats success and failure status copy", () => {
+    expect(unsubscribeSenderLabel(message({ headers: {}, bodyHtml: "" }))).toBe(
+      "News",
+    );
+    expect(
+      unsubscribeSenderLabel(
+        message({
+          headers: {},
+          bodyHtml: "",
+          from: { email: "only@example.com" },
+        }),
+      ),
+    ).toBe("only@example.com");
+    expect(unsubscribeSuccessStatus("News")).toBe("Unsubscribed from News");
+    expect(unsubscribeFailureStatus("network error")).toBe(
+      "Couldn't unsubscribe (network error)",
+    );
   });
 });

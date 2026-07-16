@@ -17,6 +17,11 @@ export type UnsubscribeAction =
     }
   | { kind: "https_link"; url: string; source: "header" | "body" };
 
+export type PerformUnsubscribeOptions = {
+  /** When true, confirm dialogs note that the message will also be trashed. */
+  trashAfterUnsubscribe?: boolean;
+};
+
 export function capabilityForMessage(
   message: Pick<MailMessage, "headers" | "bodyHtml">,
 ): UnsubscribeCapability {
@@ -44,6 +49,28 @@ export function unsubscribeTooltip(
     default:
       return "Unsubscribe";
   }
+}
+
+/** Display name for status/confirm copy (name preferred, else email). */
+export function unsubscribeSenderLabel(
+  message: Pick<MailMessage, "from">,
+): string {
+  const name = message.from.name?.trim();
+  return name || message.from.email;
+}
+
+export function unsubscribeSuccessStatus(sender: string): string {
+  return `Unsubscribed from ${sender}`;
+}
+
+export function unsubscribeFailureStatus(reason: string): string {
+  return `Couldn't unsubscribe (${reason})`;
+}
+
+function trashConfirmSuffix(trashAfterUnsubscribe: boolean): string {
+  return trashAfterUnsubscribe
+    ? "\n\nThis will also move the message to Trash."
+    : "";
 }
 
 function primaryAction(
@@ -79,26 +106,28 @@ function confirmPrimary(
   message: MailMessage,
   capability: UnsubscribeCapability,
   action: UnsubscribeAction,
+  trashAfterUnsubscribe: boolean,
 ): boolean {
   const from = message.from.name
     ? `${message.from.name} <${message.from.email}>`
     : message.from.email;
+  const trashNote = trashConfirmSuffix(trashAfterUnsubscribe);
   if (action.kind === "one_click") {
     const host = unsubscribeHost(capability) ?? "this sender";
     return window.confirm(
-      `Unsubscribe from ${from} via ${host}? This sends a one-click unsubscribe request.`,
+      `Unsubscribe from ${from} via ${host}? This sends a one-click unsubscribe request.${trashNote}`,
     );
   }
   if (action.kind === "mailto") {
     return window.confirm(
-      `Send an unsubscribe email to ${action.address}?`,
+      `Send an unsubscribe email to ${action.address}?${trashNote}`,
     );
   }
   const prefix =
     action.source === "body"
       ? "No List-Unsubscribe header was found. Open this link from the message body"
       : "Open this unsubscribe link in your browser";
-  return window.confirm(`${prefix}?\n\n${action.url}`);
+  return window.confirm(`${prefix}?\n\n${action.url}${trashNote}`);
 }
 
 async function oneClickUnsubscribe(url: string): Promise<void> {
@@ -135,12 +164,14 @@ export type UnsubscribeResult =
 async function offerFallbacks(
   capability: UnsubscribeCapability,
   reason: string,
+  trashAfterUnsubscribe: boolean,
 ): Promise<UnsubscribeResult> {
+  const trashNote = trashConfirmSuffix(trashAfterUnsubscribe);
   if (capability.mailto) {
     const address = capability.mailto.address;
     if (
       window.confirm(
-        `${reason}\n\nSend an unsubscribe email to ${address} instead?`,
+        `${reason}\n\nSend an unsubscribe email to ${address} instead?${trashNote}`,
       )
     ) {
       return {
@@ -157,7 +188,7 @@ async function offerFallbacks(
   if (capability.httpsUrl) {
     if (
       window.confirm(
-        `${reason}\n\nOpen this unsubscribe page in your browser instead?\n\n${capability.httpsUrl}`,
+        `${reason}\n\nOpen this unsubscribe page in your browser instead?\n\n${capability.httpsUrl}${trashNote}`,
       )
     ) {
       try {
@@ -183,11 +214,13 @@ async function offerFallbacks(
  */
 export async function performUnsubscribe(
   message: MailMessage,
+  options: PerformUnsubscribeOptions = {},
 ): Promise<UnsubscribeResult> {
+  const trashAfterUnsubscribe = options.trashAfterUnsubscribe ?? false;
   const capability = capabilityForMessage(message);
   const action = primaryAction(capability);
   if (!action) return { status: "cancelled" };
-  if (!confirmPrimary(message, capability, action)) {
+  if (!confirmPrimary(message, capability, action, trashAfterUnsubscribe)) {
     return { status: "cancelled" };
   }
 
@@ -197,7 +230,7 @@ export async function performUnsubscribe(
       return { status: "success", detail: "Unsubscribed via one-click" };
     } catch (error) {
       const reason = invokeErrorMessage(error, "One-click unsubscribe failed");
-      return offerFallbacks(capability, reason);
+      return offerFallbacks(capability, reason, trashAfterUnsubscribe);
     }
   }
 
