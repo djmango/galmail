@@ -71,8 +71,8 @@ where technically feasible. Emergency releases still require signing,
 provenance, focused tests, and an incident record.
 
 Each channel has its own bundle identifier and updater manifest:
-`app.galmail.client.alpha`, `app.galmail.client.beta`, and
-`app.galmail.client`. Update archives are signed and channel manifests point to
+`com.galateacorp.mail.alpha`, `com.galateacorp.mail.beta`, and
+`com.galateacorp.mail`. Update archives are signed and channel manifests point to
 immutable versioned release assets. The updater must never cross channels or
 offer a lower semantic version. Database or cryptographic format rollback still
 requires the compatibility checks above.

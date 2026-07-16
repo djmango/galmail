@@ -16,14 +16,14 @@ import UserNotifications
 /// - ASWebAuthenticationSession presentation for OAuth
 
 public enum GalMailAppleBridge {
-    public static let appGroupId = "group.app.galmail.client"
+    public static let appGroupId = "group.com.galateacorp.mail"
     public static var keychainAccessGroup: String {
         Bundle.main.object(forInfoDictionaryKey: "GalMailKeychainAccessGroup") as? String
-            ?? "app.galmail.client.keychain"
+            ?? "com.galateacorp.mail.keychain"
     }
 
-    public static let appRefreshTask = "app.galmail.client.refresh"
-    public static let processingTask = "app.galmail.client.sync"
+    public static let appRefreshTask = "com.galateacorp.mail.refresh"
+    public static let processingTask = "com.galateacorp.mail.sync"
 
     public static func categoryIdentifier() -> String { "GALMAIL_MAIL_ACTIONS" }
 
@@ -263,7 +263,7 @@ public enum GalMailKeychain {
     public static func store(_ data: Data, account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "app.galmail.client.vault",
+            kSecAttrService as String: "com.galateacorp.mail.vault",
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: GalMailAppleBridge.keychainAccessGroup,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
@@ -278,7 +278,7 @@ public enum GalMailKeychain {
     public static func load(account: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "app.galmail.client.vault",
+            kSecAttrService as String: "com.galateacorp.mail.vault",
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: GalMailAppleBridge.keychainAccessGroup,
             kSecReturnData as String: true,

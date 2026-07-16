@@ -21,7 +21,7 @@ describe("platform expansion repository gates", () => {
     expect(project).toContain("GalMailAppleTests: [test]");
     expect(project).toContain('DEVELOPMENT_TEAM: ""');
     expect(project).not.toContain("XXXXXXXXXX");
-    expect(entitlements).toContain("group.app.galmail.client");
+    expect(entitlements).toContain("group.com.galateacorp.mail");
     expect(service).toContain("applyGenericFallback");
     expect(service).toContain("AES.GCM.open");
     expect(bridge).toContain("action-queue-key");

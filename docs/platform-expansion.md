@@ -34,8 +34,8 @@ with code signing disabled, but that is not APNs or device evidence.
 
 Required external validation:
 
-1. Provision `app.galmail.client`, `.notification-service`, and `.share`, App
-   Group `group.app.galmail.client`, and the shared Keychain access group.
+1. Provision `com.galateacorp.mail`, `.notification-service`, and `.share`, App
+   Group `group.com.galateacorp.mail`, and the shared Keychain access group.
 2. Confirm APNs development and production token registration through the
    authenticated blind relay.
 3. On physical devices, test locked/first-unlock states, extension timeout,

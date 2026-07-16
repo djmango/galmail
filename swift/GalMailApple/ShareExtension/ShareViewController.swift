@@ -67,7 +67,7 @@ final class ShareViewController: UIViewController {
 
     private func persist(_ envelope: SharedDraftEnvelope) throws {
         guard let root = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: "group.app.galmail.client"
+            forSecurityApplicationGroupIdentifier: "group.com.galateacorp.mail"
         ) else { throw NSError(domain: "GalMailShare", code: 3) }
         let directory = root.appendingPathComponent("ShareInbox", isDirectory: true)
         try FileManager.default.createDirectory(
@@ -95,10 +95,10 @@ final class ShareViewController: UIViewController {
     private func loadShareKey() throws -> SymmetricKey {
         let accessGroup = Bundle.main.object(
             forInfoDictionaryKey: "GalMailKeychainAccessGroup"
-        ) as? String ?? "app.galmail.client.keychain"
+        ) as? String ?? "com.galateacorp.mail.keychain"
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "app.galmail.client.vault",
+            kSecAttrService as String: "com.galateacorp.mail.vault",
             kSecAttrAccount as String: "share-inbox-key",
             kSecAttrAccessGroup as String: accessGroup,
             kSecReturnData as String: true,

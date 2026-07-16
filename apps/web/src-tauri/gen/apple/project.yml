@@ -1,6 +1,6 @@
 name: galmail-tauri
 options:
-  bundleIdPrefix: app.galmail.client
+  bundleIdPrefix: com.galateacorp.mail
   deploymentTarget:
     iOS: 16.0
 fileGroups: [../../src]
@@ -11,7 +11,7 @@ settingGroups:
   app:
     base:
       PRODUCT_NAME: GalMail
-      PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client
+      PRODUCT_BUNDLE_IDENTIFIER: com.galateacorp.mail
       DEVELOPMENT_TEAM: ""
 schemes:
   GalMailAppleTests:
@@ -66,25 +66,25 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
-        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)app.galmail.client.keychain
+        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         BGTaskSchedulerPermittedIdentifiers:
-          - app.galmail.client.refresh
-          - app.galmail.client.sync
+          - com.galateacorp.mail.refresh
+          - com.galateacorp.mail.sync
         UIBackgroundModes:
           - fetch
           - processing
           - remote-notification
         CFBundleURLTypes:
-          - CFBundleURLName: app.galmail.client.oauth
+          - CFBundleURLName: com.galateacorp.mail.oauth
             CFBundleURLSchemes: [galmail]
     entitlements:
       path: galmail-tauri_iOS/galmail-tauri_iOS.entitlements
       properties:
         aps-environment: $(APS_ENVIRONMENT)
         com.apple.security.application-groups:
-          - group.app.galmail.client
+          - group.com.galateacorp.mail
         keychain-access-groups:
-          - $(AppIdentifierPrefix)app.galmail.client.keychain
+          - $(AppIdentifierPrefix)com.galateacorp.mail.keychain
     scheme:
       testTargets:
         - GalMailAppleTests
@@ -134,7 +134,7 @@ targets:
         CFBundleDisplayName: GalMail Notification Service
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "1"
-        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)app.galmail.client.keychain
+        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
@@ -142,14 +142,14 @@ targets:
       path: GalMailNotificationService/GalMailNotificationService.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.app.galmail.client
+          - group.com.galateacorp.mail
         keychain-access-groups:
-          - $(AppIdentifierPrefix)app.galmail.client.keychain
+          - $(AppIdentifierPrefix)com.galateacorp.mail.keychain
     settings:
       base:
         PRODUCT_NAME: GalMailNotificationService
         PRODUCT_MODULE_NAME: GalMailNotificationService
-        PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client.notification-service
+        PRODUCT_BUNDLE_IDENTIFIER: com.galateacorp.mail.notification-service
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
       groups: [app]
@@ -164,7 +164,7 @@ targets:
         CFBundleDisplayName: GalMail Share
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "1"
-        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)app.galmail.client.keychain
+        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
@@ -178,14 +178,14 @@ targets:
       path: GalMailShareExtension/GalMailShareExtension.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.app.galmail.client
+          - group.com.galateacorp.mail
         keychain-access-groups:
-          - $(AppIdentifierPrefix)app.galmail.client.keychain
+          - $(AppIdentifierPrefix)com.galateacorp.mail.keychain
     settings:
       base:
         PRODUCT_NAME: GalMailShareExtension
         PRODUCT_MODULE_NAME: GalMailShareExtension
-        PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client.share
+        PRODUCT_BUNDLE_IDENTIFIER: com.galateacorp.mail.share
         APPLICATION_EXTENSION_API_ONLY: true
         SKIP_INSTALL: true
       groups: [app]
@@ -197,6 +197,6 @@ targets:
       - path: ../../../../../swift/GalMailApple/Tests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.galateacorp.mail.tests
         GENERATE_INFOPLIST_FILE: true
       groups: [app]

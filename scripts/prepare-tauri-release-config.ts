@@ -44,7 +44,7 @@ const displaySuffix =
 const configuration = {
   productName: `GalMail${displaySuffix}`,
   version,
-  identifier: `app.galmail.client${suffix}`,
+  identifier: `com.galateacorp.mail${suffix}`,
   bundle: {
     createUpdaterArtifacts: true,
     macOS: {

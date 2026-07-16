@@ -58,7 +58,7 @@ final class NotificationService: UNNotificationServiceExtension {
     private func loadLocalRecord(for route: String) throws -> LocalNotificationRecord {
         guard
             let root = FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: "group.app.galmail.client"
+                forSecurityApplicationGroupIdentifier: "group.com.galateacorp.mail"
             )
         else { throw CocoaError(.fileNoSuchFile) }
         let digest = SHA256.hash(data: Data(route.utf8))
@@ -78,10 +78,10 @@ final class NotificationService: UNNotificationServiceExtension {
     private func loadIndexKey() throws -> SymmetricKey {
         let accessGroup = Bundle.main.object(
             forInfoDictionaryKey: "GalMailKeychainAccessGroup"
-        ) as? String ?? "app.galmail.client.keychain"
+        ) as? String ?? "com.galateacorp.mail.keychain"
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "app.galmail.client.vault",
+            kSecAttrService as String: "com.galateacorp.mail.vault",
             kSecAttrAccount as String: "notification-index-key",
             kSecAttrAccessGroup as String: accessGroup,
             kSecReturnData as String: true,

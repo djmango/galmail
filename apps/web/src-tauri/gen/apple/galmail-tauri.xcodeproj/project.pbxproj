@@ -65,6 +65,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		11D2FC08165F5EA8201BED8D /* oauth_callback_page.rs */ = {isa = PBXFileReference; path = oauth_callback_page.rs; sourceTree = "<group>"; };
 		13DA12D8AF370D20BC685086 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		1974488DE63CF2DC35F96849 /* secure_storage.rs */ = {isa = PBXFileReference; path = secure_storage.rs; sourceTree = "<group>"; };
 		1D11EDD77809EA504DCC453D /* gmail_oauth.rs */ = {isa = PBXFileReference; path = gmail_oauth.rs; sourceTree = "<group>"; };
@@ -83,6 +84,7 @@
 		8749B16C02FBF816B3D56A28 /* BlindNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlindNotification.swift; sourceTree = "<group>"; };
 		89A26656A295000BF6639CB6 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		8F5FD934AB4D61F2B8FE1F98 /* release_support.rs */ = {isa = PBXFileReference; path = release_support.rs; sourceTree = "<group>"; };
+		934BD11D65BA03EB19D1F2E1 /* unsubscribe.rs */ = {isa = PBXFileReference; path = unsubscribe.rs; sourceTree = "<group>"; };
 		96365DCBFCCA526D137B61D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		9B52E2AE06F698103E212348 /* galmail-tauri_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "galmail-tauri_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7A7E38E3163AC72AADF796E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -159,8 +161,10 @@
 				F9BA79180B1155C6A53BF8F7 /* lib.rs */,
 				284FE41070C9293F39109963 /* main.rs */,
 				3F70E622D4C72D12B3DA10F4 /* microsoft_oauth.rs */,
+				11D2FC08165F5EA8201BED8D /* oauth_callback_page.rs */,
 				8F5FD934AB4D61F2B8FE1F98 /* release_support.rs */,
 				1974488DE63CF2DC35F96849 /* secure_storage.rs */,
+				934BD11D65BA03EB19D1F2E1 /* unsubscribe.rs */,
 			);
 			name = src;
 			path = ../../src;
@@ -282,7 +286,7 @@
 			path = "galmail-tauri_iOS";
 			sourceTree = "<group>";
 		};
-		"TEMP_BF7CBB17-9CF0-464A-927D-ECB850F87C3C" /* x86_64 */ = {
+		"TEMP_825B9974-4B47-4EAB-A897-78143DA1CE89" /* x86_64 */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -515,7 +519,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galateacorp.mail.share;
 				PRODUCT_MODULE_NAME = GalMailShareExtension;
 				PRODUCT_NAME = GalMailShareExtension;
 				SDKROOT = iphoneos;
@@ -591,7 +595,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galateacorp.mail.tests;
 				PRODUCT_NAME = GalMail;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -610,7 +614,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galateacorp.mail.share;
 				PRODUCT_MODULE_NAME = GalMailShareExtension;
 				PRODUCT_NAME = GalMailShareExtension;
 				SDKROOT = iphoneos;
@@ -706,7 +710,7 @@
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galateacorp.mail;
 				PRODUCT_NAME = GalMail;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -738,7 +742,7 @@
 				);
 				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galateacorp.mail;
 				PRODUCT_NAME = GalMail;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -758,7 +762,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "app.galmail.client.notification-service";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.galateacorp.mail.notification-service";
 				PRODUCT_MODULE_NAME = GalMailNotificationService;
 				PRODUCT_NAME = GalMailNotificationService;
 				SDKROOT = iphoneos;
@@ -779,7 +783,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "app.galmail.client.notification-service";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.galateacorp.mail.notification-service";
 				PRODUCT_MODULE_NAME = GalMailNotificationService;
 				PRODUCT_NAME = GalMailNotificationService;
 				SDKROOT = iphoneos;
@@ -799,7 +803,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.galateacorp.mail.tests;
 				PRODUCT_NAME = GalMail;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";

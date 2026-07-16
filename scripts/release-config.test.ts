@@ -22,7 +22,7 @@ test("creates an isolated alpha updater configuration", async () => {
     );
     expect(await process.exited).toBe(0);
     const config = JSON.parse(await readFile(output, "utf8"));
-    expect(config.identifier).toBe("app.galmail.client.alpha");
+    expect(config.identifier).toBe("com.galateacorp.mail.alpha");
     expect(config.bundle.createUpdaterArtifacts).toBe(true);
     expect(config.plugins.updater.endpoints[0]).toEndWith(
       "/releases/download/updates-alpha/latest.json",
