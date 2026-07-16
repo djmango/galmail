@@ -96,9 +96,11 @@ bun run secrets:edit   # opens sops secrets/dev.json
 bun run dev:fixture
 ```
 
-The app only consumes `VITE_GOOGLE_DESKTOP_CLIENT_ID` (public client + PKCE).
-`GOOGLE_DESKTOP_OAUTH_JSON` is safekeeping for the Console download (includes
-Google’s desktop `client_secret`); it is not loaded into the client.
+`VITE_GOOGLE_DESKTOP_CLIENT_ID` is the public client ID (safe for the webview).
+`GOOGLE_DESKTOP_OAUTH_JSON` (in `secrets/google-desktop-oauth.json` or
+`secrets/dev.json`) holds the Desktop client download, including Google’s
+desktop `client_secret`. Google still requires that secret on the token
+endpoint even with PKCE; only the native Tauri process reads it from sops.
 
 Security and privacy policies: [SECURITY.md](SECURITY.md),
 [privacy policy](docs/privacy-policy.md), and

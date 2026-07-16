@@ -40,18 +40,30 @@ describe("security policy guards", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("forbids provider client-secret assumptions in public clients", () => {
-    const forbidden =
-      /\b(?:GMAIL|GOOGLE|MS|MICROSOFT)_CLIENT_SECRET\b|["']client_secret["']/;
+  it("keeps provider client secrets out of the webview and example env", () => {
+    // Google Desktop token exchange still needs the Console-issued secret in
+    // the native process (via GOOGLE_DESKTOP_OAUTH_JSON). Forbid dedicated
+    // *_CLIENT_SECRET env names and any secret material in frontend sources.
+    const forbiddenEnv = /\b(?:GMAIL|GOOGLE|MS|MICROSOFT)_CLIENT_SECRET\b/;
+    const forbiddenLiteral = /["']client_secret["']/;
+    const frontend = productionSources().filter((path) => {
+      const rel = relative(root, path);
+      return (
+        !rel.startsWith("services/") &&
+        !rel.startsWith("crates/") &&
+        !rel.endsWith(".rs")
+      );
+    });
     const inspected = [
-      ...productionSources().filter(
-        (path) => !relative(root, path).startsWith("services/"),
-      ),
+      ...frontend,
       resolve(root, "secrets/dev.example.json"),
       resolve(root, "apps/web/src-tauri/tauri.conf.json"),
     ];
     const offenders = inspected
-      .filter((path) => forbidden.test(readFileSync(path, "utf8")))
+      .filter((path) => {
+        const text = readFileSync(path, "utf8");
+        return forbiddenEnv.test(text) || forbiddenLiteral.test(text);
+      })
       .map((path) => relative(root, path));
 
     expect(offenders).toEqual([]);
