@@ -119,6 +119,12 @@ export const Icons = {
       <path d="M4 12l16-8-6 16-2-6-8-2z" />
     </Svg>
   ),
+  clock: (props: IconProps) => (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </Svg>
+  ),
   paperclip: (props: IconProps) => (
     <Svg {...props}>
       <path d="M21.4 11.6l-8.5 8.5a5 5 0 0 1-7.1-7.1l9.2-9.2a3.2 3.2 0 0 1 4.5 4.5l-9.2 9.1a1.4 1.4 0 0 1-2-2l8.1-8.1" />
@@ -147,6 +153,34 @@ export const Icons = {
   chevronRight: (props: IconProps) => (
     <Svg {...props}>
       <path d="M10 6l6 6-6 6" />
+    </Svg>
+  ),
+  menu: (props: IconProps) => (
+    <Svg {...props}>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </Svg>
+  ),
+  moreHorizontal: (props: IconProps) => (
+    <Svg {...props}>
+      <circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.25" fill="currentColor" stroke="none" />
+    </Svg>
+  ),
+  moreVertical: (props: IconProps) => (
+    <Svg {...props}>
+      <circle cx="12" cy="5" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="1.25" fill="currentColor" stroke="none" />
+    </Svg>
+  ),
+  info: (props: IconProps) => (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 10v6" />
+      <path d="M12 7h.01" />
     </Svg>
   ),
   layoutSingle: (props: IconProps) => (
