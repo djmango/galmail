@@ -61,6 +61,63 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export type ComposeSendOptions = {
+  /** ISO timestamp; when set, message is held in outbox until then. */
+  sendAt?: string;
+};
+
+function formatScheduleLabel(date: Date): string {
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function toDatetimeLocalValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function scheduleQuickPicks(now = new Date()): Array<{
+  id: string;
+  label: string;
+  at: Date;
+}> {
+  const picks: Array<{ id: string; label: string; at: Date }> = [];
+  const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
+  picks.push({ id: "1h", label: "In 1 hour", at: inOneHour });
+
+  if (now.getHours() < 21) {
+    const laterToday = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+    if (laterToday.getDate() === now.getDate()) {
+      picks.push({ id: "later-today", label: "Later today", at: laterToday });
+    }
+  }
+
+  const tomorrowMorning = new Date(now);
+  tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+  tomorrowMorning.setHours(9, 0, 0, 0);
+  picks.push({
+    id: "tomorrow-morning",
+    label: "Tomorrow morning",
+    at: tomorrowMorning,
+  });
+
+  const tomorrowAfternoon = new Date(now);
+  tomorrowAfternoon.setDate(tomorrowAfternoon.getDate() + 1);
+  tomorrowAfternoon.setHours(14, 0, 0, 0);
+  picks.push({
+    id: "tomorrow-afternoon",
+    label: "Tomorrow afternoon",
+    at: tomorrowAfternoon,
+  });
+
+  return picks;
+}
+
 export function ComposeModal(props: {
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
@@ -70,7 +127,7 @@ export function ComposeModal(props: {
   onClose: () => void;
   onMinimize?: (draft: ComposeDraft) => void;
   onSaveDraft?: (draft: ComposeDraft) => Promise<void>;
-  onSend: (draft: ComposeDraft) => Promise<void>;
+  onSend: (draft: ComposeDraft, options?: ComposeSendOptions) => Promise<void>;
 }) {
   const [to, setTo] = useState(props.initialDraft?.to ?? "");
   const [subject, setSubject] = useState(props.initialDraft?.subject ?? "");
@@ -87,12 +144,16 @@ export function ComposeModal(props: {
   const [busy, setBusy] = useState(false);
   const [draftStatus, setDraftStatus] = useState("Draft local");
   const [dragging, setDragging] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
+  const [customAt, setCustomAt] = useState("");
   const [showCcBcc, setShowCcBcc] = useState(
     Boolean(props.initialDraft?.cc || props.initialDraft?.bcc),
   );
   const [activeField, setActiveField] = useState<ComposeFieldId>("to");
   const initialized = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const scheduleRef = useRef<HTMLDivElement>(null);
   const toInputRef = useRef<HTMLInputElement>(null);
   const ccInputRef = useRef<HTMLInputElement>(null);
   const bccInputRef = useRef<HTMLInputElement>(null);
@@ -145,10 +206,34 @@ export function ComposeModal(props: {
   }, []);
 
   useEffect(() => {
+    if (!scheduleOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (!scheduleRef.current?.contains(event.target as Node)) {
+        setScheduleOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setScheduleOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", onPointer);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("mousedown", onPointer);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [scheduleOpen]);
+
+  useEffect(() => {
     if (!fieldIds.includes(activeField)) {
       setActiveField(fieldIds[0] ?? "to");
     }
   }, [fieldIds, activeField]);
+
+  const quickPicks = useMemo(() => scheduleQuickPicks(), []);
 
   useEffect(() => {
     if (props.initialDraft) {
@@ -280,7 +365,12 @@ export function ComposeModal(props: {
           e.preventDefault();
           setBusy(true);
           try {
-            await props.onSend(current);
+            await props.onSend(
+              current,
+              scheduledAt
+                ? { sendAt: scheduledAt.toISOString() }
+                : undefined,
+            );
           } finally {
             setBusy(false);
           }
@@ -513,16 +603,108 @@ export function ComposeModal(props: {
             <span className="compose-draft-status" aria-live="polite">
               {draftStatus}
             </span>
+            {scheduledAt && (
+              <span className="compose-schedule-chip" title="Local schedule">
+                <Icons.clock />
+                <strong>{formatScheduleLabel(scheduledAt)}</strong>
+                <button
+                  type="button"
+                  className="compose-schedule-chip-clear"
+                  aria-label="Clear schedule"
+                  onClick={() => setScheduledAt(null)}
+                >
+                  <Icons.close />
+                </button>
+              </span>
+            )}
           </div>
-          <ActionButton
-            label={busy ? "Sending…" : "Send"}
-            icon={<Icons.send />}
-            variant="primary"
-            reveal={false}
-            type="submit"
-            disabled={busy}
-            shortcutKeys={["meta+enter", "ctrl+enter"]}
-          />
+          <div className="compose-toolbar-end">
+            <div className="compose-schedule" ref={scheduleRef}>
+              <ActionButton
+                label="Schedule send"
+                icon={<Icons.clock />}
+                iconOnly
+                showShortcut={false}
+                aria-expanded={scheduleOpen}
+                aria-haspopup="menu"
+                onClick={() => setScheduleOpen((open) => !open)}
+              />
+              {scheduleOpen && (
+                <div
+                  className="compose-schedule-menu"
+                  role="menu"
+                  aria-label="Schedule send"
+                >
+                  <div className="compose-schedule-menu-title">
+                    Send later
+                  </div>
+                  {quickPicks.map((pick) => (
+                    <button
+                      key={pick.id}
+                      type="button"
+                      role="menuitem"
+                      className="compose-schedule-option"
+                      onClick={() => {
+                        setScheduledAt(pick.at);
+                        setCustomAt(toDatetimeLocalValue(pick.at));
+                        setScheduleOpen(false);
+                      }}
+                    >
+                      <span>{pick.label}</span>
+                      <span className="compose-schedule-option-when">
+                        {formatScheduleLabel(pick.at)}
+                      </span>
+                    </button>
+                  ))}
+                  <div className="compose-schedule-custom">
+                    <label>
+                      Custom date and time
+                      <input
+                        type="datetime-local"
+                        value={customAt}
+                        min={toDatetimeLocalValue(new Date())}
+                        onChange={(event) => setCustomAt(event.target.value)}
+                      />
+                    </label>
+                    <ActionButton
+                      label="Use custom time"
+                      showShortcut={false}
+                      disabled={!customAt}
+                      onClick={() => {
+                        const at = new Date(customAt);
+                        if (Number.isNaN(at.getTime()) || at <= new Date()) {
+                          return;
+                        }
+                        setScheduledAt(at);
+                        setScheduleOpen(false);
+                      }}
+                    />
+                    <p className="compose-schedule-hint">
+                      Local schedule: sends when GalMail is open. Not a Gmail
+                      server-side schedule.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <ActionButton
+              label={
+                busy
+                  ? scheduledAt
+                    ? "Scheduling…"
+                    : "Sending…"
+                  : scheduledAt
+                    ? "Schedule send"
+                    : "Send"
+              }
+              icon={scheduledAt ? <Icons.clock /> : <Icons.send />}
+              variant="primary"
+              reveal={false}
+              type="submit"
+              disabled={busy}
+              shortcutKeys={["meta+enter", "ctrl+enter"]}
+            />
+          </div>
         </div>
       </form>
     </div>
