@@ -247,11 +247,17 @@ function attachmentPart(attachment: DraftAttachment): string {
 export function generateMime(draft: ComposeDraft): string {
   const mixed = `galmail-mixed-${crypto.randomUUID()}`;
   const alternative = `galmail-alt-${crypto.randomUUID()}`;
+  const from =
+    draft.alias?.email?.trim()
+      ? draft.alias
+      : { email: "me", name: draft.alias?.name };
   const headers = [
     `Date: ${new Date().toUTCString()}`,
     `Message-ID: <${crypto.randomUUID()}@galmail.local>`,
-    `From: ${formatAddress(draft.alias ?? { email: "me" })}`,
-    `To: ${draft.to.map(formatAddress).join(", ")}`,
+    `From: ${formatAddress(from)}`,
+    ...(draft.to.length
+      ? [`To: ${draft.to.map(formatAddress).join(", ")}`]
+      : []),
     ...(draft.cc?.length
       ? [`Cc: ${draft.cc.map(formatAddress).join(", ")}`]
       : []),
@@ -265,8 +271,8 @@ export function generateMime(draft: ComposeDraft): string {
       : []),
     "MIME-Version: 1.0",
     `Content-Type: multipart/mixed; boundary="${mixed}"`,
-    ...(draft.requestReadReceipt && draft.alias
-      ? [`Disposition-Notification-To: ${formatAddress(draft.alias)}`]
+    ...(draft.requestReadReceipt && from.email.trim()
+      ? [`Disposition-Notification-To: ${formatAddress(from)}`]
       : []),
     "",
   ];

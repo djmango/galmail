@@ -158,6 +158,42 @@ describe("MemorySyncEngine", () => {
     ).toBe("cancelled");
   });
 
+  it("does not auto-retry failed outbox rows until retry or re-enqueue", async () => {
+    const accountId = asAccountId("gmail:demo");
+    let saves = 0;
+    const provider = fixtureProvider();
+    provider.saveDraft = async () => {
+      saves += 1;
+      throw new Error("boom");
+    };
+    const sync = new MemorySyncEngine([provider]);
+    const draft = {
+      id: "d-fail",
+      accountId,
+      to: [{ email: "a@example.com" }],
+      subject: "Fail",
+      bodyHtml: "<p>x</p>",
+      bodyText: "x",
+      updatedAt: new Date().toISOString(),
+    };
+    await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft },
+    });
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 1,
+    });
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 0,
+    });
+    expect(saves).toBe(1);
+    expect(sync.getOutbox()[0]?.lastError).toBe("boom");
+  });
+
   it("is deterministic under an injected clock and id source", async () => {
     const now = new Date("2026-07-15T12:00:00.000Z");
     const ids = ["mutation-1", "mutation-2"];

@@ -106,24 +106,68 @@ export class MemorySyncEngine implements SyncEngine {
           draftId &&
           item.kind === "save_draft" &&
           item.targetIds[0] === draftId &&
-          item.status === "pending"
+          (item.status === "pending" || item.status === "failed")
         ) {
           item.status = "cancelled";
         }
       }
     }
     if (mutation.kind === "save_draft") {
+      const draftKey = mutation.targetIds[0];
+      const priorProviderDraftId = this.outbox
+        .filter(
+          (item) =>
+            item.kind === "save_draft" &&
+            item.accountId === mutation.accountId &&
+            item.targetIds[0] === draftKey,
+        )
+        .map((item) => {
+          const draft = item.payload?.draft as
+            | { providerDraftId?: string }
+            | undefined;
+          return (
+            draft?.providerDraftId ??
+            (typeof item.payload?.providerDraftId === "string"
+              ? item.payload.providerDraftId
+              : undefined)
+          );
+        })
+        .find(Boolean);
+      const withProviderId = (
+        payload: OutboxMutation["payload"],
+      ): OutboxMutation["payload"] => {
+        const draft = payload?.draft as Record<string, unknown> | undefined;
+        if (!draft || typeof draft !== "object" || !priorProviderDraftId) {
+          return payload;
+        }
+        if (typeof draft.providerDraftId === "string" && draft.providerDraftId) {
+          return payload;
+        }
+        return {
+          ...payload,
+          draft: { ...draft, providerDraftId: priorProviderDraftId },
+          providerDraftId: priorProviderDraftId,
+        };
+      };
       const existing = this.outbox.find(
         (item) =>
           item.kind === "save_draft" &&
-          item.status === "pending" &&
+          (item.status === "pending" || item.status === "failed") &&
           item.accountId === mutation.accountId &&
-          item.targetIds[0] === mutation.targetIds[0],
+          item.targetIds[0] === draftKey,
       );
       if (existing) {
-        existing.payload = mutation.payload;
+        existing.payload = withProviderId(mutation.payload);
+        existing.status = "pending";
+        existing.lastError = undefined;
+        this.emit({
+          type: "outbox",
+          mutationId: existing.id,
+          status: "pending",
+        });
         return existing;
       }
+      mutation = { ...mutation, payload: withProviderId(mutation.payload) };
     }
     const row: OutboxMutation = {
       ...mutation,
@@ -143,7 +187,13 @@ export class MemorySyncEngine implements SyncEngine {
     let flushed = 0;
     let failed = 0;
     for (const m of this.outbox) {
-      if (m.status === "done" || m.status === "cancelled") continue;
+      if (
+        m.status === "done" ||
+        m.status === "cancelled" ||
+        m.status === "failed"
+      ) {
+        continue;
+      }
       if (accountId && m.accountId !== accountId) continue;
       if (m.availableAt && new Date(m.availableAt) > this.now()) continue;
       m.status = "inflight";
@@ -157,10 +207,19 @@ export class MemorySyncEngine implements SyncEngine {
             m.payload?.draft as unknown as ComposeDraft,
           );
         } else if (m.kind === "save_draft") {
-          await provider.saveDraft(
+          const providerDraftId = await provider.saveDraft(
             m.accountId,
             m.payload?.draft as unknown as ComposeDraft,
           );
+          const draft = m.payload?.draft as Record<string, unknown> | undefined;
+          m.payload = {
+            ...m.payload,
+            providerDraftId,
+            draft:
+              draft && typeof draft === "object"
+                ? { ...draft, providerDraftId }
+                : draft,
+          };
         } else if (m.kind === "delete_draft") {
           await provider.deleteDraft(
             m.accountId,
@@ -174,6 +233,7 @@ export class MemorySyncEngine implements SyncEngine {
           });
         }
         m.status = "done";
+        m.lastError = undefined;
         flushed += 1;
         this.emit({ type: "outbox", mutationId: m.id, status: "done" });
       } catch (err) {

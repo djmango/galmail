@@ -170,4 +170,74 @@ describe("native Gmail sync restart contract", () => {
     const outbox = await store.list<{ status: string }>(accountId, "outbox");
     expect(outbox[0]?.status).toBe("done");
   });
+
+  test("save_draft surfaces errors, skips auto-retry, and keeps providerDraftId", async () => {
+    const store = new MockNativeStore();
+    let saves = 0;
+    const failing = provider([]);
+    failing.saveDraft = async (_accountId, draft) => {
+      saves += 1;
+      if (saves === 1) throw new Error("Gmail request failed (400): Invalid From");
+      return draft.providerDraftId ?? "gmail-draft-9";
+    };
+    const sync = new NativeGmailSyncEngine(failing, store);
+    const draft = {
+      id: "local-d1",
+      accountId,
+      to: [{ email: "a@example.com" }],
+      subject: "Hi",
+      bodyHtml: "<p>x</p>",
+      bodyText: "x",
+      updatedAt: new Date().toISOString(),
+    };
+    const first = await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft },
+    });
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 1,
+    });
+    expect(first.lastError).toContain("Invalid From");
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 0,
+    });
+    expect(first.attempts).toBe(1);
+
+    const second = await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft: { ...draft, subject: "Hi again" } },
+    });
+    expect(second.id).toBe(first.id);
+    expect(second.status).toBe("pending");
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 1,
+      failed: 0,
+    });
+    expect(
+      (second.payload?.draft as { providerDraftId?: string } | undefined)
+        ?.providerDraftId,
+    ).toBe("gmail-draft-9");
+
+    const third = await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft: { ...draft, subject: "Third" } },
+    });
+    expect(
+      (third.payload?.draft as { providerDraftId?: string } | undefined)
+        ?.providerDraftId,
+    ).toBe("gmail-draft-9");
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 1,
+      failed: 0,
+    });
+    expect(saves).toBe(3);
+  });
 });

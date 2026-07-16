@@ -274,7 +274,9 @@ export class NativeGmailSyncEngine implements SyncEngine {
       (message) => message.accountId === accountId,
     );
     const rebuiltThreads = threadFromMessages(accountId, allMessages);
-    this.threads.clear();
+    for (const [id, thread] of this.threads) {
+      if (thread.accountId === accountId) this.threads.delete(id);
+    }
     for (const thread of rebuiltThreads) this.threads.set(thread.id, thread);
     const labels = await provider.listLabels(accountId);
     const contacts = new Map<string, MailMessage["from"]>();
@@ -353,7 +355,7 @@ export class NativeGmailSyncEngine implements SyncEngine {
           draftId &&
           item.kind === "save_draft" &&
           item.targetIds[0] === draftId &&
-          item.status === "pending"
+          (item.status === "pending" || item.status === "failed")
         ) {
           item.status = "cancelled";
           await this.store.put(item.accountId, "outbox", item.id, item);
@@ -361,23 +363,67 @@ export class NativeGmailSyncEngine implements SyncEngine {
       }
     }
     if (input.kind === "save_draft") {
+      const draftKey = input.targetIds[0];
+      const priorProviderDraftId = [...this.outbox.values()]
+        .filter(
+          (item) =>
+            item.kind === "save_draft" &&
+            item.accountId === input.accountId &&
+            item.targetIds[0] === draftKey,
+        )
+        .map((item) => {
+          const draft = item.payload?.draft as
+            | { providerDraftId?: string }
+            | undefined;
+          return (
+            draft?.providerDraftId ??
+            (typeof item.payload?.providerDraftId === "string"
+              ? item.payload.providerDraftId
+              : undefined)
+          );
+        })
+        .find(Boolean);
+      const withProviderId = (
+        payload: OutboxMutation["payload"],
+      ): OutboxMutation["payload"] => {
+        const draft = payload?.draft as Record<string, unknown> | undefined;
+        if (!draft || typeof draft !== "object" || !priorProviderDraftId) {
+          return payload;
+        }
+        if (typeof draft.providerDraftId === "string" && draft.providerDraftId) {
+          return payload;
+        }
+        return {
+          ...payload,
+          draft: { ...draft, providerDraftId: priorProviderDraftId },
+          providerDraftId: priorProviderDraftId,
+        };
+      };
       const existing = [...this.outbox.values()].find(
         (item) =>
           item.kind === "save_draft" &&
-          item.status === "pending" &&
+          (item.status === "pending" || item.status === "failed") &&
           item.accountId === input.accountId &&
-          item.targetIds[0] === input.targetIds[0],
+          item.targetIds[0] === draftKey,
       );
       if (existing) {
-        existing.payload = input.payload;
+        existing.payload = withProviderId(input.payload);
+        existing.status = "pending";
+        existing.lastError = undefined;
         await this.store.put(
           existing.accountId,
           "outbox",
           existing.id,
           existing,
         );
+        this.emit({
+          type: "outbox",
+          mutationId: existing.id,
+          status: existing.status,
+        });
         return existing;
       }
+      input = { ...input, payload: withProviderId(input.payload) };
     }
     const mutation: OutboxMutation = {
       ...input,
@@ -408,6 +454,7 @@ export class NativeGmailSyncEngine implements SyncEngine {
       if (
         mutation.status === "done" ||
         mutation.status === "cancelled" ||
+        mutation.status === "failed" ||
         (accountId && mutation.accountId !== accountId)
       ) {
         continue;
@@ -429,10 +476,21 @@ export class NativeGmailSyncEngine implements SyncEngine {
             mutation.payload?.draft as unknown as ComposeDraft,
           );
         } else if (mutation.kind === "save_draft") {
-          await provider.saveDraft(
+          const providerDraftId = await provider.saveDraft(
             mutation.accountId,
             mutation.payload?.draft as unknown as ComposeDraft,
           );
+          const draft = mutation.payload?.draft as
+            | Record<string, unknown>
+            | undefined;
+          mutation.payload = {
+            ...mutation.payload,
+            providerDraftId,
+            draft:
+              draft && typeof draft === "object"
+                ? { ...draft, providerDraftId }
+                : draft,
+          };
         } else if (mutation.kind === "delete_draft") {
           await provider.deleteDraft(
             mutation.accountId,
@@ -448,9 +506,10 @@ export class NativeGmailSyncEngine implements SyncEngine {
         mutation.status = "done";
         mutation.lastError = undefined;
         flushed += 1;
-      } catch {
+      } catch (error) {
         mutation.status = "failed";
-        mutation.lastError = "provider operation failed";
+        mutation.lastError =
+          error instanceof Error ? error.message : String(error);
         failed += 1;
       }
       await Promise.all([
