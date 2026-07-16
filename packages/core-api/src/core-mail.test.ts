@@ -43,6 +43,21 @@ describe("MIME contract", () => {
     expect(new TextDecoder().decode(parsed.attachments[0]?.data)).toBe("hello");
   });
 
+  test("omits empty To and falls back From when alias email is blank", () => {
+    const raw = generateMime({
+      id: "draft-empty",
+      accountId: asAccountId("gmail:test"),
+      alias: { email: "   " },
+      to: [],
+      subject: "WIP",
+      bodyText: "drafting",
+      bodyHtml: "<p>drafting</p>",
+      updatedAt: "2026-07-15T00:00:00.000Z",
+    });
+    expect(raw).toContain("From: me");
+    expect(raw).not.toMatch(/^To:/m);
+  });
+
   test("parses nested multipart and rejects excessive payloads", () => {
     const raw = [
       'Content-Type: multipart/alternative; boundary="x"',
@@ -136,6 +151,17 @@ describe("mail content security", () => {
     );
     expect(document).toContain("default-src 'none'");
     expect(document).not.toContain("tracker.invalid");
+    expect(document).toContain("color-scheme:light");
+  });
+
+  test("builds a dark reading document when colorScheme is dark", () => {
+    const document = buildIsolatedMailDocument("<p>Hello</p>", {
+      colorScheme: "dark",
+    });
+    expect(document).toContain("color-scheme:dark");
+    expect(document).toContain("#0d0e10");
+    expect(document).toContain("<p>Hello</p>");
+    expect(document).toContain("<body>");
   });
 
   test("flags tracking and dangerous attachments", () => {

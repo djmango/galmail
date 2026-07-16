@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   buildIsolatedMailDocument,
   splitQuotedHistory,
+  type MailColorScheme,
 } from "@galmail/core-api";
 import { ActionButton } from "./ActionButton";
 
@@ -9,24 +10,28 @@ export function SafeMailBody(props: {
   html?: string;
   text?: string;
   sender: string;
+  theme?: MailColorScheme;
 }) {
+  const colorScheme: MailColorScheme =
+    props.theme === "light" ? "light" : "dark";
   const [showHtml, setShowHtml] = useState(Boolean(props.html));
-  const [allowRemoteImages, setAllowRemoteImages] = useState(false);
+  const [allowRemoteImages, setAllowRemoteImages] = useState(true);
   const document = useMemo(
     () =>
       props.html
         ? buildIsolatedMailDocument(props.html, {
             allowRemoteImages,
             stripTrackingParameters: true,
+            colorScheme,
           })
         : "",
-    [props.html, allowRemoteImages],
+    [props.html, allowRemoteImages, colorScheme],
   );
 
   if (!props.html || !showHtml) {
     const plain = splitQuotedHistory(props.text || "No readable body.");
     return (
-      <div className="safe-mail-body">
+      <div className="safe-mail-body" data-mail-scheme={colorScheme}>
         <pre className="mail-plain-text">{plain.visible}</pre>
         {plain.quoted && (
           <details className="quoted-history">
@@ -45,7 +50,7 @@ export function SafeMailBody(props: {
   }
 
   return (
-    <div className="safe-mail-body">
+    <div className="safe-mail-body" data-mail-scheme={colorScheme}>
       <div className="mail-security-controls" role="status">
         <span>
           {allowRemoteImages

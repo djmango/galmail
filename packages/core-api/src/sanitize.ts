@@ -60,9 +60,69 @@ const ALLOWED_ATTRIBUTES = new Set([
   "width",
 ]);
 
+export type MailColorScheme = "light" | "dark";
+
 export interface HtmlSanitizeOptions {
   allowRemoteImages?: boolean;
   stripTrackingParameters?: boolean;
+  /** Base chrome for the sandboxed reading document. Defaults to light. */
+  colorScheme?: MailColorScheme;
+}
+
+const MAIL_DOCUMENT_THEME: Record<
+  MailColorScheme,
+  {
+    bg: string;
+    fg: string;
+    muted: string;
+    link: string;
+    linkVisited: string;
+    quote: string;
+    preBg: string;
+    hr: string;
+  }
+> = {
+  dark: {
+    // Match app `--bg1` (reading / message-card), not elevated `--bg2`.
+    bg: "#0d0e10",
+    fg: "#e6e8ec",
+    muted: "#969cab",
+    link: "#6d78dd",
+    linkVisited: "#8b93e0",
+    quote: "rgba(255, 255, 255, 0.18)",
+    preBg: "rgba(255, 255, 255, 0.05)",
+    hr: "rgba(255, 255, 255, 0.12)",
+  },
+  light: {
+    bg: "#fbf6ec",
+    fg: "#2b2620",
+    muted: "#5d5346",
+    link: "#955e0a",
+    linkVisited: "#7d4d06",
+    quote: "rgba(43, 38, 32, 0.2)",
+    preBg: "rgba(43, 38, 32, 0.05)",
+    hr: "rgba(43, 38, 32, 0.12)",
+  },
+};
+
+function mailDocumentBaseStyles(scheme: MailColorScheme): string {
+  const t = MAIL_DOCUMENT_THEME[scheme];
+  return [
+    `html{color-scheme:${scheme};background:${t.bg}}`,
+    `body{margin:0;padding:0;background:${t.bg};color:${t.fg};font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word}`,
+    `a{color:${t.link}}`,
+    `a:visited{color:${t.linkVisited}}`,
+    "img{max-width:100%;height:auto}",
+    "table{border-collapse:collapse;max-width:100%}",
+    "td,th{vertical-align:top}",
+    "ul,ol{padding-left:1.4em}",
+    "p,li{margin:0.55em 0}",
+    "h1,h2,h3,h4,h5,h6{line-height:1.25;margin:0.8em 0 0.4em;font-weight:600}",
+    `hr{border:0;border-top:1px solid ${t.hr};margin:1em 0}`,
+    `pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.92em}`,
+    `pre{margin:0.7em 0;padding:10px 12px;border-radius:6px;background:${t.preBg};overflow-x:auto;white-space:pre-wrap}`,
+    `blockquote{margin:0.6em 0;padding:0 0 0 12px;border-left:3px solid ${t.quote};color:${t.muted}}`,
+  ].join("");
 }
 
 function escapeText(value: string): string {
@@ -178,7 +238,10 @@ export function buildIsolatedMailDocument(
   options: HtmlSanitizeOptions = {},
 ): string {
   const sanitized = sanitizeHtml(html, options);
-  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${options.allowRemoteImages ? "https: http:" : "'none'"} cid: data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><style>body{font:14px system-ui;color:#202124;margin:0;overflow-wrap:anywhere}img{max-width:100%;height:auto}blockquote{border-left:3px solid #ddd;margin-left:0;padding-left:12px}</style>${sanitized}`;
+  const scheme: MailColorScheme =
+    options.colorScheme === "dark" ? "dark" : "light";
+  const csp = `default-src 'none'; img-src ${options.allowRemoteImages ? "https: http:" : "'none'"} cid: data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles(scheme)}</style></head><body>${sanitized}</body></html>`;
 }
 
 export function isTrackingImage(input: {
