@@ -1,4 +1,5 @@
 import type { RemoteProcessingConsent } from "@galmail/core-api";
+import type { ThemePreference } from "../lib/themes";
 import { ActionButton } from "./ActionButton";
 import { Icons } from "./Icons";
 import { SettingsBar, type SettingsState } from "./SettingsBar";
@@ -8,6 +9,12 @@ export type SettingsAccount = {
   provider: "gmail" | "microsoft" | "fixture";
   live: boolean;
 };
+
+const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
+  { id: "system", label: "Auto" },
+];
 
 export function SettingsPanel(props: {
   state: SettingsState;
@@ -29,6 +36,7 @@ export function SettingsPanel(props: {
   const liveGmail = props.accounts.find(
     (account) => account.provider === "gmail" && account.live,
   );
+
   return (
     <div
       className="modal settings-modal"
@@ -42,9 +50,9 @@ export function SettingsPanel(props: {
         aria-modal="true"
         aria-labelledby="settings-title"
       >
-        <div className="settings-head">
+        <header className="settings-head">
           <div>
-            <p className="eyebrow">Account</p>
+            <p className="eyebrow">GalMail</p>
             <h2 id="settings-title">Settings</h2>
           </div>
           <ActionButton
@@ -53,158 +61,242 @@ export function SettingsPanel(props: {
             iconOnly
             onClick={props.onClose}
           />
-        </div>
+        </header>
 
-        <div className="settings-section">
-          <h3>Accounts and devices</h3>
-          <p className="settings-copy">
-            {props.providerMode === "live"
-              ? "Using live provider accounts on this device."
-              : "Showing fixture mail until you connect a real account."}
-          </p>
-          {props.accounts.map((account) => (
-            <div
-              className="account-row"
-              key={`${account.provider}:${account.email}`}
-            >
-              <div>
-                <strong>{account.email}</strong>
-                <span>
-                  {account.provider === "gmail"
-                    ? "Gmail"
-                    : account.provider === "microsoft"
-                      ? "Microsoft 365"
-                      : "Fixture"}
-                  {account.live ? " · live" : " · demo"}
-                </span>
-              </div>
-              <span className="account-state">
-                {account.live ? "Connected" : "Demo"}
-              </span>
+        <div className="settings-body">
+          <section className="settings-section">
+            <h3 className="settings-section-title">Accounts</h3>
+            <p className="settings-copy">
+              {props.providerMode === "live"
+                ? "Using live provider accounts on this device."
+                : "Showing fixture mail until you connect a real account."}
+            </p>
+            <div className="settings-group">
+              {props.accounts.map((account) => (
+                <div
+                  className="settings-row account-row"
+                  key={`${account.provider}:${account.email}`}
+                >
+                  <div className="settings-row-text">
+                    <strong>{account.email}</strong>
+                    <span>
+                      {account.provider === "gmail"
+                        ? "Gmail"
+                        : account.provider === "microsoft"
+                          ? "Microsoft 365"
+                          : "Fixture"}
+                      {account.live ? " · live" : " · demo"}
+                    </span>
+                  </div>
+                  <span className="account-state">
+                    {account.live ? "Connected" : "Demo"}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-          {props.canConnectGmail && !liveGmail && (
-            <ActionButton
-              label={
-                props.gmailConnecting
-                  ? "Waiting for Google…"
-                  : "Sign in with Google"
-              }
-              icon={<Icons.google />}
-              variant="primary"
-              reveal={false}
-              showShortcut={false}
-              disabled={props.gmailConnecting}
-              onClick={props.onConnectGmail}
-            />
-          )}
-          {liveGmail && props.onDisconnectGmail && (
-            <ActionButton
-              label="Disconnect Gmail"
-              onClick={props.onDisconnectGmail}
-            />
-          )}
-          {props.connectError && (
-            <p className="settings-note" role="alert">
-              {props.connectError}
-            </p>
-          )}
-          <ActionButton
-            label="Link another device"
-            onClick={props.onLinkDevice}
-          />
-          {props.inviteCode && (
-            <p className="settings-note" role="status">
-              Device code <strong>{props.inviteCode}</strong> expires in 15
-              minutes.
-            </p>
-          )}
-        </div>
-
-        <div className="settings-section">
-          <h3>Appearance</h3>
-          <div className="settings-control">
-            <span>Theme</span>
-            <div className="settings-choice" role="group" aria-label="Theme">
-              {(["dark", "light"] as const).map((theme) => (
+            <div className="settings-actions">
+              {props.canConnectGmail && !liveGmail && (
                 <ActionButton
-                  key={theme}
-                  label={theme === "dark" ? "Dark" : "Light"}
-                  aria-pressed={props.state.theme === theme}
-                  variant={props.state.theme === theme ? "primary" : "default"}
-                  onClick={() => props.onChange({ theme })}
+                  label={
+                    props.gmailConnecting
+                      ? "Waiting for Google…"
+                      : "Sign in with Google"
+                  }
+                  icon={<Icons.google />}
+                  variant="primary"
+                  reveal={false}
+                  showShortcut={false}
+                  disabled={props.gmailConnecting}
+                  onClick={props.onConnectGmail}
                 />
-              ))}
-            </div>
-          </div>
-          <div className="settings-control settings-layout-control">
-            <span>Inbox layout</span>
-            <SettingsBar state={props.state} onChange={props.onChange} />
-          </div>
-        </div>
-
-        <div className="settings-section">
-          <h3>Privacy</h3>
-          <p className="settings-copy">
-            Mail stays on your devices by default. Remote features can be
-            enabled separately for each account.
-          </p>
-          <div className="settings-control">
-            <div>
-              <strong>Remote processing</strong>
-              <span>
-                {props.consent?.enabled ? "Enabled for Gmail" : "Off"}
-              </span>
-            </div>
-            <ActionButton
-              label="Manage"
-              onClick={props.onOpenRemoteProcessing}
-            />
-          </div>
-          <div className="settings-control settings-switch-row">
-            <div>
-              <strong id="read-receipt-label">Request read receipts</strong>
-              <span>Ask recipient clients for a read confirmation</span>
-            </div>
-            <label className="ios-switch">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-labelledby="read-receipt-label"
-                checked={props.state.requestReadReceipt}
-                onChange={(event) =>
-                  props.onChange({ requestReadReceipt: event.target.checked })
-                }
+              )}
+              {liveGmail && props.onDisconnectGmail && (
+                <ActionButton
+                  label="Disconnect Gmail"
+                  onClick={props.onDisconnectGmail}
+                />
+              )}
+              <ActionButton
+                label="Link another device"
+                onClick={props.onLinkDevice}
               />
-              <span className="ios-switch-track" aria-hidden />
-            </label>
-          </div>
-        </div>
+            </div>
+            {props.connectError && (
+              <p className="settings-note settings-note-error" role="alert">
+                {props.connectError}
+              </p>
+            )}
+            {props.inviteCode && (
+              <p className="settings-note" role="status">
+                Device code <strong>{props.inviteCode}</strong> expires in 15
+                minutes.
+              </p>
+            )}
+          </section>
 
-        <div className="settings-section settings-advanced">
-          <div className="settings-control">
-            <div>
-              <h3>Advanced</h3>
-              <span>Developer diagnostics and runtime state</span>
+          <section className="settings-section">
+            <h3 className="settings-section-title">Appearance</h3>
+            <div className="settings-group">
+              <div className="settings-row settings-row-stack">
+                <div className="settings-row-text">
+                  <strong id="theme-label">Theme</strong>
+                  <span>Light, dark, or match your system</span>
+                </div>
+                <div
+                  className="settings-segment"
+                  role="group"
+                  aria-labelledby="theme-label"
+                >
+                  {THEME_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="settings-segment-option"
+                      aria-pressed={props.state.theme === option.id}
+                      onClick={() => props.onChange({ theme: option.id })}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row settings-row-stack">
+                <div className="settings-row-text">
+                  <strong id="layout-label">Inbox layout</strong>
+                  <span>How threads and reading panes are arranged</span>
+                </div>
+                <SettingsBar state={props.state} onChange={props.onChange} />
+              </div>
             </div>
-            <label className="toggle-label">
-              <input
-                type="checkbox"
-                checked={props.state.developerMode}
-                onChange={(event) =>
-                  props.onChange({ developerMode: event.target.checked })
-                }
-              />
-              Developer mode
-            </label>
-          </div>
-          {props.state.developerMode && (
-            <div className="diagnostics" aria-label="Developer diagnostics">
-              {props.diagnostics.map((item) => (
-                <code key={item}>{item}</code>
-              ))}
+          </section>
+
+          <section className="settings-section">
+            <h3 className="settings-section-title">Mail</h3>
+            <div className="settings-group">
+              <div className="settings-row settings-switch-row">
+                <div className="settings-row-text">
+                  <strong id="trash-after-unsubscribe-label">
+                    Trash after unsubscribe
+                  </strong>
+                  <span>
+                    Move the message to Trash after a successful unsubscribe
+                  </span>
+                </div>
+                <label className="ios-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-labelledby="trash-after-unsubscribe-label"
+                    checked={props.state.trashAfterUnsubscribe}
+                    onChange={(event) =>
+                      props.onChange({
+                        trashAfterUnsubscribe: event.target.checked,
+                      })
+                    }
+                  />
+                  <span className="ios-switch-track" aria-hidden />
+                </label>
+              </div>
+              <div className="settings-row settings-switch-row">
+                <div className="settings-row-text">
+                  <strong id="load-remote-images-label">
+                    Load remote images
+                  </strong>
+                  <span>
+                    Allow images hosted off-device when opening mail; can still
+                    toggle per message
+                  </span>
+                </div>
+                <label className="ios-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-labelledby="load-remote-images-label"
+                    checked={props.state.loadRemoteImages}
+                    onChange={(event) =>
+                      props.onChange({
+                        loadRemoteImages: event.target.checked,
+                      })
+                    }
+                  />
+                  <span className="ios-switch-track" aria-hidden />
+                </label>
+              </div>
             </div>
-          )}
+          </section>
+
+          <section className="settings-section">
+            <h3 className="settings-section-title">Privacy</h3>
+            <p className="settings-copy">
+              Mail stays on your devices by default. Remote features can be
+              enabled separately for each account.
+            </p>
+            <div className="settings-group">
+              <div className="settings-row">
+                <div className="settings-row-text">
+                  <strong>Remote processing</strong>
+                  <span>
+                    {props.consent?.enabled ? "Enabled for Gmail" : "Off"}
+                  </span>
+                </div>
+                <ActionButton
+                  label="Manage"
+                  onClick={props.onOpenRemoteProcessing}
+                />
+              </div>
+              <div className="settings-row settings-switch-row">
+                <div className="settings-row-text">
+                  <strong id="read-receipt-label">Request read receipts</strong>
+                  <span>Ask recipient clients for a read confirmation</span>
+                </div>
+                <label className="ios-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-labelledby="read-receipt-label"
+                    checked={props.state.requestReadReceipt}
+                    onChange={(event) =>
+                      props.onChange({
+                        requestReadReceipt: event.target.checked,
+                      })
+                    }
+                  />
+                  <span className="ios-switch-track" aria-hidden />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-section settings-advanced">
+            <h3 className="settings-section-title">Advanced</h3>
+            <div className="settings-group">
+              <div className="settings-row settings-switch-row">
+                <div className="settings-row-text">
+                  <strong id="developer-mode-label">Developer mode</strong>
+                  <span>Diagnostics and runtime state</span>
+                </div>
+                <label className="ios-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-labelledby="developer-mode-label"
+                    checked={props.state.developerMode}
+                    onChange={(event) =>
+                      props.onChange({ developerMode: event.target.checked })
+                    }
+                  />
+                  <span className="ios-switch-track" aria-hidden />
+                </label>
+              </div>
+            </div>
+            {props.state.developerMode && (
+              <div className="diagnostics" aria-label="Developer diagnostics">
+                {props.diagnostics.map((item) => (
+                  <code key={item}>{item}</code>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </section>
     </div>

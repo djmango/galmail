@@ -45,10 +45,7 @@ test("settings persist and offline navigation stays local", async ({
   context,
   page,
 }) => {
-  await page
-    .getByRole("button", { name: "Settings and account" })
-    .first()
-    .click();
+  await page.getByLabel("Folders").getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await page.getByRole("button", { name: "Light" }).click();
   await page.getByRole("button", { name: "Close settings" }).click();
