@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "app.galmail.client",
   "build": {
-    "beforeDevCommand": "bun run --filter @galmail/web dev",
+    "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run --filter @galmail/web build",
+    "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
   "app": {

@@ -64,6 +64,7 @@ bun run rust:test
 
 # Web UI (fixture Gmail mailbox — no OAuth registration required)
 bun run dev
+# Ctrl+C exit 130 is normal. Rare OSC junk in the prompt: run `reset`.
 
 # Blind relay (local)
 bun run relay:dev

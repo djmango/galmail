@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { restoreTerminal } from "./restore-tty";
 
 const PRINT_SSH_IDENTITY = "--print-ssh-identity";
 const SSH_IDENTITY_ENV = "GALMAIL_SOPS_SSH_IDENTITY";
@@ -57,6 +58,11 @@ async function run(
   command: string[],
   childEnv: Record<string, string | undefined>,
 ) {
+  // Ignore SIGINT/SIGTERM here so we can restore the TTY after the child
+  // exits. Ctrl+C still reaches the child via the foreground process group.
+  process.on("SIGINT", () => {});
+  process.on("SIGTERM", () => {});
+
   const child = Bun.spawn(command, {
     cwd: root,
     env: childEnv,
@@ -64,7 +70,9 @@ async function run(
     stdout: "inherit",
     stderr: "inherit",
   });
-  process.exit(await child.exited);
+  const code = await child.exited;
+  restoreTerminal();
+  process.exit(code ?? 1);
 }
 
 function secretFiles(): string[] {
