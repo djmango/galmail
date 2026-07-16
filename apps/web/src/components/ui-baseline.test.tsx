@@ -42,6 +42,8 @@ describe("current UI baseline", () => {
           layout: "three-panel",
           developerMode: true,
           requestReadReceipt: false,
+          loadRemoteImages: true,
+          trashAfterUnsubscribe: true,
         }}
         consent={{
           accountId: asAccountId("gmail-demo"),
@@ -76,28 +78,57 @@ describe("current UI baseline", () => {
     expect(html).toContain("Sign in with Google");
     expect(html).toContain("Remote processing");
     expect(html).toContain("Request read receipts");
+    expect(html).toContain("Load remote images");
+    expect(html).toContain("Trash after unsubscribe");
     expect(html).toContain('role="switch"');
+    expect(html).toContain("Light");
+    expect(html).toContain("Dark");
+    expect(html).toContain("Auto");
     expect(html).toContain("DEVICE-123");
     expect(html).toContain("Local thread count: 4");
   });
 
-  it("renders mail HTML in a sandbox with tracking controls", () => {
+  it("renders mail HTML in a sandbox with overflow message controls", () => {
     const html = renderToStaticMarkup(
       <SafeMailBody
         html={'<img src="https://tracker.invalid/open"><p>Hello</p>'}
         text="Hello"
         sender="sender@example.com"
         theme="dark"
+        loadRemoteImages
       />,
     );
-    expect(html).toContain('sandbox=""');
+    expect(html).toContain('sandbox="allow-scripts"');
+    expect(html).not.toContain("allow-same-origin");
     expect(html).toContain('referrerPolicy="no-referrer"');
-    expect(html).toContain("Remote images enabled");
+    expect(html).toContain("Message options");
+    expect(html).toContain("mail-body-menu");
+    expect(html).toContain('aria-haspopup="menu"');
     expect(html).toContain("tracker.invalid");
-    expect(html).toContain("Block remote images");
+    expect(html).not.toContain("Remote images enabled");
+    expect(html).not.toContain("Block remote images");
+    expect(html).not.toContain("mail-security-controls");
     expect(html).toContain("color-scheme:dark");
     expect(html).toContain('data-mail-scheme="dark"');
     expect(html).toContain("#0d0e10");
+    expect(html).toContain("galmail:open-url");
+    expect(html).toContain("script-src");
+  });
+
+  it("blocks remote images when the setting defaults off", () => {
+    const html = renderToStaticMarkup(
+      <SafeMailBody
+        html={'<img src="https://tracker.invalid/open"><p>Hello</p>'}
+        text="Hello"
+        sender="sender@example.com"
+        theme="dark"
+        loadRemoteImages={false}
+      />,
+    );
+    expect(html).toContain("Message options");
+    expect(html).not.toContain("Remote images blocked");
+    expect(html).not.toContain("Load remote images");
+    expect(html).not.toContain("tracker.invalid");
   });
 
   it("themes plain-text mail fallback", () => {
@@ -127,6 +158,7 @@ describe("current UI baseline", () => {
     expect(html).toContain("Send as alias");
     expect(html).toContain("Attach files");
     expect(html).toContain("Drop files to attach");
+    expect(html).toContain("Schedule send");
     expect(html).not.toContain("cannot prove a human read");
     expect(html).not.toContain("Request read receipt");
   });
@@ -160,14 +192,22 @@ describe("current UI baseline", () => {
 
   it("shows mode pill with colored indicator", () => {
     const normal = renderToStaticMarkup(
-      <StatusBar mode="normal" status="Ready" detail="12 threads" />,
+      <StatusBar
+        mode="normal"
+        status="Ready"
+        counts={{ label: "Inbox", unread: 6, total: 12 }}
+      />,
     );
     const insert = renderToStaticMarkup(
       <StatusBar mode="insert" status="Typing" />,
     );
     expect(normal).toContain("mode-normal");
     expect(normal).toContain("Normal");
-    expect(normal).toContain("12 threads");
+    expect(normal).toContain("status-counts");
+    expect(normal).toContain("Inbox");
+    expect(normal).toContain("6");
+    expect(normal).toContain("unread");
+    expect(normal).toContain("12");
     expect(insert).toContain("mode-insert");
     expect(insert).toContain("Insert");
   });
