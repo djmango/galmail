@@ -1,9 +1,32 @@
+# Dependencies and package managers
 node_modules/
+
+# Build outputs
 dist/
 build/
 target/
-.DS_Store
-# Prefer sops under secrets/; ignore accidental dotenv files
+artifacts/
+coverage/
+*.tsbuildinfo
+*.app
+*.dmg
+*.ipa
+*.exe
+*.msi
+
+# Caches
+.cache/
+.turbo/
+.vite/
+.parcel-cache/
+.wrangler/
+.bun/
+playwright/.cache/
+blob-report/
+playwright-report/
+test-results/
+
+# Environment and local secrets (use sops under secrets/)
 .env
 .env.*
 .dev.vars
@@ -11,34 +34,49 @@ target/
 !.dev.vars.example
 *.pem
 *.p12
-secrets/**/*.key
-secrets/**/*.plain.tmp
-secrets/**/client_secret*.json
-!secrets/**/*.yaml
-!secrets/**/*.yml
-!secrets/**/*.json
+*.key
 !secrets/**/*.pub
-!secrets/**/*.example.json
-!secrets/**/*.example.yaml
-.turbo/
-.vite/
-coverage/
-artifacts/
-playwright-report/
-test-results/
+
+# Plaintext secret material — encrypted sops files are committed intentionally
+secrets/**/*.plain.tmp
+secrets/**/*.plain.json
+secrets/**/client_secret*.json
+secrets/**/*.key
+
+# OS / editor
+.DS_Store
+Thumbs.db
 *.log
+bun-debug.log*
 .idea/
 .vscode/*
 !.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# Nix
+result
+result-*
+.direnv/
+
+# Local databases
+*.sqlite
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Tauri / Xcode generated and local build trees
+apps/web/src-tauri/target/
 apps/web/src-tauri/gen/*
 !apps/web/src-tauri/gen/apple/
 !apps/web/src-tauri/gen/apple/**
 apps/web/src-tauri/gen/apple/build/
 apps/web/src-tauri/gen/apple/Externals/
 apps/web/src-tauri/gen/apple/assets/
-apps/web/src-tauri/target/
-*.sqlite
-*.db
-*.tsbuildinfo
-.cache/
-.wrangler/
+**/xcuserdata/
+**/DerivedData/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
