@@ -110,7 +110,7 @@ impl GmailOAuthState {
             .append_pair("response_type", "code")
             .append_pair(
                 "scope",
-                "openid email https://www.googleapis.com/auth/gmail.modify",
+                "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar",
             )
             .append_pair("access_type", "offline")
             .append_pair("prompt", "consent")
@@ -389,17 +389,55 @@ impl GmailOAuthState {
         if !path.starts_with('/') || path.contains("://") || path.contains("..") {
             return Err("invalid Gmail API path".into());
         }
-        if !matches!(method, "GET" | "POST" | "PUT" | "DELETE") {
-            return Err("unsupported Gmail API method".into());
-        }
         let url = format!("https://gmail.googleapis.com/gmail/v1/users/me{path}");
+        self.google_http_request(account_id, client_id, method, &url, body, "Gmail")
+            .await
+    }
+
+    /// Google Calendar API broker (`calendar.googleapis.com` via `www.googleapis.com/calendar/v3`).
+    pub async fn calendar_api_request(
+        &self,
+        account_id: &str,
+        client_id: &str,
+        method: &str,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<GmailApiResponse, String> {
+        if !valid_calendar_path(path) {
+            return Err("invalid Google Calendar API path".into());
+        }
+        let url = format!("https://www.googleapis.com{path}");
+        self.google_http_request(
+            account_id,
+            client_id,
+            method,
+            &url,
+            body,
+            "Google Calendar",
+        )
+        .await
+    }
+
+    async fn google_http_request(
+        &self,
+        account_id: &str,
+        client_id: &str,
+        method: &str,
+        url: &str,
+        body: Option<serde_json::Value>,
+        label: &str,
+    ) -> Result<GmailApiResponse, String> {
+        if !matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE") {
+            return Err(format!("unsupported {label} API method"));
+        }
         let mut token = self.access_token(account_id, client_id).await?;
         for attempt in 0..2 {
             let mut request = match method {
-                "GET" => self.http.get(&url),
-                "POST" => self.http.post(&url),
-                "PUT" => self.http.put(&url),
-                "DELETE" => self.http.delete(&url),
+                "GET" => self.http.get(url),
+                "POST" => self.http.post(url),
+                "PUT" => self.http.put(url),
+                "PATCH" => self.http.patch(url),
+                "DELETE" => self.http.delete(url),
                 _ => unreachable!(),
             }
             .bearer_auth(&token)
@@ -410,7 +448,7 @@ impl GmailOAuthState {
             let response = request
                 .send()
                 .await
-                .map_err(|_| "cannot reach Gmail".to_string())?;
+                .map_err(|_| format!("cannot reach {label}"))?;
             if response.status().as_u16() == 401 && attempt == 0 {
                 let bytes = self
                     .token_store
@@ -427,7 +465,7 @@ impl GmailOAuthState {
             let bytes = response
                 .bytes()
                 .await
-                .map_err(|_| "Gmail response body unreadable".to_string())?;
+                .map_err(|_| format!("{label} response body unreadable"))?;
             let value = if bytes.is_empty() {
                 serde_json::Value::Null
             } else {
@@ -474,6 +512,13 @@ impl GmailOAuthState {
             .unwrap_or(false);
         Ok(remotely_revoked)
     }
+}
+
+fn valid_calendar_path(path: &str) -> bool {
+    path.starts_with("/calendar/v3/")
+        && !path.contains("://")
+        && !path.contains("..")
+        && !path.contains('\\')
 }
 
 fn google_desktop_client_secret() -> Result<String, String> {
@@ -547,5 +592,15 @@ mod tests {
         assert!(first
             .chars()
             .all(|character| character.is_ascii_alphanumeric() || "-_".contains(character)));
+    }
+
+    #[test]
+    fn calendar_paths_are_allowlisted() {
+        assert!(valid_calendar_path(
+            "/calendar/v3/calendars/primary/events?timeMin=2026-01-01T00:00:00.000Z"
+        ));
+        assert!(!valid_calendar_path("/gmail/v1/users/me/messages"));
+        assert!(!valid_calendar_path("https://evil.example/calendar/v3/x"));
+        assert!(!valid_calendar_path("/calendar/v3/../secrets"));
     }
 }

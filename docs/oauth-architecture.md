@@ -33,12 +33,17 @@ Request these scopes for the complete mail client:
 - `openid`
 - `email`
 - `https://www.googleapis.com/auth/gmail.modify`
+- `https://www.googleapis.com/auth/calendar` (create, modify, and read calendar
+  events; reconnect accounts that only granted `calendar.readonly`)
 
 `gmail.modify` is restricted and supports reading, composing, sending, and
 modifying mail without permanent deletion. GalMail does not request
 `https://mail.google.com/`; permanent deletion is unavailable unless a later
 feature and separate scope review justify it. Confirm granted scopes after
-exchange and disable unsupported operations if the grant is partial. Use
+exchange and disable unsupported operations if the grant is partial. Calendar
+reads and writes use the Google Calendar API with the stored Google token
+(native HTTP broker); missing full `calendar` access surfaces a reconnect
+prompt, same pattern as Microsoft `Calendars.ReadWrite`. Use
 `access_type=offline`; use `prompt=consent` only when a refresh token is
 actually needed, not on every sign-in.
 
@@ -48,14 +53,22 @@ confirmed.
 
 ## Microsoft after Gmail/macOS stability
 
-Register GalMail as a Mobile and desktop public client supporting the intended
-account audiences. For the macOS system-browser flow, register and use
-`http://localhost` as Microsoft recommends. Request:
+Register GalMail as a Mobile and desktop **public client** (no secret) supporting
+the intended account audiences. For the macOS system-browser flow, register a
+loopback redirect. The native client binds an ephemeral port and uses
+`http://127.0.0.1:{port}/oauth/microsoft/callback` (also allow
+`http://localhost` in Entra if you prefer Microsoft's default guidance).
 
-- `openid`, `email`, `offline_access`
-- `User.Read`
+Set `VITE_MICROSOFT_CLIENT_ID` (and optionally `VITE_MICROSOFT_TENANT`, default
+`common`) in sops the same way as `VITE_GOOGLE_DESKTOP_CLIENT_ID`.
+
+Request delegated scopes:
+
+- `openid`, `profile`, `email`, `offline_access`
 - `Mail.ReadWrite`
 - `Mail.Send`
+- `Calendars.ReadWrite` (create, modify, and read calendar events; reconnect
+  accounts that only granted `Calendars.Read`)
 
 `Mail.Send` is separate from `Mail.ReadWrite`. Do not request application
 permissions or admin-wide access for the consumer client. Enterprise tenant
@@ -64,14 +77,14 @@ audience.
 
 ## App deep links and mobile callbacks
 
-The application identifier is `app.galmail.client`. General product deep links
+The application identifier is `com.galateacorp.mail`. General product deep links
 use an allowlisted `galmail://` route set and must never contain OAuth codes,
 tokens, or PKCE material. On macOS, provider callbacks use loopback listeners,
 not the general deep-link handler.
 
 iOS receives separate provider registrations. Google uses its iOS SDK/client
 callback convention; Microsoft uses
-`msauth.app.galmail.client://auth`. Associated-domain links may open ordinary
+`msauth.com.galateacorp.mail://auth`. Associated-domain links may open ordinary
 product routes but do not replace provider-required redirect registration.
 Every incoming route is parsed natively against a fixed path/parameter schema
 before any event reaches the webview.

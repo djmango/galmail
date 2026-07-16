@@ -338,6 +338,24 @@ async fn gmail_api_request(
 }
 
 #[tauri::command]
+async fn google_calendar_request(
+    state: State<'_, AppState>,
+    request: GmailApiRequest,
+) -> Result<GmailApiResponse, String> {
+    state.require_normal_mode()?;
+    state
+        .gmail_oauth
+        .calendar_api_request(
+            &request.account_id,
+            &request.client_id,
+            &request.method,
+            &request.path,
+            request.body,
+        )
+        .await
+}
+
+#[tauri::command]
 async fn gmail_revoke(state: State<'_, AppState>, account_id: String) -> Result<bool, String> {
     state.require_normal_mode()?;
     state.gmail_oauth.revoke(&account_id).await
@@ -662,6 +680,7 @@ pub fn run() {
             gmail_oauth_begin,
             gmail_oauth_complete,
             gmail_api_request,
+            google_calendar_request,
             gmail_revoke,
             gmail_remove_account,
             microsoft_oauth_begin,

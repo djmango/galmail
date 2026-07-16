@@ -13,8 +13,12 @@ use tokio::{io::AsyncWriteExt, net::TcpListener, sync::Mutex};
 use url::Url;
 
 const ATTEMPT_TTL: Duration = Duration::from_secs(180);
+/// Public-client delegated scopes. Azure app registration must allow:
+/// - platform: Mobile and desktop applications
+/// - redirect URI: `http://127.0.0.1` (loopback; ephemeral port + `/oauth/microsoft/callback`)
+/// - delegated: Mail.ReadWrite, Mail.Send, Calendars.ReadWrite, offline_access, openid, profile, email
 const SCOPES: &str =
-    "openid profile email offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send";
+    "openid profile email offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.ReadWrite";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -127,6 +131,8 @@ impl MicrosoftOAuthState {
             .append_pair("code_challenge", &challenge)
             .append_pair("code_challenge_method", "S256")
             .append_pair("state", &state);
+        let authorization_url = url.to_string();
+        open_system_browser(&authorization_url)?;
         self.pending.lock().await.insert(
             attempt_id.clone(),
             PendingAttempt {
@@ -141,7 +147,7 @@ impl MicrosoftOAuthState {
         );
         Ok(MicrosoftBeginOAuth {
             attempt_id,
-            authorization_url: url.into(),
+            authorization_url,
         })
     }
 
@@ -509,6 +515,22 @@ fn classify_authorization_error(error: &str, description: Option<&str>) -> Strin
         "Microsoft user consent is required".into()
     } else {
         "Microsoft authorization was denied".into()
+    }
+}
+
+fn open_system_browser(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|_| "cannot open the system browser for Microsoft sign-in".to_string())?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = url;
+        Err("system browser handoff is only implemented on macOS".into())
     }
 }
 

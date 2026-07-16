@@ -84,7 +84,7 @@ Register separate development and production Mobile and desktop public clients.
 The planned delegated permissions are `openid`, `email`, `offline_access`,
 `User.Read`, `Mail.ReadWrite`, and `Mail.Send`. The macOS system-browser
 redirect is `http://localhost`; iOS uses
-`msauth.app.galmail.client://auth`. No application permission or client secret
+`msauth.com.galateacorp.mail://auth`. No application permission or client secret
 belongs in a distributed client.
 
 External Microsoft actions:

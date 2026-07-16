@@ -100,13 +100,63 @@ describe("Microsoft Graph live provider", () => {
       provider: "microsoft",
       unreadCount: 1,
     });
-    expect(message.labelIds).toEqual(["folder:inbox-id", "category:Focused"]);
+    expect(message.labelIds).toEqual([
+      "folder:inbox-id",
+      "category:Focused",
+      "INBOX",
+      "STARRED",
+    ]);
     expect(message.starred).toBe(true);
   });
 
-  it("honors Retry-After and preserves opaque delta links per folder", async () => {
+  it("bootstraps recent well-known folders without a full mailbox delta", async () => {
     const sleeps: number[] = [];
     let calls = 0;
+    const http: GraphHttpClient = {
+      async request(input) {
+        if (input.url.includes("/mailFolders?")) {
+          return response(200, {
+            value: [
+              { id: "inbox-id", displayName: "Inbox", wellKnownName: "inbox" },
+              {
+                id: "custom-id",
+                displayName: "Project",
+                wellKnownName: undefined,
+              },
+            ],
+          });
+        }
+        calls += 1;
+        if (calls === 1) return response(429, {}, { "retry-after": "3" });
+        expect(input.url).toContain("/mailFolders/inbox-id/messages?");
+        expect(decodeURIComponent(input.url)).toContain("$top=50");
+        expect(input.url).not.toContain("/delta");
+        return response(200, {
+          value: [
+            {
+              id: "delta-message",
+              conversationId: "delta-conversation",
+              subject: "Delta",
+              sender: { emailAddress: { address: "sender@example.com" } },
+              receivedDateTime: "2026-07-15T10:00:00.000Z",
+              parentFolderId: "inbox-id",
+            },
+          ],
+        });
+      },
+    };
+    const accountId = asAccountId("microsoft:reader@example.com");
+    const delta = await provider(http, sleeps).fetchDeltas(accountId, null);
+
+    expect(sleeps).toEqual([3_000]);
+    expect(delta.fullReconcile).toBe(true);
+    expect(delta.upserts).toHaveLength(1);
+    expect(microsoftDeltaCursor.decode(delta.nextCursor.token)).toEqual({
+      "inbox-id": "bootstrap",
+    });
+  });
+
+  it("establishes opaque delta links after bootstrap sentinel", async () => {
     const http: GraphHttpClient = {
       async request(input) {
         if (input.url.includes("/mailFolders?")) {
@@ -116,8 +166,7 @@ describe("Microsoft Graph live provider", () => {
             ],
           });
         }
-        calls += 1;
-        if (calls === 1) return response(429, {}, { "retry-after": "3" });
+        expect(input.url).toContain("/messages/delta");
         return response(200, {
           value: [
             {
@@ -135,10 +184,13 @@ describe("Microsoft Graph live provider", () => {
       },
     };
     const accountId = asAccountId("microsoft:reader@example.com");
-    const delta = await provider(http, sleeps).fetchDeltas(accountId, null);
+    const delta = await provider(http).fetchDeltas(accountId, {
+      accountId,
+      provider: "microsoft",
+      token: microsoftDeltaCursor.encode({ "inbox-id": "bootstrap" }),
+      updatedAt: "2026-07-14T10:00:00.000Z",
+    });
 
-    expect(sleeps).toEqual([3_000]);
-    expect(delta.fullReconcile).toBe(true);
     expect(delta.upserts).toHaveLength(1);
     expect(microsoftDeltaCursor.decode(delta.nextCursor.token)).toEqual({
       "inbox-id":
@@ -238,12 +290,20 @@ describe("Microsoft Graph live provider", () => {
         if (input.url.includes("/mailFolders?")) {
           return response(200, {
             value: [
-              { id: "new-folder", displayName: "New" },
-              { id: "old-folder", displayName: "Old" },
+              {
+                id: "inbox-id",
+                displayName: "Inbox",
+                wellKnownName: "inbox",
+              },
+              {
+                id: "archive-id",
+                displayName: "Archive",
+                wellKnownName: "archive",
+              },
             ],
           });
         }
-        if (input.url.includes("/new-folder/")) {
+        if (input.url.includes("/inbox-id/")) {
           return response(200, {
             value: [
               {
@@ -252,40 +312,50 @@ describe("Microsoft Graph live provider", () => {
                 subject: "Moved",
                 sender: { emailAddress: { address: "sender@example.com" } },
                 receivedDateTime: "2026-07-15T10:00:00.000Z",
-                parentFolderId: "new-folder",
+                parentFolderId: "inbox-id",
               },
             ],
             "@odata.deltaLink":
-              "https://graph.microsoft.com/v1.0/me/mailFolders/new-folder/messages/delta?$deltatoken=new",
+              "https://graph.microsoft.com/v1.0/me/mailFolders/inbox-id/messages/delta?$deltatoken=new",
           });
         }
         return response(200, {
           value: [{ id: "moved-message", "@removed": { reason: "changed" } }],
           "@odata.deltaLink":
-            "https://graph.microsoft.com/v1.0/me/mailFolders/old-folder/messages/delta?$deltatoken=old",
+            "https://graph.microsoft.com/v1.0/me/mailFolders/archive-id/messages/delta?$deltatoken=old",
         });
       },
     };
 
-    const delta = await provider(http).fetchDeltas(
-      asAccountId("microsoft:reader@example.com"),
-      null,
-    );
+    const accountId = asAccountId("microsoft:reader@example.com");
+    const delta = await provider(http).fetchDeltas(accountId, {
+      accountId,
+      provider: "microsoft",
+      token: microsoftDeltaCursor.encode({
+        "inbox-id": "bootstrap",
+        "archive-id": "bootstrap",
+      }),
+      updatedAt: "2026-07-14T10:00:00.000Z",
+    });
     expect(delta.upserts.map((message) => message.id)).toEqual([
       "moved-message",
     ]);
     expect(delta.deletes).toEqual([]);
   });
 
-  it("restarts every folder after an expired delta cursor", async () => {
+  it("restarts well-known folders after an expired delta cursor", async () => {
     let expiredRequests = 0;
     const http: GraphHttpClient = {
       async request(input) {
         if (input.url.includes("/mailFolders?")) {
           return response(200, {
             value: [
-              { id: "inbox-id", displayName: "Inbox" },
-              { id: "archive-id", displayName: "Archive" },
+              { id: "inbox-id", displayName: "Inbox", wellKnownName: "inbox" },
+              {
+                id: "archive-id",
+                displayName: "Archive",
+                wellKnownName: "archive",
+              },
             ],
           });
         }
@@ -347,6 +417,7 @@ describe("Microsoft public-client PKCE", () => {
     expect(url.searchParams.get("state")).toBe(attempt.state);
     expect(url.searchParams.has("client_secret")).toBe(false);
     expect(url.searchParams.get("scope")).toContain("Mail.ReadWrite");
+    expect(url.searchParams.get("scope")).toContain("Calendars.ReadWrite");
     expect(MICROSOFT_GRAPH_SCOPES).toContain("offline_access");
     expect(attempt.verifier).toHaveLength(43);
   });

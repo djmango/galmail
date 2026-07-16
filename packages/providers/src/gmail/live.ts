@@ -91,7 +91,7 @@ export interface GmailHttpResponse {
 export interface GmailHttpClient {
   request(input: {
     url: string;
-    method?: "GET" | "POST" | "PUT" | "DELETE";
+    method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     headers: Record<string, string>;
     body?: string;
   }): Promise<GmailHttpResponse>;

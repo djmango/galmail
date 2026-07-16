@@ -37,7 +37,25 @@ const MESSAGE_SELECT = [
   "parentFolderId",
   "hasAttachments",
 ].join(",");
-
+/** Well-known folders synced on bootstrap / delta (not the whole mailbox tree). */
+const SYNC_WELL_KNOWN = [
+  "inbox",
+  "archive",
+  "deleteditems",
+  "junkemail",
+  "sentitems",
+] as const;
+const BOOTSTRAP_PAGE_SIZE = 50;
+/** Cursor sentinel: recent bootstrap done; next pull establishes real delta links. */
+const BOOTSTRAP_DELTA_SENTINEL = "bootstrap";
+const WELL_KNOWN_SYSTEM_LABEL: Record<string, string> = {
+  inbox: "INBOX",
+  archive: "ARCHIVE",
+  deleteditems: "TRASH",
+  junkemail: "SPAM",
+  sentitems: "SENT",
+  drafts: "DRAFTS",
+};
 export interface GraphHttpResponse {
   status: number;
   headers?: Record<string, string | undefined>;
@@ -169,6 +187,7 @@ function addresses(values?: GraphAddress[]): MailAddress[] {
 function normalizeMessage(
   accountId: AccountId,
   raw: GraphMessage,
+  folderSystemById?: Map<string, string>,
 ): MailMessage {
   if (!raw.id)
     throw new Error("Microsoft Graph returned an incomplete message");
@@ -179,6 +198,13 @@ function normalizeMessage(
   const folderIds = raw.parentFolderId
     ? [asLabelId(`folder:${raw.parentFolderId}`)]
     : [];
+  const systemIds: ReturnType<typeof asLabelId>[] = [];
+  if (raw.parentFolderId && folderSystemById) {
+    const system = folderSystemById.get(raw.parentFolderId);
+    if (system) systemIds.push(asLabelId(system));
+  }
+  const starred = raw.flag?.flagStatus === "flagged";
+  if (starred) systemIds.push(asLabelId("STARRED"));
   const date =
     raw.receivedDateTime ?? raw.sentDateTime ?? new Date(0).toISOString();
   const contentType = raw.body?.contentType?.toLowerCase();
@@ -195,8 +221,8 @@ function normalizeMessage(
     bcc: addresses(raw.bccRecipients),
     date,
     unread: raw.isRead === false,
-    starred: raw.flag?.flagStatus === "flagged",
-    labelIds: [...folderIds, ...categoryIds],
+    starred,
+    labelIds: [...folderIds, ...categoryIds, ...systemIds],
     hasAttachments: raw.hasAttachments === true,
     bodyHtml: contentType === "html" ? raw.body?.content : undefined,
     bodyText: contentType !== "html" ? raw.body?.content : undefined,
@@ -205,7 +231,6 @@ function normalizeMessage(
       : undefined,
   };
 }
-
 function normalizeThread(messages: MailMessage[]): MailThread {
   if (messages.length === 0)
     throw new Error("cannot normalize an empty conversation");
@@ -290,6 +315,11 @@ export function createMicrosoftLiveProvider(
   const threads = new Map<ThreadId, MailThread>();
   const completedMutations = new Set<string>();
   const folderNames = new Map<string, string>();
+  const folderSystemById = new Map<string, string>();
+
+  function toMessage(accountId: AccountId, raw: GraphMessage): MailMessage {
+    return normalizeMessage(accountId, raw, folderSystemById);
+  }
 
   function trustedUrl(pathOrUrl: string): string {
     const url = new URL(pathOrUrl, GRAPH_ROOT);
@@ -381,17 +411,34 @@ export function createMicrosoftLiveProvider(
         next = page["@odata.nextLink"];
       }
     }
+    folderSystemById.clear();
     for (const folder of all) {
       if (folder.id) {
+        const wellKnown = (folder.wellKnownName ?? "").toLowerCase();
         folderNames.set(
-          folder.wellKnownName ?? folder.displayName ?? folder.id,
+          wellKnown || folder.displayName || folder.id,
           folder.id,
         );
+        if (wellKnown) {
+          folderNames.set(wellKnown, folder.id);
+          const system = WELL_KNOWN_SYSTEM_LABEL[wellKnown];
+          if (system) folderSystemById.set(folder.id, system);
+        }
       }
     }
     return all.filter((folder): folder is GraphFolder & { id: string } =>
       Boolean(folder.id),
     );
+  }
+
+  async function syncFolderIds(): Promise<string[]> {
+    await loadFolders();
+    const ids: string[] = [];
+    for (const name of SYNC_WELL_KNOWN) {
+      const id = folderNames.get(name);
+      if (id) ids.push(id);
+    }
+    return ids;
   }
 
   function cache(items: MailMessage[]): void {
@@ -415,7 +462,7 @@ export function createMicrosoftLiveProvider(
     const page = await request<GraphPage<GraphMessage>>(path);
     const items = (page.value ?? [])
       .filter((item) => item.id && !item["@removed"])
-      .map((item) => normalizeMessage(accountId, item));
+      .map((item) => toMessage(accountId, item));
     cache(items);
     return { items, next: page["@odata.nextLink"] };
   }
@@ -447,7 +494,7 @@ export function createMicrosoftLiveProvider(
           const id = asMessageId(raw.id);
           deletes.push(id);
         } else {
-          upserts.push(normalizeMessage(accountId, raw));
+          upserts.push(toMessage(accountId, raw));
         }
       }
       next = page["@odata.nextLink"] ?? "";
@@ -545,9 +592,40 @@ export function createMicrosoftLiveProvider(
       const raw = await request<GraphMessage>(
         `/v1.0/me/messages/${encodeURIComponent(messageId)}?$select=${MESSAGE_SELECT}`,
       );
-      const normalized = normalizeMessage(accountId, raw);
+      const normalized = toMessage(accountId, raw);
       cache([normalized]);
       return normalized;
+    },
+    async fetchRecentMessages(accountId, opts) {
+      await loadFolders();
+      const limit = Math.min(100, opts?.limit ?? BOOTSTRAP_PAGE_SIZE);
+      const query = new URLSearchParams({
+        $select: MESSAGE_SELECT,
+        $top: String(limit),
+        $orderby: "receivedDateTime desc",
+      });
+      let root = "/v1.0/me/messages";
+      const labelId = opts?.labelId;
+      if (labelId?.startsWith("folder:")) {
+        root = `/v1.0/me/mailFolders/${encodeURIComponent(labelId.slice(7))}/messages`;
+      } else if (labelId === "STARRED") {
+        query.set("$filter", "flag/flagStatus eq 'flagged'");
+      } else if (labelId?.startsWith("category:")) {
+        const category = labelId
+          .slice("category:".length)
+          .replaceAll("'", "''");
+        query.set("$filter", `categories/any(c:c eq '${category}')`);
+      } else if (labelId) {
+        const wellKnown = Object.entries(WELL_KNOWN_SYSTEM_LABEL).find(
+          ([, system]) => system === labelId,
+        )?.[0];
+        if (wellKnown) {
+          const id = await folderId(wellKnown);
+          root = `/v1.0/me/mailFolders/${encodeURIComponent(id)}/messages`;
+        }
+      }
+      const page = await listMessages(accountId, `${root}?${query}`);
+      return { upserts: page.items };
     },
     async hydrateBodies(accountId, messageIds) {
       return Promise.all(
@@ -721,20 +799,46 @@ export function createMicrosoftLiveProvider(
     async fetchDeltas(accountId, cursor: SyncCursor | null) {
       let links = cursor ? decodeDeltaLinks(cursor.token) : null;
       let fullReconcile = !links;
-      if (!links) {
-        const folders = await loadFolders();
-        links = Object.fromEntries(folders.map((folder) => [folder.id!, ""]));
-      }
-      const nextLinks: Record<string, string> = {};
       const upserts = new Map<MessageId, MailMessage>();
       const deletes = new Set<MessageId>();
+      const nextLinks: Record<string, string> = {};
+
+      // Bounded bootstrap: recent messages from well-known folders only.
+      // Defers full Graph delta establishment to the next pull.
+      if (!links) {
+        const folderIds = await syncFolderIds();
+        for (const id of folderIds) {
+          const query = new URLSearchParams({
+            $select: MESSAGE_SELECT,
+            $top: String(BOOTSTRAP_PAGE_SIZE),
+            $orderby: "receivedDateTime desc",
+          });
+          const page = await listMessages(
+            accountId,
+            `/v1.0/me/mailFolders/${encodeURIComponent(id)}/messages?${query}`,
+          );
+          for (const item of page.items) upserts.set(item.id, item);
+          nextLinks[id] = BOOTSTRAP_DELTA_SENTINEL;
+        }
+        cache([...upserts.values()]);
+        return {
+          upserts: [...upserts.values()],
+          deletes: [],
+          nextCursor: {
+            accountId: asAccountId(accountId),
+            provider: "microsoft",
+            token: encodeDeltaLinks(nextLinks),
+            updatedAt: now().toISOString(),
+          },
+          fullReconcile: true,
+        };
+      }
+
       try {
         for (const [folderId, link] of Object.entries(links)) {
-          const delta = await folderDelta(
-            accountId,
-            folderId,
-            link || undefined,
-          );
+          const initialUrl =
+            !link || link === BOOTSTRAP_DELTA_SENTINEL ? undefined : link;
+          const delta = await folderDelta(accountId, folderId, initialUrl);
           nextLinks[folderId] = delta.deltaLink;
           for (const item of delta.upserts) {
             upserts.set(item.id, item);
@@ -747,15 +851,14 @@ export function createMicrosoftLiveProvider(
       } catch (error) {
         if ((error as { status?: number }).status !== 410 || fullReconcile)
           throw error;
-        links = null;
         fullReconcile = true;
         for (const key of Object.keys(nextLinks)) delete nextLinks[key];
         upserts.clear();
         deletes.clear();
-        const folders = await loadFolders();
-        for (const folder of folders) {
-          const delta = await folderDelta(accountId, folder.id!);
-          nextLinks[folder.id!] = delta.deltaLink;
+        const folderIds = await syncFolderIds();
+        for (const id of folderIds) {
+          const delta = await folderDelta(accountId, id);
+          nextLinks[id] = delta.deltaLink;
           for (const item of delta.upserts) upserts.set(item.id, item);
         }
       }
