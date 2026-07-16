@@ -1,0 +1,11 @@
+# Example reverse proxy. Point DNS (or split-horizon) at your homelab.
+# TLS terminates here; compose services stay on localhost HTTP.
+
+galmail.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8789
+
+	# Optional: tighten if you expose beyond LAN/VPN
+	# @denied not remote_ip 10.0.0.0/8 192.168.0.0/16 172.16.0.0/12
+	# respond @denied 403
+}

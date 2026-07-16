@@ -1,0 +1,73 @@
+# GalMail homelab stack (self-hosted BFF + Postgres).
+# TLS terminates at your reverse proxy (Caddy/Traefik); this compose stays HTTP.
+#
+# From repo root:
+#   cp deploy/homelab/.env.example deploy/homelab/.env
+#   # edit secrets, then:
+#   docker compose -f deploy/homelab/docker-compose.yml --env-file deploy/homelab/.env up -d --build
+
+name: galmail-homelab
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-galmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-galmail}
+    volumes:
+      - galmail_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-galmail} -d ${POSTGRES_DB:-galmail}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Bind localhost only by default (homelab). Remove ports to keep DB internal-only.
+    ports:
+      - "${POSTGRES_HOST_PORT:-127.0.0.1:5432}:5432"
+
+  api:
+    build:
+      context: ../..
+      dockerfile: services/homelab-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "8789"
+      DATABASE_URL: postgres://${POSTGRES_USER:-galmail}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-galmail}
+      ACCOUNT_AUTH_SECRET: ${ACCOUNT_AUTH_SECRET:?set ACCOUNT_AUTH_SECRET}
+      API_ADMIN_TOKEN: ${API_ADMIN_TOKEN:?set API_ADMIN_TOKEN}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_PRIVATE_KEY: ${APNS_PRIVATE_KEY:-}
+      APNS_TOPIC: ${APNS_TOPIC:-com.galateacorp.mail}
+      APNS_SANDBOX: ${APNS_SANDBOX:-true}
+      FCM_ENABLED: ${FCM_ENABLED:-false}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-http://host.docker.internal:11434/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+      OPENAI_MODEL: ${OPENAI_MODEL:-llama3.2}
+      CONSENT_DISCLOSURE_VERSION: ${CONSENT_DISCLOSURE_VERSION:-2026-07-15.v1}
+      PROCESSING_REGION: ${PROCESSING_REGION:-homelab}
+      RETENTION_MAX_HOURS: ${RETENTION_MAX_HOURS:-168}
+    ports:
+      - "${API_HOST_PORT:-127.0.0.1:8789}:8789"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:8789/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  galmail_pg:

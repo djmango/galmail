@@ -20,7 +20,30 @@ bun run tauri:dev          # development
 bun run tauri:build        # release (enable bundle + icons first)
 ```
 
-iOS: configure `developmentTeam` in `apps/web/src-tauri/tauri.conf.json` and App Group `group.app.galmail.client`.
+iOS: configure `developmentTeam` in `apps/web/src-tauri/tauri.conf.json` and App Group `group.com.galateacorp.mail`.
+
+## Homelab Docker stack (self-hosted)
+
+For operators who want push registration, consent sync, and optional AI on
+their own metal first, use the Compose stack under `deploy/homelab/`:
+
+- `services/homelab-api`: Bun/Hono BFF (Postgres-backed)
+- `postgres:16`: device tokens, consent, optional retained classify inputs
+
+```bash
+cp deploy/homelab/.env.example deploy/homelab/.env
+# fill ACCOUNT_AUTH_SECRET, API_ADMIN_TOKEN, POSTGRES_PASSWORD, APNs, AI base URL
+docker compose -f deploy/homelab/docker-compose.yml --env-file deploy/homelab/.env up -d --build
+curl -s http://127.0.0.1:8789/health
+```
+
+Point clients at `VITE_GALMAIL_API_URL` (HTTPS via Caddy/Traefik). Full
+architecture, Apple APNs checklist, and route list:
+[deploy/homelab/README.md](../deploy/homelab/README.md).
+
+This does **not** replace the Cloudflare Workers plane. Blind relay + opt-in
+processor remain the managed edge path; the homelab API is a focused v1
+skeleton without R2 sync or Gmail ingress parity.
 
 ## Cloudflare hosted service plane
 

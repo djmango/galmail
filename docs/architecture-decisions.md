@@ -28,10 +28,11 @@ storage; any opted-in remote processor receives separately controlled,
 revocable credentials only after versioned consent.
 
 For the first Gmail/macOS release, the Desktop app client uses a random-port
-`127.0.0.1` callback, PKCE S256, and `openid email gmail.modify`. Microsoft
-later uses its public desktop registration with `http://localhost` and
-`openid email offline_access User.Read Mail.ReadWrite Mail.Send`. General app
-deep links never carry OAuth material. See `oauth-architecture.md`.
+`127.0.0.1` callback, PKCE S256, and
+`openid email gmail.modify calendar`. Microsoft later uses its public
+desktop registration with `http://localhost` and
+`openid email offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite`.
+General app deep links never carry OAuth material. See `oauth-architecture.md`.
 
 ## Cloudflare services
 

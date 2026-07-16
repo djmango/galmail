@@ -35,6 +35,8 @@ Gmail API / Microsoft Graph
 | `crates/galmail-wasm`       | Bounded Wasm bindings for browser                             |
 | `services/blind-relay`      | Opaque webhook → push hints (no plaintext)                    |
 | `services/opt-in-processor` | Isolated opt-in sync/AI service stub                          |
+| `services/homelab-api`      | Self-hosted BFF (devices, push test, consent, AI scaffold)    |
+| `deploy/homelab`            | Docker Compose for Postgres + homelab-api                     |
 | `swift/GalMailApple`        | Thin APNs / Keychain / OAuth presentation glue                |
 
 ## Privacy model (default)
@@ -66,8 +68,11 @@ bun run rust:test
 bun run dev
 # Ctrl+C exit 130 is normal. Rare OSC junk in the prompt: run `reset`.
 
-# Blind relay (local)
+# Blind relay (local Wrangler)
 bun run relay:dev
+
+# Homelab stack (Postgres + BFF; see deploy/homelab/README.md)
+# docker compose -f deploy/homelab/docker-compose.yml --env-file deploy/homelab/.env up -d --build
 
 # Tauri desktop (macOS also requires Xcode Command Line Tools)
 bun run tauri:dev

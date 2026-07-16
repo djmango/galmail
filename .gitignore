@@ -29,6 +29,8 @@ test-results/
 # Environment and local secrets (use sops under secrets/)
 .env
 .env.*
+!.env.example
+!deploy/homelab/.env.example
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
@@ -66,6 +68,11 @@ result-*
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Local Apple signing / TestFlight overrides (team + ASC auth stay off-git)
+apps/web/src-tauri/tauri.ios.local.conf.json
+.local/asc/
+.local/ios-build/
 
 # Tauri / Xcode generated and local build trees
 apps/web/src-tauri/target/
