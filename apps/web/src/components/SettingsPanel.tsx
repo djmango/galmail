@@ -1,5 +1,6 @@
 import type { RemoteProcessingConsent } from "@galmail/core-api";
 import { ActionButton } from "./ActionButton";
+import { Icons } from "./Icons";
 import { SettingsBar, type SettingsState } from "./SettingsBar";
 
 export type SettingsAccount = {
@@ -48,7 +49,7 @@ export function SettingsPanel(props: {
           </div>
           <ActionButton
             label="Close settings"
-            icon="×"
+            icon={<Icons.close />}
             iconOnly
             onClick={props.onClose}
           />
@@ -85,9 +86,14 @@ export function SettingsPanel(props: {
           {props.canConnectGmail && !liveGmail && (
             <ActionButton
               label={
-                props.gmailConnecting ? "Waiting for Google…" : "Connect Gmail"
+                props.gmailConnecting
+                  ? "Waiting for Google…"
+                  : "Sign in with Google"
               }
+              icon={<Icons.google />}
               variant="primary"
+              reveal={false}
+              showShortcut={false}
               disabled={props.gmailConnecting}
               onClick={props.onConnectGmail}
             />
@@ -154,6 +160,24 @@ export function SettingsPanel(props: {
               label="Manage"
               onClick={props.onOpenRemoteProcessing}
             />
+          </div>
+          <div className="settings-control settings-switch-row">
+            <div>
+              <strong id="read-receipt-label">Request read receipts</strong>
+              <span>Ask recipient clients for a read confirmation</span>
+            </div>
+            <label className="ios-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-labelledby="read-receipt-label"
+                checked={props.state.requestReadReceipt}
+                onChange={(event) =>
+                  props.onChange({ requestReadReceipt: event.target.checked })
+                }
+              />
+              <span className="ios-switch-track" aria-hidden />
+            </label>
           </div>
         </div>
 
