@@ -424,7 +424,24 @@ impl GmailOAuthState {
                 continue;
             }
             let status = response.status().as_u16();
-            let value = response.json().await.unwrap_or(serde_json::Value::Null);
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|_| "Gmail response body unreadable".to_string())?;
+            let value = if bytes.is_empty() {
+                serde_json::Value::Null
+            } else {
+                match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                    Ok(parsed) => parsed,
+                    Err(_) => {
+                        let text = String::from_utf8_lossy(&bytes);
+                        let clipped: String = text.chars().take(500).collect();
+                        serde_json::json!({
+                            "error": { "message": clipped }
+                        })
+                    }
+                }
+            };
             return Ok(GmailApiResponse {
                 status,
                 body: value,
