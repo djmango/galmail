@@ -145,14 +145,22 @@ impl SecureTokenStore for MacOsKeychain {
     }
 
     fn store_token(&self, account_id: &str, value: &[u8]) -> Result<(), String> {
-        use security_framework::passwords::{set_generic_password_options, PasswordOptions};
+        use security_framework::passwords::{
+            delete_generic_password, set_generic_password_options, PasswordOptions,
+        };
+        // Replace existing items; Keychain rejects duplicate account entries.
+        let _ = delete_generic_password("com.galmail.app.gmail-oauth", account_id);
         let mut options =
             PasswordOptions::new_generic_password("com.galmail.app.gmail-oauth", account_id);
         options.set_access_synchronized(Some(false));
         options.set_label("GalMail Gmail authorization");
         options.set_description("Gmail OAuth tokens; never synchronized");
-        set_generic_password_options(value, options)
-            .map_err(|_| "cannot store Gmail credentials in Keychain".into())
+        set_generic_password_options(value, options).map_err(|error| {
+            format!(
+                "cannot store Gmail credentials in Keychain (code {})",
+                error.code()
+            )
+        })
     }
 
     fn delete_token(&self, account_id: &str) -> Result<(), String> {

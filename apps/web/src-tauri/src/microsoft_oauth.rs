@@ -1,3 +1,4 @@
+use crate::oauth_callback_page::{self, accept_oauth_callback, PageKind};
 use crate::secure_storage::SecureTokenStore;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
@@ -8,12 +9,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-    sync::Mutex,
-    time::timeout,
-};
+use tokio::{io::AsyncWriteExt, net::TcpListener, sync::Mutex};
 use url::Url;
 
 const ATTEMPT_TTL: Duration = Duration::from_secs(180);
@@ -166,72 +162,109 @@ impl MicrosoftOAuthState {
                 .map_err(|_| "cannot clone the Microsoft OAuth callback listener".to_string())?,
         )
         .map_err(|_| "cannot activate the Microsoft OAuth callback listener".to_string())?;
-        let (mut stream, _) = timeout(ATTEMPT_TTL, listener.accept())
-            .await
-            .map_err(|_| "Microsoft OAuth callback timed out".to_string())?
-            .map_err(|_| "Microsoft OAuth callback failed".to_string())?;
-        let mut buffer = [0_u8; 8192];
-        let count = timeout(Duration::from_secs(10), stream.read(&mut buffer))
-            .await
-            .map_err(|_| "Microsoft OAuth callback timed out".to_string())?
-            .map_err(|_| "Microsoft OAuth callback was unreadable".to_string())?;
-        let request = std::str::from_utf8(&buffer[..count])
-            .map_err(|_| "Microsoft OAuth callback was invalid".to_string())?;
-        let target = request
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .ok_or_else(|| "Microsoft OAuth callback was invalid".to_string())?;
-        let callback =
-            Url::parse(&format!("http://127.0.0.1{target}")).map_err(|_| "invalid callback")?;
-        let query: HashMap<_, _> = callback.query_pairs().into_owned().collect();
-        let valid = callback.path() == "/oauth/microsoft/callback"
-            && query.get("state") == Some(&pending.state);
-        let error = query.get("error").cloned();
-        let body = if valid && error.is_none() && query.contains_key("code") {
-            "Authorization complete. Return to GalMail."
-        } else {
-            "Authorization was not completed. Return to GalMail."
-        };
-        let status = if valid && error.is_none() {
-            "200 OK"
-        } else {
-            "400 Bad Request"
-        };
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = stream.write_all(response.as_bytes()).await;
-        if !valid {
-            return Err("Microsoft OAuth callback state validation failed".into());
+        let (mut stream, query) =
+            accept_oauth_callback(&listener, "/oauth/microsoft/callback", ATTEMPT_TTL).await?;
+
+        async fn reply(
+            stream: &mut tokio::net::TcpStream,
+            status: &str,
+            kind: PageKind,
+            detail: Option<&str>,
+        ) {
+            let response = oauth_callback_page::http_response(status, kind, detail);
+            let _ = stream.write_all(response.as_bytes()).await;
         }
-        if let Some(error) = error {
-            return Err(classify_authorization_error(
-                &error,
+
+        if query.get("state") != Some(&pending.state) {
+            let message = "Microsoft OAuth callback state validation failed";
+            reply(
+                &mut stream,
+                "400 Bad Request",
+                PageKind::Failed,
+                Some(message),
+            )
+            .await;
+            return Err(message.into());
+        }
+        if let Some(error) = query.get("error") {
+            let message = classify_authorization_error(
+                error,
                 query.get("error_description").map(String::as_str),
-            ));
+            );
+            reply(
+                &mut stream,
+                "400 Bad Request",
+                PageKind::Denied,
+                Some(&message),
+            )
+            .await;
+            return Err(message);
         }
-        let code = query
-            .get("code")
-            .ok_or_else(|| "Microsoft OAuth callback omitted the authorization code".to_string())?;
-        let token = self.exchange_code(&pending, code).await?;
-        let profile: GraphProfile = self
-            .http
-            .get("https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName")
-            .bearer_auth(&token.access_token)
-            .send()
-            .await
-            .map_err(|_| "cannot retrieve the Microsoft profile".to_string())?
-            .error_for_status()
-            .map_err(|_| "Microsoft rejected the profile request".to_string())?
-            .json()
-            .await
-            .map_err(|_| "Microsoft profile response was invalid".to_string())?;
-        let email = profile
-            .mail
-            .or(profile.user_principal_name)
-            .ok_or_else(|| "Microsoft profile did not include a mailbox address".to_string())?;
+        let Some(code) = query.get("code") else {
+            let message = "Microsoft OAuth callback omitted the authorization code";
+            reply(
+                &mut stream,
+                "400 Bad Request",
+                PageKind::Failed,
+                Some(message),
+            )
+            .await;
+            return Err(message.into());
+        };
+        let token = match self.exchange_code(&pending, code).await {
+            Ok(token) => token,
+            Err(error) => {
+                reply(
+                    &mut stream,
+                    "500 Internal Server Error",
+                    PageKind::Failed,
+                    Some(&error),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        let profile: GraphProfile = match async {
+            self.http
+                .get("https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName")
+                .bearer_auth(&token.access_token)
+                .send()
+                .await
+                .map_err(|_| "cannot retrieve the Microsoft profile".to_string())?
+                .error_for_status()
+                .map_err(|_| "Microsoft rejected the profile request".to_string())?
+                .json()
+                .await
+                .map_err(|_| "Microsoft profile response was invalid".to_string())
+        }
+        .await
+        {
+            Ok(profile) => profile,
+            Err(error) => {
+                reply(
+                    &mut stream,
+                    "500 Internal Server Error",
+                    PageKind::Failed,
+                    Some(&error),
+                )
+                .await;
+                return Err(error);
+            }
+        };
+        let email = match profile.mail.or(profile.user_principal_name) {
+            Some(email) => email,
+            None => {
+                let message = "Microsoft profile did not include a mailbox address";
+                reply(
+                    &mut stream,
+                    "500 Internal Server Error",
+                    PageKind::Failed,
+                    Some(message),
+                )
+                .await;
+                return Err(message.into());
+            }
+        };
         let scope = token.scope.unwrap_or_default();
         for required in [
             "https://graph.microsoft.com/Mail.ReadWrite",
@@ -243,24 +276,51 @@ impl MicrosoftOAuthState {
                         required.trim_start_matches("https://graph.microsoft.com/"),
                     )
             }) {
-                return Err("Microsoft did not grant the required delegated mail scopes".into());
+                let message = "Microsoft did not grant the required delegated mail scopes";
+                reply(
+                    &mut stream,
+                    "500 Internal Server Error",
+                    PageKind::Failed,
+                    Some(message),
+                )
+                .await;
+                return Err(message.into());
             }
         }
+        let Some(refresh_token) = token.refresh_token else {
+            let message = "Microsoft did not issue an offline refresh token";
+            reply(
+                &mut stream,
+                "500 Internal Server Error",
+                PageKind::Failed,
+                Some(message),
+            )
+            .await;
+            return Err(message.into());
+        };
         let bundle = TokenBundle {
             access_token: token.access_token,
-            refresh_token: token
-                .refresh_token
-                .ok_or_else(|| "Microsoft did not issue an offline refresh token".to_string())?,
+            refresh_token,
             expires_at: unix_time().saturating_add(token.expires_in.unwrap_or(3600)),
             scope: scope.clone(),
             tenant: pending.tenant.clone(),
         };
         let account_id = format!("microsoft:{}", email.to_lowercase());
-        self.token_store.store_token(
+        if let Err(error) = self.token_store.store_token(
             &account_id,
             &serde_json::to_vec(&bundle)
                 .map_err(|_| "cannot encode Microsoft credentials".to_string())?,
-        )?;
+        ) {
+            reply(
+                &mut stream,
+                "500 Internal Server Error",
+                PageKind::Failed,
+                Some(&error),
+            )
+            .await;
+            return Err(error);
+        }
+        reply(&mut stream, "200 OK", PageKind::Success, None).await;
         Ok(MicrosoftConnectedAccount {
             account_id,
             email,

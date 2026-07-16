@@ -1,3 +1,4 @@
+use crate::oauth_callback_page::{self, accept_oauth_callback, PageKind};
 use crate::secure_storage::SecureTokenStore;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
@@ -8,18 +9,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-    sync::Mutex,
-    time::timeout,
-};
+use tokio::{io::AsyncWriteExt, net::TcpListener, sync::Mutex};
 use url::Url;
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const REVOKE_ENDPOINT: &str = "https://oauth2.googleapis.com/revoke";
-const PROFILE_ENDPOINT: &str = "https://gmail.googleapis.com/gmail/v1/users/me/profile";
+const USERINFO_ENDPOINT: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 const ATTEMPT_TTL: Duration = Duration::from_secs(180);
 
 #[derive(Debug, Serialize)]
@@ -61,9 +57,8 @@ struct TokenResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct GmailProfile {
-    #[serde(rename = "emailAddress")]
-    email_address: String,
+struct GoogleUserInfo {
+    email: Option<String>,
 }
 
 struct PendingAttempt {
@@ -153,85 +148,106 @@ impl GmailOAuthState {
         }
         let listener = TcpListener::from_std(pending.listener)
             .map_err(|_| "cannot activate the OAuth callback listener".to_string())?;
-        let (mut stream, _) = timeout(ATTEMPT_TTL, listener.accept())
-            .await
-            .map_err(|_| "OAuth callback timed out".to_string())?
-            .map_err(|_| "OAuth callback failed".to_string())?;
-        let mut buffer = [0_u8; 8192];
-        let count = timeout(Duration::from_secs(10), stream.read(&mut buffer))
-            .await
-            .map_err(|_| "OAuth callback timed out".to_string())?
-            .map_err(|_| "OAuth callback was unreadable".to_string())?;
-        let request = std::str::from_utf8(&buffer[..count])
-            .map_err(|_| "OAuth callback was invalid".to_string())?;
-        let target = request
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().nth(1))
-            .ok_or_else(|| "OAuth callback was invalid".to_string())?;
-        let callback =
-            Url::parse(&format!("http://127.0.0.1{target}")).map_err(|_| "invalid callback")?;
-        let query: HashMap<_, _> = callback.query_pairs().into_owned().collect();
-        let valid_path = callback.path() == "/oauth/callback";
-        let valid_state = query.get("state") == Some(&pending.state);
-        let code = query.get("code").cloned();
-        let successful =
-            valid_path && valid_state && code.is_some() && !query.contains_key("error");
-        let (status, body) = if successful {
-            (
-                "200 OK",
-                "Authorization complete. You may close this window and return to GalMail.",
-            )
-        } else {
-            (
+        let (mut stream, query) =
+            accept_oauth_callback(&listener, "/oauth/callback", ATTEMPT_TTL).await?;
+
+        async fn reply(
+            stream: &mut tokio::net::TcpStream,
+            status: &str,
+            kind: PageKind,
+            detail: Option<&str>,
+        ) {
+            let response = oauth_callback_page::http_response(status, kind, detail);
+            let _ = stream.write_all(response.as_bytes()).await;
+        }
+
+        if query.get("state") != Some(&pending.state) {
+            let message = "OAuth callback state validation failed";
+            reply(
+                &mut stream,
                 "400 Bad Request",
-                "Authorization was rejected. Return to GalMail and try again.",
+                PageKind::Failed,
+                Some(message),
             )
-        };
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        let _ = stream.write_all(response.as_bytes()).await;
-        if !valid_path || !valid_state {
-            return Err("OAuth callback state validation failed".into());
+            .await;
+            return Err(message.into());
         }
         if query.contains_key("error") {
-            return Err("Google authorization was denied".into());
+            let message = "Google authorization was denied";
+            reply(
+                &mut stream,
+                "400 Bad Request",
+                PageKind::Denied,
+                Some(message),
+            )
+            .await;
+            return Err(message.into());
         }
-        let code =
-            code.ok_or_else(|| "OAuth callback omitted the authorization code".to_string())?;
-        let token = self
-            .exchange_code(
+        let Some(code) = query.get("code").cloned() else {
+            let message = "OAuth callback omitted the authorization code";
+            reply(
+                &mut stream,
+                "400 Bad Request",
+                PageKind::Failed,
+                Some(message),
+            )
+            .await;
+            return Err(message.into());
+        };
+
+        // Finish token exchange before answering the browser so the page matches app state.
+        match self
+            .finish_authorization(
                 &pending.client_id,
                 &pending.redirect_uri,
                 &pending.verifier,
                 &code,
             )
-            .await?;
-        let profile: GmailProfile = self
-            .http
-            .get(PROFILE_ENDPOINT)
-            .bearer_auth(&token.access_token)
-            .send()
             .await
-            .map_err(|_| "cannot retrieve the Gmail profile".to_string())?
-            .error_for_status()
-            .map_err(|_| "Google rejected the Gmail profile request".to_string())?
-            .json()
-            .await
-            .map_err(|_| "Gmail profile response was invalid".to_string())?;
-        let refresh_token = token
-            .refresh_token
-            .ok_or_else(|| "Google did not issue an offline refresh token".to_string())?;
-        let account_id = format!("gmail:{}", profile.email_address.to_lowercase());
-        let scope = token.scope.unwrap_or_default();
-        if !scope
-            .split_whitespace()
-            .any(|granted| granted == "https://www.googleapis.com/auth/gmail.modify")
         {
-            return Err("Google did not grant the required Gmail scope".into());
+            Ok(connected) => {
+                reply(&mut stream, "200 OK", PageKind::Success, None).await;
+                Ok(connected)
+            }
+            Err(error) => {
+                reply(
+                    &mut stream,
+                    "500 Internal Server Error",
+                    PageKind::Failed,
+                    Some(&error),
+                )
+                .await;
+                Err(error)
+            }
         }
+    }
+
+    async fn finish_authorization(
+        &self,
+        client_id: &str,
+        redirect_uri: &str,
+        verifier: &str,
+        code: &str,
+    ) -> Result<ConnectedAccount, String> {
+        let token = self
+            .exchange_code(client_id, redirect_uri, verifier, code)
+            .await?;
+        let refresh_token = token.refresh_token.ok_or_else(|| {
+            "Google did not issue an offline refresh token. Open Google Account permissions, remove GalMail access, then sign in again.".to_string()
+        })?;
+        let scope = token.scope.unwrap_or_default();
+        let has_gmail = scope.split_whitespace().any(|granted| {
+            granted == "https://www.googleapis.com/auth/gmail.modify"
+                || granted.ends_with("/gmail.modify")
+                || granted == "gmail.modify"
+        });
+        if !has_gmail {
+            return Err(format!(
+                "Google did not grant gmail.modify (got: {scope})"
+            ));
+        }
+        let email = self.user_email(&token.access_token).await?;
+        let account_id = format!("gmail:{}", email.to_lowercase());
         let bundle = TokenBundle {
             access_token: token.access_token,
             refresh_token,
@@ -242,9 +258,33 @@ impl GmailOAuthState {
         self.token_store.store_token(&account_id, &encoded)?;
         Ok(ConnectedAccount {
             account_id,
-            email: profile.email_address,
+            email,
             granted_scopes: scope.split_whitespace().map(str::to_string).collect(),
         })
+    }
+
+    async fn user_email(&self, access_token: &str) -> Result<String, String> {
+        let response = self
+            .http
+            .get(USERINFO_ENDPOINT)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|_| "cannot reach Google userinfo".to_string())?;
+        if !response.status().is_success() {
+            let detail = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown userinfo error".into());
+            return Err(format!("Google rejected userinfo ({detail})"));
+        }
+        let info: GoogleUserInfo = response
+            .json()
+            .await
+            .map_err(|_| "Google userinfo response was invalid".to_string())?;
+        info.email
+            .filter(|email| email.contains('@'))
+            .ok_or_else(|| "Google userinfo did not include an email address".to_string())
     }
 
     async fn exchange_code(
@@ -254,22 +294,33 @@ impl GmailOAuthState {
         verifier: &str,
         code: &str,
     ) -> Result<TokenResponse, String> {
+        // Google Desktop clients still require the Console-issued secret at the
+        // token endpoint even when PKCE is used. Keep it native-only via sops.
+        let client_secret = google_desktop_client_secret()?;
         let body: String = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("client_id", client_id)
+            .append_pair("client_secret", &client_secret)
             .append_pair("redirect_uri", redirect_uri)
             .append_pair("code_verifier", verifier)
             .append_pair("code", code)
             .append_pair("grant_type", "authorization_code")
             .finish();
-        self.http
+        let response = self
+            .http
             .post(TOKEN_ENDPOINT)
             .header("content-type", "application/x-www-form-urlencoded")
             .body(body)
             .send()
             .await
-            .map_err(|_| "cannot reach the Google token endpoint".to_string())?
-            .error_for_status()
-            .map_err(|_| "Google rejected the authorization code".to_string())?
+            .map_err(|_| "cannot reach the Google token endpoint".to_string())?;
+        if !response.status().is_success() {
+            let detail = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown token error".into());
+            return Err(format!("Google rejected the authorization code ({detail})"));
+        }
+        response
             .json()
             .await
             .map_err(|_| "Google token response was invalid".to_string())
@@ -295,21 +346,25 @@ impl GmailOAuthState {
         client_id: &str,
         mut bundle: TokenBundle,
     ) -> Result<String, String> {
+        let client_secret = google_desktop_client_secret()?;
         let body: String = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("client_id", client_id)
+            .append_pair("client_secret", &client_secret)
             .append_pair("refresh_token", &bundle.refresh_token)
             .append_pair("grant_type", "refresh_token")
             .finish();
-        let refreshed: TokenResponse = self
+        let response = self
             .http
             .post(TOKEN_ENDPOINT)
             .header("content-type", "application/x-www-form-urlencoded")
             .body(body)
             .send()
             .await
-            .map_err(|_| "cannot refresh Gmail authorization".to_string())?
-            .error_for_status()
-            .map_err(|_| "Gmail authorization must be renewed".to_string())?
+            .map_err(|_| "cannot refresh Gmail authorization".to_string())?;
+        if !response.status().is_success() {
+            return Err("Gmail authorization must be renewed".into());
+        }
+        let refreshed: TokenResponse = response
             .json()
             .await
             .map_err(|_| "Google refresh response was invalid".to_string())?;
@@ -402,6 +457,35 @@ impl GmailOAuthState {
             .unwrap_or(false);
         Ok(remotely_revoked)
     }
+}
+
+fn google_desktop_client_secret() -> Result<String, String> {
+    let raw = std::env::var("GOOGLE_DESKTOP_OAUTH_JSON").map_err(|_| {
+        "GOOGLE_DESKTOP_OAUTH_JSON is missing from sops. Run: bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_….json".to_string()
+    })?;
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(
+            "GOOGLE_DESKTOP_OAUTH_JSON is empty in sops. Run: bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_….json"
+                .into(),
+        );
+    }
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|_| "GOOGLE_DESKTOP_OAUTH_JSON is not valid JSON".to_string())?;
+    let client = value
+        .get("installed")
+        .or_else(|| value.get("web"))
+        .unwrap_or(&value);
+    client
+        .get("client_secret")
+        .and_then(|item| item.as_str())
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            "GOOGLE_DESKTOP_OAUTH_JSON is missing client_secret; re-import the Google Desktop client JSON"
+                .into()
+        })
 }
 
 fn open_system_browser(url: &str) -> Result<(), String> {

@@ -2,6 +2,7 @@
 
 mod gmail_oauth;
 mod microsoft_oauth;
+mod oauth_callback_page;
 mod release_support;
 mod secure_storage;
 
