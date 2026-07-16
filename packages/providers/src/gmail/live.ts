@@ -23,6 +23,65 @@ import {
 
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 
+type GmailErrorPayload = {
+  message?: string;
+  reason?: string;
+  status?: string;
+};
+
+function parseGmailErrorPayload(payload: unknown): GmailErrorPayload {
+  if (typeof payload === "string" && payload.trim()) {
+    return { message: payload.trim().slice(0, 300) };
+  }
+  if (!payload || typeof payload !== "object") return {};
+  const root = payload as {
+    error?: {
+      message?: string;
+      status?: string;
+      errors?: Array<{ reason?: string; message?: string }>;
+      details?: Array<{ reason?: string; message?: string }>;
+    };
+    message?: string;
+  };
+  const error = root.error;
+  const reason =
+    error?.errors?.[0]?.reason ??
+    error?.details?.find((item) => item.reason)?.reason;
+  return {
+    message:
+      error?.message ??
+      error?.errors?.[0]?.message ??
+      error?.details?.find((item) => item.message)?.message ??
+      (typeof root.message === "string" ? root.message : undefined),
+    reason,
+    status: error?.status,
+  };
+}
+
+function formatGmailRequestError(
+  status: number,
+  parsed: GmailErrorPayload,
+): string {
+  const reason = parsed.reason ?? "";
+  const insufficientScope =
+    status === 403 &&
+    (reason === "insufficientPermissions" ||
+      reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT" ||
+      /insufficient.*(auth|scope|permission)/i.test(parsed.message ?? ""));
+  if (insufficientScope) {
+    return `Gmail request failed (403): insufficient OAuth scopes — reconnect Google and ensure gmail.modify is granted${
+      parsed.message ? ` (${parsed.message})` : ""
+    }`;
+  }
+  const detail = [parsed.message, parsed.reason, parsed.status]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .filter((part, index, all) => all.indexOf(part) === index)
+    .join(" · ");
+  return detail
+    ? `Gmail request failed (${status}): ${detail}`
+    : `Gmail request failed (${status})`;
+}
+
 export interface GmailHttpResponse {
   status: number;
   headers?: Record<string, string | undefined>;
@@ -347,17 +406,8 @@ export function createGmailLiveProvider(
         continue;
       }
       if (response.status === 401) throw new GmailReauthenticationRequired();
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: {
-          message?: string;
-          errors?: Array<{ reason?: string; message?: string }>;
-        };
-      };
-      const reason = payload.error?.errors?.[0]?.reason;
-      const detail =
-        payload.error?.message ??
-        payload.error?.errors?.[0]?.message ??
-        reason;
+      const payload = (await response.json().catch(() => ({}))) as unknown;
+      const parsed = parseGmailErrorPayload(payload);
       const retryable =
         response.status === 429 ||
         response.status >= 500 ||
@@ -366,14 +416,13 @@ export function createGmailLiveProvider(
             "rateLimitExceeded",
             "userRateLimitExceeded",
             "backendError",
-          ].includes(reason ?? ""));
+          ].includes(parsed.reason ?? ""));
       if (!retryable || attempt >= maxRetries) {
-        const error = new Error(
-          detail
-            ? `Gmail request failed (${response.status}): ${detail}`
-            : `Gmail request failed (${response.status})`,
-        );
-        Object.assign(error, { status: response.status });
+        const error = new Error(formatGmailRequestError(response.status, parsed));
+        Object.assign(error, {
+          status: response.status,
+          reason: parsed.reason,
+        });
         throw error;
       }
       const retryAfter = Number(response.headers?.["retry-after"]);
@@ -441,7 +490,7 @@ export function createGmailLiveProvider(
    */
   async function reconcileRecent(
     accountId: AccountId,
-    options: { labelId?: string; limit: number },
+    options: { labelId?: string; q?: string; limit: number },
   ): Promise<{
     upserts: MailMessage[];
     nextCursor: SyncCursor;
@@ -454,6 +503,7 @@ export function createGmailLiveProvider(
         maxResults: String(Math.min(100, options.limit - ids.length)),
       });
       if (options.labelId) query.append("labelIds", options.labelId);
+      if (options.q) query.set("q", options.q);
       if (pageToken) query.set("pageToken", pageToken);
       const page = await request<{
         messages?: Array<{ id?: string }>;
@@ -576,12 +626,12 @@ export function createGmailLiveProvider(
       const path = draft.providerDraftId
         ? `/drafts/${encodeURIComponent(draft.providerDraftId)}`
         : "/drafts";
+      const message = { raw: encode(generateMime(draft)) };
       const result = await request<{ id?: string }>(path, {
         method: draft.providerDraftId ? "PUT" : "POST",
-        body: {
-          id: draft.providerDraftId,
-          message: { raw: encode(generateMime(draft)) },
-        },
+        body: draft.providerDraftId
+          ? { id: draft.providerDraftId, message }
+          : { message },
       });
       if (!result.id)
         throw new Error("Gmail draft response omitted the draft id");
@@ -607,6 +657,14 @@ export function createGmailLiveProvider(
       for (let offset = 0; offset < bytes.length; offset += chunkSize) {
         yield bytes.slice(offset, offset + chunkSize);
       }
+    },
+    async fetchRecentMessages(accountId, opts) {
+      const { upserts } = await reconcileRecent(accountId, {
+        labelId: opts.labelId,
+        q: opts.q,
+        limit: opts.limit ?? 50,
+      });
+      return { upserts };
     },
     async fetchDeltas(accountId, cursor: SyncCursor | null) {
       if (!cursor) {

@@ -179,6 +179,32 @@ function mutationId(): string {
   return `mut_${crypto.randomUUID()}`;
 }
 
+/** Prefer Error/Tauri `{ message }` over opaque String(object). */
+export function outboxErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "provider operation failed";
+  }
+}
+
+/** Map UI label keys to a Gmail messages.list filter. Archive is not a label. */
+export function labelSyncQuery(
+  labelId: string,
+): { labelId?: string; q?: string } | null {
+  if (labelId === "INBOX" || labelId === "ALL") return null;
+  if (labelId === "ARCHIVE") {
+    return { q: "-in:inbox -in:trash -in:spam" };
+  }
+  return { labelId };
+}
+
 export class NativeGmailSyncEngine implements SyncEngine {
   private listeners = new Set<(event: SyncEvent) => void>();
   private messages = new Map<string, MailMessage>();
@@ -241,6 +267,18 @@ export class NativeGmailSyncEngine implements SyncEngine {
     };
   }
 
+  private rebuildThreads(accountId: AccountId): MailThread[] {
+    const allMessages = [...this.messages.values()].filter(
+      (message) => message.accountId === accountId,
+    );
+    const rebuiltThreads = threadFromMessages(accountId, allMessages);
+    for (const [id, thread] of this.threads) {
+      if (thread.accountId === accountId) this.threads.delete(id);
+    }
+    for (const thread of rebuiltThreads) this.threads.set(thread.id, thread);
+    return rebuiltThreads;
+  }
+
   async pullDeltas(accountId: AccountId): Promise<void> {
     const provider = this.providerFor(accountId);
     const result = await provider.fetchDeltas(
@@ -270,14 +308,10 @@ export class NativeGmailSyncEngine implements SyncEngine {
         this.attachments.set(attachment.id, attachment);
       }
     }
+    const rebuiltThreads = this.rebuildThreads(accountId);
     const allMessages = [...this.messages.values()].filter(
       (message) => message.accountId === accountId,
     );
-    const rebuiltThreads = threadFromMessages(accountId, allMessages);
-    for (const [id, thread] of this.threads) {
-      if (thread.accountId === accountId) this.threads.delete(id);
-    }
-    for (const thread of rebuiltThreads) this.threads.set(thread.id, thread);
     const labels = await provider.listLabels(accountId);
     const contacts = new Map<string, MailMessage["from"]>();
     for (const message of allMessages) {
@@ -345,6 +379,69 @@ export class NativeGmailSyncEngine implements SyncEngine {
     });
   }
 
+  /**
+   * Pull messages for Spam/Trash/Starred/Archive/custom labels into the local
+   * store without treating the result as a full mailbox snapshot.
+   */
+  async syncLabel(accountId: AccountId, labelId: string): Promise<void> {
+    const provider = this.providerFor(accountId);
+    const fetchRecent = provider.fetchRecentMessages?.bind(provider);
+    if (!fetchRecent) return;
+    const query = labelSyncQuery(labelId);
+    if (!query) return;
+
+    const { upserts } = await fetchRecent(accountId, {
+      ...query,
+      limit: 50,
+    });
+    for (const message of upserts) {
+      this.messages.set(message.id, message);
+      for (const attachment of message.attachments ?? []) {
+        this.attachments.set(attachment.id, attachment);
+      }
+    }
+    const rebuiltThreads = this.rebuildThreads(accountId);
+    const cursor = this.cursors.get(accountId) ?? {
+      accountId,
+      provider: provider.kind,
+      token: "1",
+      updatedAt: new Date().toISOString(),
+    };
+    await this.store.applySyncBatch({
+      accountId,
+      upserts: [
+        ...upserts.map((value) => ({
+          kind: "message" as const,
+          objectId: value.id,
+          value,
+        })),
+        ...rebuiltThreads.map((value) => ({
+          kind: "thread" as const,
+          objectId: value.id,
+          value,
+        })),
+        ...upserts.flatMap((message) =>
+          (message.attachments ?? []).map((value) => ({
+            kind: "attachment" as const,
+            objectId: value.id,
+            value,
+          })),
+        ),
+      ],
+      deletes: [],
+      cursor,
+    });
+    for (const message of upserts) {
+      await this.store.indexMessage(message);
+    }
+    this.emit({
+      type: "delta",
+      accountId,
+      upserts: upserts.length,
+      deletes: 0,
+    });
+  }
+
   async enqueue(
     input: Omit<OutboxMutation, "id" | "attempts" | "status" | "createdAt">,
   ): Promise<OutboxMutation> {
@@ -407,9 +504,12 @@ export class NativeGmailSyncEngine implements SyncEngine {
           item.targetIds[0] === draftKey,
       );
       if (existing) {
+        // Refresh payload (and providerDraftId) but never auto-promote failed →
+        // pending. Compose autosave would otherwise retry forever (attempt N).
         existing.payload = withProviderId(input.payload);
-        existing.status = "pending";
-        existing.lastError = undefined;
+        if (existing.status === "pending") {
+          existing.lastError = undefined;
+        }
         await this.store.put(
           existing.accountId,
           "outbox",
@@ -508,8 +608,7 @@ export class NativeGmailSyncEngine implements SyncEngine {
         flushed += 1;
       } catch (error) {
         mutation.status = "failed";
-        mutation.lastError =
-          error instanceof Error ? error.message : String(error);
+        mutation.lastError = outboxErrorMessage(error);
         failed += 1;
       }
       await Promise.all([

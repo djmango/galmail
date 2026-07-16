@@ -10,12 +10,13 @@ import {
 import {
   NativeGmailSyncEngine,
   NativeMailStore,
+  labelSyncQuery,
   type DurableKind,
 } from "./native-sync";
 
 const accountId = asAccountId("gmail:restart@example.com");
 
-function message(id: string): MailMessage {
+function message(id: string, labelIds: string[] = []): MailMessage {
   return {
     id: asMessageId(id),
     threadId: asThreadId(`thread-${id}`),
@@ -27,8 +28,8 @@ function message(id: string): MailMessage {
     to: [{ email: "restart@example.com" }],
     date: "2026-01-01T00:00:00.000Z",
     unread: true,
-    starred: false,
-    labelIds: [],
+    starred: labelIds.includes("STARRED"),
+    labelIds: labelIds as MailMessage["labelIds"],
     hasAttachments: false,
   };
 }
@@ -127,10 +128,62 @@ function provider(
         fullReconcile: fullReconcile[index],
       };
     },
+    async fetchRecentMessages(_accountId, opts) {
+      const labelId = opts.labelId;
+      const all = deltas.flat();
+      if (opts.q?.includes("-in:inbox")) {
+        return {
+          upserts: all.filter(
+            (item) =>
+              !item.labelIds.includes("INBOX" as never) &&
+              !item.labelIds.includes("TRASH" as never) &&
+              !item.labelIds.includes("SPAM" as never),
+          ),
+        };
+      }
+      if (!labelId) return { upserts: all };
+      return {
+        upserts: all.filter((item) =>
+          item.labelIds.includes(labelId as never),
+        ),
+      };
+    },
   };
 }
 
 describe("native Gmail sync restart contract", () => {
+  test("labelSyncQuery maps archive to a Gmail search and skips inbox", () => {
+    expect(labelSyncQuery("INBOX")).toBeNull();
+    expect(labelSyncQuery("SPAM")).toEqual({ labelId: "SPAM" });
+    expect(labelSyncQuery("STARRED")).toEqual({ labelId: "STARRED" });
+    expect(labelSyncQuery("ARCHIVE")).toEqual({
+      q: "-in:inbox -in:trash -in:spam",
+    });
+  });
+
+  test("syncLabel merges side-view messages without wiping inbox", async () => {
+    const store = new MockNativeStore();
+    const inbox = message("inbox-1", ["INBOX"]);
+    const spam = message("spam-1", ["SPAM"]);
+    const sync = new NativeGmailSyncEngine(
+      provider([[inbox], [spam]]),
+      store,
+    );
+    await sync.pullDeltas(accountId);
+    expect(sync.localThreads(accountId).map((item) => String(item.id))).toEqual(
+      ["thread-inbox-1"],
+    );
+
+    await sync.syncLabel(accountId, "SPAM");
+    const ids = sync
+      .localThreads(accountId)
+      .map((item) => String(item.id))
+      .sort();
+    expect(ids).toEqual(["thread-inbox-1", "thread-spam-1"]);
+    expect(store.records.has("message:inbox-1")).toBe(true);
+    expect(store.records.has("message:spam-1")).toBe(true);
+  });
+
   test("hydrates offline after restart and reconciles deletes", async () => {
     const store = new MockNativeStore();
     const first = new NativeGmailSyncEngine(
@@ -207,6 +260,7 @@ describe("native Gmail sync restart contract", () => {
     });
     expect(first.attempts).toBe(1);
 
+    // Autosave / re-enqueue must update payload but NOT re-queue failed rows.
     const second = await sync.enqueue({
       accountId,
       kind: "save_draft",
@@ -214,7 +268,17 @@ describe("native Gmail sync restart contract", () => {
       payload: { draft: { ...draft, subject: "Hi again" } },
     });
     expect(second.id).toBe(first.id);
-    expect(second.status).toBe("pending");
+    expect(second.status).toBe("failed");
+    expect(second.lastError).toContain("Invalid From");
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 0,
+    });
+    expect(first.attempts).toBe(1);
+    expect(saves).toBe(1);
+
+    expect(await sync.retryOutbox(first.id)).toBe(true);
+    expect(first.status).toBe("pending");
     expect(await sync.flushOutbox(accountId)).toEqual({
       flushed: 1,
       failed: 0,

@@ -112,6 +112,67 @@ describe("Gmail live provider contract", () => {
     ).toHaveLength(1);
   });
 
+  test("fetchRecentMessages lists by labelIds and archive query", async () => {
+    const { http, requests } = scripted((input) => {
+      const url = new URL(input.url);
+      if (url.pathname.endsWith("/profile")) {
+        return response(200, { historyId: "50" });
+      }
+      if (
+        url.pathname.endsWith("/messages") &&
+        !url.pathname.includes("/messages/")
+      ) {
+        if (url.searchParams.get("labelIds") === "SPAM") {
+          return response(200, { messages: [{ id: "spam-1" }] });
+        }
+        if (url.searchParams.get("q") === "-in:inbox -in:trash -in:spam") {
+          return response(200, { messages: [{ id: "arch-1" }] });
+        }
+        throw new Error(`Unexpected list query: ${url.search}`);
+      }
+      if (url.pathname.endsWith("/messages/spam-1")) {
+        return response(200, {
+          ...message("spam-1"),
+          labelIds: ["SPAM"],
+        });
+      }
+      if (url.pathname.endsWith("/messages/arch-1")) {
+        return response(200, {
+          ...message("arch-1"),
+          labelIds: ["CATEGORY_PERSONAL"],
+        });
+      }
+      throw new Error(`Unexpected request: ${input.url}`);
+    });
+    const provider = createGmailLiveProvider({ tokens, http });
+
+    const spam = await provider.fetchRecentMessages!(accountId, {
+      labelId: "SPAM",
+      limit: 20,
+    });
+    expect(spam.upserts.map((item) => item.id)).toEqual(["spam-1"]);
+
+    const archive = await provider.fetchRecentMessages!(accountId, {
+      q: "-in:inbox -in:trash -in:spam",
+      limit: 20,
+    });
+    expect(archive.upserts.map((item) => item.id)).toEqual(["arch-1"]);
+    expect(
+      requests.some((item) => {
+        const url = new URL(item.url);
+        return url.searchParams.get("labelIds") === "SPAM";
+      }),
+    ).toBe(true);
+    expect(
+      requests.some((item) => {
+        const url = new URL(item.url);
+        return (
+          url.searchParams.get("q") === "-in:inbox -in:trash -in:spam"
+        );
+      }),
+    ).toBe(true);
+  });
+
   test("consumes History API pages and normalizes deletes", async () => {
     const { http } = scripted((input) => {
       const url = new URL(input.url);
@@ -280,5 +341,34 @@ describe("Gmail live provider contract", () => {
         updatedAt: new Date().toISOString(),
       }),
     ).rejects.toThrow(/Invalid From header/);
+  });
+
+  test("surfaces insufficient OAuth scopes clearly", async () => {
+    const { http } = scripted(() =>
+      response(403, {
+        error: {
+          message: "Request had insufficient authentication scopes.",
+          status: "PERMISSION_DENIED",
+          details: [
+            {
+              reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+              message: "Insufficient Permission",
+            },
+          ],
+        },
+      }),
+    );
+    const provider = createGmailLiveProvider({ tokens, http, maxRetries: 0 });
+    await expect(
+      provider.saveDraft(accountId, {
+        id: "d1",
+        accountId,
+        to: [{ email: "a@example.com" }],
+        subject: "x",
+        bodyHtml: "<p>x</p>",
+        bodyText: "x",
+        updatedAt: new Date().toISOString(),
+      }),
+    ).rejects.toThrow(/insufficient OAuth scopes/);
   });
 });

@@ -51,6 +51,14 @@ export interface MailProvider {
     /** True when the result is a complete provider snapshot after cursor expiry. */
     fullReconcile?: boolean;
   }>;
+  /**
+   * Optional bounded pull for side views (Spam/Trash/Starred/Archive/custom).
+   * Does not advance the history cursor and must not imply a full mailbox snapshot.
+   */
+  fetchRecentMessages?(
+    accountId: AccountId,
+    opts: { labelId?: string; q?: string; limit?: number },
+  ): Promise<{ upserts: MailMessage[] }>;
 }
 
 export interface SyncEngine {
