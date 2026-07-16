@@ -158,7 +158,7 @@ describe("MemorySyncEngine", () => {
     ).toBe("cancelled");
   });
 
-  it("does not auto-retry failed outbox rows until retry or re-enqueue", async () => {
+  it("does not auto-retry failed outbox rows until explicit retry", async () => {
     const accountId = asAccountId("gmail:demo");
     let saves = 0;
     const provider = fixtureProvider();
@@ -192,6 +192,27 @@ describe("MemorySyncEngine", () => {
     });
     expect(saves).toBe(1);
     expect(sync.getOutbox()[0]?.lastError).toBe("boom");
+
+    // Re-enqueue (compose autosave) must not promote failed → pending.
+    await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft: { ...draft, subject: "Fail again" } },
+    });
+    expect(sync.getOutbox()[0]?.status).toBe("failed");
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 0,
+    });
+    expect(saves).toBe(1);
+
+    expect(await sync.retryOutbox(sync.getOutbox()[0]!.id)).toBe(true);
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 0,
+      failed: 1,
+    });
+    expect(saves).toBe(2);
   });
 
   it("is deterministic under an injected clock and id source", async () => {

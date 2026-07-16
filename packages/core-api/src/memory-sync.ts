@@ -10,6 +10,20 @@ import type {
 import type { MailProvider } from "./capabilities.js";
 import { matchesMailSearch, parseMailSearch } from "./search.js";
 
+function outboxErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "provider operation failed";
+  }
+}
+
 /** Linear-style local-first sync engine used by the Gmail vertical slice. */
 export class MemorySyncEngine implements SyncEngine {
   private threads = new Map<string, MailThread>();
@@ -157,13 +171,15 @@ export class MemorySyncEngine implements SyncEngine {
           item.targetIds[0] === draftKey,
       );
       if (existing) {
+        // Keep failed rows failed until retryOutbox — autosave must not requeue.
         existing.payload = withProviderId(mutation.payload);
-        existing.status = "pending";
-        existing.lastError = undefined;
+        if (existing.status === "pending") {
+          existing.lastError = undefined;
+        }
         this.emit({
           type: "outbox",
           mutationId: existing.id,
-          status: "pending",
+          status: existing.status,
         });
         return existing;
       }
@@ -238,7 +254,7 @@ export class MemorySyncEngine implements SyncEngine {
         this.emit({ type: "outbox", mutationId: m.id, status: "done" });
       } catch (err) {
         m.status = "failed";
-        m.lastError = err instanceof Error ? err.message : String(err);
+        m.lastError = outboxErrorMessage(err);
         failed += 1;
         this.emit({ type: "outbox", mutationId: m.id, status: "failed" });
         this.emit({
