@@ -11,7 +11,10 @@ export type CommandId =
   | "undo"
   | "search"
   | "snooze"
+  | "enter_insert"
+  | "enter_normal"
   | "go_to_inbox"
+  | "toggle_sidebar"
   | "back";
 
 export interface CommandDef {
@@ -30,7 +33,8 @@ export const SUPERHUMAN_DEFAULTS: CommandDef[] = [
   { id: "trash", title: "Trash", defaultKeys: ["#"], scope: "list" },
   { id: "mark_read_toggle", title: "Toggle read", defaultKeys: ["u"], scope: "list" },
   { id: "compose", title: "Compose", defaultKeys: ["c"], scope: "global" },
-  { id: "reply", title: "Reply", defaultKeys: ["r"], scope: "thread" },
+  // Enter also replies when a thread is open (scoped match; list uses Enter to open).
+  { id: "reply", title: "Reply", defaultKeys: ["r", "enter"], scope: "thread" },
   {
     id: "command_palette",
     title: "Command palette",
@@ -40,8 +44,26 @@ export const SUPERHUMAN_DEFAULTS: CommandDef[] = [
   { id: "undo", title: "Undo", defaultKeys: ["z"], scope: "global" },
   { id: "search", title: "Search", defaultKeys: ["/"], scope: "global" },
   { id: "snooze", title: "Snooze", defaultKeys: ["h"], scope: "list" },
-  // Superhuman: G then I → Go to Inbox. Bare `i` also maps here for quick access.
-  { id: "go_to_inbox", title: "Go to inbox", defaultKeys: ["i", "g i"], scope: "global" },
+  // Vim-style: i enters Insert (type in search). G then I still goes to Inbox.
+  {
+    id: "enter_insert",
+    title: "Enter insert mode",
+    defaultKeys: ["i"],
+    scope: "global",
+  },
+  {
+    id: "enter_normal",
+    title: "Enter normal mode",
+    defaultKeys: [],
+    scope: "global",
+  },
+  { id: "go_to_inbox", title: "Go to inbox", defaultKeys: ["g i"], scope: "global" },
+  {
+    id: "toggle_sidebar",
+    title: "Toggle sidebar",
+    defaultKeys: ["["],
+    scope: "global",
+  },
   { id: "back", title: "Back", defaultKeys: ["escape"], scope: "global" },
 ];
 
@@ -58,6 +80,23 @@ export function isEditableTarget(target: EventTarget | null): boolean {
     tag === "SELECT" ||
     Boolean(el.isContentEditable)
   );
+}
+
+export type EditorMode = "normal" | "insert";
+export type EscapeAction = "enter_normal" | "dismiss";
+
+/**
+ * Vim-style Escape: leave Insert (or blur a focused field) before dismissing
+ * overlays. Only Normal mode with nothing editable focused dismisses/back.
+ */
+export function resolveEscapeAction(state: {
+  mode: EditorMode;
+  editableFocused: boolean;
+}): EscapeAction {
+  if (state.mode === "insert" || state.editableFocused) {
+    return "enter_normal";
+  }
+  return "dismiss";
 }
 
 /** Normalize a KeyboardEvent-like object into a binding token (e.g. "meta+k", "escape"). */
@@ -151,8 +190,31 @@ export function keysForCommand(id: CommandId, defs: CommandDef[] = SUPERHUMAN_DE
   return defs.find((d) => d.id === id)?.defaultKeys ?? [];
 }
 
+export type MatchContext = {
+  /** When a key is bound in multiple scopes, prefer this scope (e.g. thread vs list). */
+  activeScope?: CommandDef["scope"];
+};
+
+type ScopedBinding = { id: CommandId; scope: CommandDef["scope"] };
+
+/** Pick a command when one key is bound in multiple scopes (e.g. Enter: open vs reply). */
+export function resolveScopedBinding(
+  candidates: ScopedBinding[] | undefined,
+  activeScope?: CommandDef["scope"],
+): CommandId | null {
+  if (!candidates?.length) return null;
+  if (candidates.length === 1) return candidates[0]!.id;
+  if (activeScope) {
+    const scoped = candidates.find((b) => b.scope === activeScope);
+    if (scoped) return scoped.id;
+  }
+  const global = candidates.find((b) => b.scope === "global");
+  if (global) return global.id;
+  return candidates[0]!.id;
+}
+
 export class CommandRegistry {
-  private bindings = new Map<string, CommandId>();
+  private bindings = new Map<string, ScopedBinding[]>();
   private sequences = new Map<string, Map<string, CommandId>>();
   private handlers = new Map<CommandId, () => void>();
   private defs: CommandDef[];
@@ -180,11 +242,15 @@ export class CommandRegistry {
           table.set(next, d.id);
           continue;
         }
-        const conflict = this.bindings.get(key);
-        if (conflict && conflict !== d.id) {
-          throw new Error(`Key conflict: ${key} -> ${conflict} and ${d.id}`);
+        const existing = this.bindings.get(key) ?? [];
+        const sameScope = existing.find((b) => b.scope === d.scope && b.id !== d.id);
+        if (sameScope) {
+          throw new Error(`Key conflict: ${key} -> ${sameScope.id} and ${d.id}`);
         }
-        this.bindings.set(key, d.id);
+        if (!existing.some((b) => b.id === d.id)) {
+          existing.push({ id: d.id, scope: d.scope });
+          this.bindings.set(key, existing);
+        }
       }
     }
   }
@@ -202,13 +268,16 @@ export class CommandRegistry {
   }
 
   /** Normalize KeyboardEvent into binding key / resolve sequences. */
-  match(event: {
-    key: string;
-    metaKey: boolean;
-    ctrlKey: boolean;
-    altKey: boolean;
-    shiftKey?: boolean;
-  }): CommandId | null {
+  match(
+    event: {
+      key: string;
+      metaKey: boolean;
+      ctrlKey: boolean;
+      altKey: boolean;
+      shiftKey?: boolean;
+    },
+    context: MatchContext = {},
+  ): CommandId | null {
     const token = normalizeKey(event);
 
     if (this.pendingPrefix) {
@@ -226,7 +295,7 @@ export class CommandRegistry {
       return null;
     }
 
-    return this.bindings.get(token) ?? null;
+    return resolveScopedBinding(this.bindings.get(token), context.activeScope);
   }
 
   dispatch(id: CommandId): boolean {

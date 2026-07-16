@@ -20,7 +20,8 @@ test("keyboard mail and compose flows remain usable", async ({ page }) => {
   await expect(
     page.getByLabel("Reading pane").getByRole("heading"),
   ).toBeVisible();
-  await page.keyboard.press("r");
+  // Enter while reading starts a reply (same as R).
+  await page.keyboard.press("Enter");
   const reply = page.getByRole("dialog", { name: "Compose" });
   await expect(reply).toBeVisible();
   await expect(reply.getByPlaceholder("Subject", { exact: true })).toHaveValue(

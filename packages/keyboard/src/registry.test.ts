@@ -3,6 +3,7 @@ import {
   CommandRegistry,
   formatShortcutChord,
   isEditableTarget,
+  resolveEscapeAction,
   shortcutTooltip,
 } from "./registry.js";
 
@@ -18,15 +19,36 @@ describe("CommandRegistry", () => {
     expect(
       reg.match({ key: "Enter", metaKey: false, ctrlKey: false, altKey: false }),
     ).toBe("open_thread");
+    expect(
+      reg.match(
+        { key: "Enter", metaKey: false, ctrlKey: false, altKey: false },
+        { activeScope: "list" },
+      ),
+    ).toBe("open_thread");
+    expect(
+      reg.match(
+        { key: "Enter", metaKey: false, ctrlKey: false, altKey: false },
+        { activeScope: "thread" },
+      ),
+    ).toBe("reply");
+    expect(reg.match({ key: "r", metaKey: false, ctrlKey: false, altKey: false })).toBe(
+      "reply",
+    );
     expect(reg.match({ key: "k", metaKey: true, ctrlKey: false, altKey: false })).toBe(
       "command_palette",
     );
   });
 
-  it("matches bare i and g-then-i as go_to_inbox", () => {
+  it("binds Enter to reply in thread scope without conflicting list open", () => {
+    const reg = new CommandRegistry();
+    const reply = reg.list().find((c) => c.id === "reply");
+    expect(reply?.defaultKeys).toEqual(["r", "enter"]);
+  });
+
+  it("maps bare i to insert mode and g-then-i to inbox", () => {
     const reg = new CommandRegistry();
     expect(reg.match({ key: "i", metaKey: false, ctrlKey: false, altKey: false })).toBe(
-      "go_to_inbox",
+      "enter_insert",
     );
 
     expect(reg.match({ key: "g", metaKey: false, ctrlKey: false, altKey: false })).toBeNull();
@@ -50,10 +72,17 @@ describe("CommandRegistry", () => {
     expect(spy).toHaveBeenCalledOnce();
   });
 
-  it("lists go_to_inbox in help registry", () => {
+  it("lists go_to_inbox as g i only", () => {
     const reg = new CommandRegistry();
     const inbox = reg.list().find((c) => c.id === "go_to_inbox");
-    expect(inbox?.defaultKeys).toEqual(["i", "g i"]);
+    expect(inbox?.defaultKeys).toEqual(["g i"]);
+  });
+
+  it("matches [ as toggle_sidebar", () => {
+    const reg = new CommandRegistry();
+    expect(reg.match({ key: "[", metaKey: false, ctrlKey: false, altKey: false })).toBe(
+      "toggle_sidebar",
+    );
   });
 });
 
@@ -71,5 +100,17 @@ describe("shortcut helpers", () => {
     const div = { tagName: "DIV", isContentEditable: false } as HTMLElement;
     expect(isEditableTarget(input)).toBe(true);
     expect(isEditableTarget(div)).toBe(false);
+  });
+
+  it("resolves Escape as Insert→Normal before dismiss", () => {
+    expect(
+      resolveEscapeAction({ mode: "insert", editableFocused: false }),
+    ).toBe("enter_normal");
+    expect(
+      resolveEscapeAction({ mode: "normal", editableFocused: true }),
+    ).toBe("enter_normal");
+    expect(
+      resolveEscapeAction({ mode: "normal", editableFocused: false }),
+    ).toBe("dismiss");
   });
 });
