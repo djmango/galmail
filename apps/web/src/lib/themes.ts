@@ -10,13 +10,21 @@
  *              margins, highlighter accents, calm and literary.
  *
  * Themes are pure CSS-variable swaps (see styles/themes.css) applied via
- * [data-theme="..."] on the app root.
+ * [data-theme="..."] on the app root. Preference may also be "system", which
+ * resolves to light/dark via prefers-color-scheme.
  */
 
-export type ThemeId = "dark" | "light";
+/** Resolved theme applied to `data-theme` (never "system"). */
+export type ResolvedTheme = "dark" | "light";
+
+/** Persisted user preference, including follow-system. */
+export type ThemePreference = ResolvedTheme | "system";
+
+/** @deprecated Prefer ResolvedTheme / ThemePreference. */
+export type ThemeId = ThemePreference;
 
 export interface ThemeMeta {
-  id: ThemeId;
+  id: ResolvedTheme;
   /** Short label shown in the toggle. */
   label: string;
   /** One-line description of the design principle. */
@@ -84,26 +92,60 @@ export const LAYOUTS: LayoutMeta[] = [
   },
 ];
 
-export const DEFAULT_THEME: ThemeId = "dark";
+export const DEFAULT_THEME: ThemePreference = "system";
 export const DEFAULT_LAYOUT: LayoutMode = "three-panel";
 export const DEFAULT_SIDEBAR_COLLAPSED = false;
+export const DEFAULT_LOAD_REMOTE_IMAGES = true;
+export const DEFAULT_TRASH_AFTER_UNSUBSCRIBE = true;
 
 const THEME_STORAGE_KEY = "galmail.theme";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "galmail.sidebarCollapsed";
+const LOAD_REMOTE_IMAGES_STORAGE_KEY = "galmail.loadRemoteImages";
+const TRASH_AFTER_UNSUBSCRIBE_STORAGE_KEY = "galmail.trashAfterUnsubscribe";
+const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
 
-/** Load persisted theme, falling back to the default / OS preference. */
-export function loadPersistedTheme(): ThemeId {
-  if (typeof localStorage === "undefined") return DEFAULT_THEME;
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "dark" || stored === "light") return stored;
-  const prefersLight =
-    typeof matchMedia !== "undefined" &&
-    matchMedia("(prefers-color-scheme: light)").matches;
-  return prefersLight ? "light" : DEFAULT_THEME;
+function isThemePreference(value: string | null): value is ThemePreference {
+  return value === "dark" || value === "light" || value === "system";
 }
 
-/** Persist the user's theme choice. */
-export function persistTheme(theme: ThemeId): void {
+/** Current OS light/dark preference. */
+export function getSystemTheme(): ResolvedTheme {
+  if (typeof matchMedia === "undefined") return "dark";
+  return matchMedia(SYSTEM_DARK_QUERY).matches ? "dark" : "light";
+}
+
+/** Resolve a stored preference to the theme applied on the document. */
+export function resolveTheme(preference: ThemePreference): ResolvedTheme {
+  if (preference === "system") return getSystemTheme();
+  return preference;
+}
+
+/**
+ * Subscribe to OS theme changes. Call when preference is "system".
+ * Returns an unsubscribe function.
+ */
+export function subscribeSystemTheme(
+  onChange: (theme: ResolvedTheme) => void,
+): () => void {
+  if (typeof matchMedia === "undefined") return () => undefined;
+  const media = matchMedia(SYSTEM_DARK_QUERY);
+  const handler = () => {
+    onChange(media.matches ? "dark" : "light");
+  };
+  media.addEventListener("change", handler);
+  return () => media.removeEventListener("change", handler);
+}
+
+/** Load persisted theme preference, defaulting to system. */
+export function loadPersistedTheme(): ThemePreference {
+  if (typeof localStorage === "undefined") return DEFAULT_THEME;
+  const stored = localStorage.getItem(THEME_STORAGE_KEY);
+  if (isThemePreference(stored)) return stored;
+  return DEFAULT_THEME;
+}
+
+/** Persist the user's theme preference (including system). */
+export function persistTheme(theme: ThemePreference): void {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(THEME_STORAGE_KEY, theme);
 }
@@ -121,4 +163,37 @@ export function loadPersistedSidebarCollapsed(): boolean {
 export function persistSidebarCollapsed(collapsed: boolean): void {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
+}
+
+/** Load persisted remote-image default for the reading pane. */
+export function loadPersistedLoadRemoteImages(): boolean {
+  if (typeof localStorage === "undefined") return DEFAULT_LOAD_REMOTE_IMAGES;
+  const stored = localStorage.getItem(LOAD_REMOTE_IMAGES_STORAGE_KEY);
+  if (stored === "1" || stored === "true") return true;
+  if (stored === "0" || stored === "false") return false;
+  return DEFAULT_LOAD_REMOTE_IMAGES;
+}
+
+/** Persist whether remote images load by default in the reading pane. */
+export function persistLoadRemoteImages(enabled: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(LOAD_REMOTE_IMAGES_STORAGE_KEY, enabled ? "1" : "0");
+}
+
+/** Load persisted trash-after-unsubscribe preference (default on). */
+export function loadPersistedTrashAfterUnsubscribe(): boolean {
+  if (typeof localStorage === "undefined") return DEFAULT_TRASH_AFTER_UNSUBSCRIBE;
+  const stored = localStorage.getItem(TRASH_AFTER_UNSUBSCRIBE_STORAGE_KEY);
+  if (stored === "1" || stored === "true") return true;
+  if (stored === "0" || stored === "false") return false;
+  return DEFAULT_TRASH_AFTER_UNSUBSCRIBE;
+}
+
+/** Persist whether to trash the message after a successful unsubscribe. */
+export function persistTrashAfterUnsubscribe(enabled: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(
+    TRASH_AFTER_UNSUBSCRIBE_STORAGE_KEY,
+    enabled ? "1" : "0",
+  );
 }

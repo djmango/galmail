@@ -85,11 +85,6 @@
   display: none;
 }
 
-.app[data-layout="two-panel"] .settings-top-trigger,
-.app[data-layout="fullscreen"] .settings-top-trigger {
-  display: inline-flex;
-}
-
 .app[data-layout="fullscreen"] .shell {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -139,9 +134,5 @@
   .app[data-layout] .sidebar,
   .app[data-layout] .reading-pane:not([data-fullscreen="true"]) {
     display: none;
-  }
-
-  .app[data-layout] .settings-top-trigger {
-    display: inline-flex;
   }
 }

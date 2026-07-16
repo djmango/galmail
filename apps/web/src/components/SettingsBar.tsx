@@ -1,12 +1,20 @@
-import { LAYOUTS, type LayoutMode } from "../lib/themes";
+import {
+  LAYOUTS,
+  type LayoutMode,
+  type ThemePreference,
+} from "../lib/themes";
 import { Icons } from "./Icons";
 
 export interface SettingsState {
-  theme: import("../lib/themes").ThemeId;
+  theme: ThemePreference;
   layout: LayoutMode;
   developerMode: boolean;
   /** Request read receipts on send. Off by default. */
   requestReadReceipt: boolean;
+  /** Load remote images in the reading pane by default. On by default. */
+  loadRemoteImages: boolean;
+  /** Move the message to Trash after a successful unsubscribe. On by default. */
+  trashAfterUnsubscribe: boolean;
 }
 
 const layoutIcons = {
