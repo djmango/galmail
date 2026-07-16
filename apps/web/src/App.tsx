@@ -402,7 +402,7 @@ export function App() {
 
     const handleBack = () => {
       const overlays = overlayRef.current;
-      // Layered dismiss — most specific first (Superhuman "Back").
+      // Layered dismiss - most specific first (Superhuman "Back").
       if (overlays.paletteOpen) {
         setPaletteOpen(false);
         requestAnimationFrame(() => focusThreadList());
