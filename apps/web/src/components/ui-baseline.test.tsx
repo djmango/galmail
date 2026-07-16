@@ -56,7 +56,9 @@ describe("current UI baseline", () => {
         inviteCode="DEVICE-123"
         providerMode="fixture"
         canConnectGmail
+        canConnectMicrosoft
         gmailConnecting={false}
+        microsoftConnecting={false}
         connectError={null}
         accounts={[
           {
@@ -70,12 +72,14 @@ describe("current UI baseline", () => {
         onOpenRemoteProcessing={mock()}
         onLinkDevice={mock()}
         onConnectGmail={mock()}
+        onConnectMicrosoft={mock()}
       />,
     );
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain("demo@galmail.local");
     expect(html).toContain("Sign in with Google");
+    expect(html).toContain("Sign in with Microsoft");
     expect(html).toContain("Remote processing");
     expect(html).toContain("Request read receipts");
     expect(html).toContain("Load remote images");

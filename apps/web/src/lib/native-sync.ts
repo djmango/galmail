@@ -200,7 +200,8 @@ export function labelSyncQuery(
 ): { labelId?: string; q?: string } | null {
   if (labelId === "INBOX" || labelId === "ALL") return null;
   if (labelId === "ARCHIVE") {
-    return { q: "-in:inbox -in:trash -in:spam" };
+    // Gmail uses `q`; Microsoft maps `labelId` ARCHIVE to the archive folder.
+    return { labelId: "ARCHIVE", q: "-in:inbox -in:trash -in:spam" };
   }
   return { labelId };
 }

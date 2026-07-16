@@ -157,6 +157,7 @@ describe("native Gmail sync restart contract", () => {
     expect(labelSyncQuery("SPAM")).toEqual({ labelId: "SPAM" });
     expect(labelSyncQuery("STARRED")).toEqual({ labelId: "STARRED" });
     expect(labelSyncQuery("ARCHIVE")).toEqual({
+      labelId: "ARCHIVE",
       q: "-in:inbox -in:trash -in:spam",
     });
   });

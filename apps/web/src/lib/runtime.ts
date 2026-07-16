@@ -31,10 +31,12 @@ import { LocalDeviceLinking } from "@galmail/sync";
 import {
   isNativeShell,
   readStoredGmailAccountId,
+  readStoredMicrosoftAccountId,
   readStoredProviderMode,
   type ProviderMode,
 } from "./account-session";
 import { googleDesktopClientId } from "./gmail-connect";
+import { microsoftClientId, microsoftTenant } from "./microsoft-connect";
 import { NativeGmailSyncEngine, NativeMailStore } from "./native-sync";
 
 function providerMode(): ProviderMode {
@@ -52,6 +54,17 @@ function gmailConnectCapability() {
     available: native && Boolean(clientId),
     clientIdConfigured: Boolean(clientId),
     nativeShell: native,
+  };
+}
+
+function microsoftConnectCapability() {
+  const clientId = microsoftClientId();
+  const native = isNativeShell();
+  return {
+    available: native && Boolean(clientId),
+    clientIdConfigured: Boolean(clientId),
+    nativeShell: native,
+    tenant: microsoftTenant(),
   };
 }
 
@@ -97,6 +110,7 @@ async function createFixtureRuntime() {
     gmailOAuth: undefined,
     microsoftOAuth: undefined,
     gmailConnect: gmailConnectCapability(),
+    microsoftConnect: microsoftConnectCapability(),
     nativeStore: undefined as NativeMailStore | undefined,
     copy: REMOTE_OPT_IN_COPY,
   };
@@ -113,8 +127,11 @@ async function createLiveRuntime() {
     import.meta.env.VITE_GMAIL_ACCOUNT_ID?.trim() ||
     readStoredGmailAccountId() ||
     undefined;
-  const microsoftClientId = import.meta.env.VITE_MICROSOFT_CLIENT_ID?.trim();
-  const microsoftAccount = import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim();
+  const msClientId = microsoftClientId();
+  const microsoftAccount =
+    import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim() ||
+    readStoredMicrosoftAccountId() ||
+    undefined;
   if (!gmailAccount && !microsoftAccount) {
     throw new Error(
       "Connect Gmail or Microsoft 365 before starting the live inbox",
@@ -123,7 +140,7 @@ async function createLiveRuntime() {
   if (gmailAccount && !googleClientId) {
     throw new Error("VITE_GOOGLE_DESKTOP_CLIENT_ID is required for live Gmail");
   }
-  if (microsoftAccount && !microsoftClientId) {
+  if (microsoftAccount && !msClientId) {
     throw new Error(
       "VITE_MICROSOFT_CLIENT_ID is required for live Microsoft 365",
     );
@@ -201,7 +218,7 @@ async function createLiveRuntime() {
             }>("microsoft_graph_request", {
               request: {
                 accountId: microsoftAccountId,
-                clientId: microsoftClientId!,
+                clientId: msClientId!,
                 method: input.method ?? "GET",
                 path: `${url.pathname}${url.search}`,
                 body: input.body ? JSON.parse(input.body) : undefined,
@@ -266,7 +283,7 @@ async function createLiveRuntime() {
       .flatMap((local) => local.threads)
       .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
     providerMode: "live" as const,
-    // Legacy UI name: this is the active normalized account, including Microsoft.
+    // Legacy UI name: primary account for compose/consent when only one is live.
     gmailAccountId: gmailAccountId ?? microsoftAccountId!,
     microsoftAccountId,
     gmailOAuth: gmailAccountId
@@ -292,25 +309,28 @@ async function createLiveRuntime() {
         }
       : undefined,
     gmailConnect: gmailConnectCapability(),
-    microsoftOAuth: {
-      begin: (tenant = "common") =>
-        invoke<{ attemptId: string; authorizationUrl: string }>(
-          "microsoft_oauth_begin",
-          { clientId: microsoftClientId, tenant },
-        ),
-      complete: (attemptId: string) =>
-        invoke<{
-          accountId: string;
-          email: string;
-          tenant: string;
-          grantedScopes: string[];
-        }>("microsoft_oauth_complete", { attemptId }),
-      remove: (targetAccountId: AccountId = microsoftAccountId!) =>
-        invoke<{ localRecordsDeleted: number; remotelyRevoked: false }>(
-          "microsoft_remove_account",
-          { accountId: targetAccountId },
-        ),
-    },
+    microsoftConnect: microsoftConnectCapability(),
+    microsoftOAuth: msClientId
+      ? {
+          begin: (tenant = microsoftTenant()) =>
+            invoke<{ attemptId: string; authorizationUrl: string }>(
+              "microsoft_oauth_begin",
+              { clientId: msClientId, tenant },
+            ),
+          complete: (attemptId: string) =>
+            invoke<{
+              accountId: string;
+              email: string;
+              tenant: string;
+              grantedScopes: string[];
+            }>("microsoft_oauth_complete", { attemptId }),
+          remove: (targetAccountId: AccountId) =>
+            invoke<{ localRecordsDeleted: number; remotelyRevoked: false }>(
+              "microsoft_remove_account",
+              { accountId: targetAccountId },
+            ),
+        }
+      : undefined,
     nativeStore,
     copy: REMOTE_OPT_IN_COPY,
   };
@@ -323,9 +343,13 @@ export async function createGalMailRuntime() {
   const hasLiveAccount = Boolean(
     import.meta.env.VITE_GMAIL_ACCOUNT_ID?.trim() ||
       readStoredGmailAccountId() ||
-      import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim(),
+      import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim() ||
+      readStoredMicrosoftAccountId(),
   );
-  if (!hasLiveAccount || !googleDesktopClientId()) {
+  const hasProviderClient =
+    Boolean(googleDesktopClientId()) || Boolean(microsoftClientId());
+  // Allow Microsoft-only live without a Google client ID (and vice versa).
+  if (!hasLiveAccount || !hasProviderClient) {
     return createFixtureRuntime();
   }
   return createLiveRuntime();

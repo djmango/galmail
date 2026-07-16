@@ -24,18 +24,26 @@ export function SettingsPanel(props: {
   accounts: SettingsAccount[];
   providerMode: "fixture" | "live";
   canConnectGmail: boolean;
+  canConnectMicrosoft: boolean;
   gmailConnecting: boolean;
+  microsoftConnecting: boolean;
   connectError: string | null;
   onChange: (next: Partial<SettingsState>) => void;
   onClose: () => void;
   onOpenRemoteProcessing: () => void;
   onLinkDevice: () => void;
   onConnectGmail: () => void;
+  onConnectMicrosoft: () => void;
   onDisconnectGmail?: () => void;
+  onDisconnectMicrosoft?: () => void;
 }) {
   const liveGmail = props.accounts.find(
     (account) => account.provider === "gmail" && account.live,
   );
+  const liveMicrosoft = props.accounts.find(
+    (account) => account.provider === "microsoft" && account.live,
+  );
+  const connecting = props.gmailConnecting || props.microsoftConnecting;
 
   return (
     <div
@@ -106,14 +114,35 @@ export function SettingsPanel(props: {
                   variant="primary"
                   reveal={false}
                   showShortcut={false}
-                  disabled={props.gmailConnecting}
+                  disabled={connecting}
                   onClick={props.onConnectGmail}
+                />
+              )}
+              {props.canConnectMicrosoft && !liveMicrosoft && (
+                <ActionButton
+                  label={
+                    props.microsoftConnecting
+                      ? "Waiting for Microsoft…"
+                      : "Sign in with Microsoft"
+                  }
+                  icon={<Icons.microsoft />}
+                  variant={liveGmail || !props.canConnectGmail ? "primary" : "quiet"}
+                  reveal={false}
+                  showShortcut={false}
+                  disabled={connecting}
+                  onClick={props.onConnectMicrosoft}
                 />
               )}
               {liveGmail && props.onDisconnectGmail && (
                 <ActionButton
                   label="Disconnect Gmail"
                   onClick={props.onDisconnectGmail}
+                />
+              )}
+              {liveMicrosoft && props.onDisconnectMicrosoft && (
+                <ActionButton
+                  label="Disconnect Microsoft"
+                  onClick={props.onDisconnectMicrosoft}
                 />
               )}
               <ActionButton

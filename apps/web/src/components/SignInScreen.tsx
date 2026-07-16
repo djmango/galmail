@@ -5,19 +5,22 @@ export function SignInScreen(props: {
   connecting: boolean;
   error: string | null;
   canConnectGmail: boolean;
+  canConnectMicrosoft: boolean;
   onConnectGmail: () => void;
+  onConnectMicrosoft: () => void;
   onUseDemo: () => void;
   showDemoOption: boolean;
 }) {
+  const canConnectLive = props.canConnectGmail || props.canConnectMicrosoft;
   return (
     <main className="sign-in" aria-labelledby="sign-in-title">
       <div className="sign-in-card">
         <p className="eyebrow">GalMail</p>
         <h1 id="sign-in-title">Sign in to your mail</h1>
         <p className="sign-in-copy">
-          {props.canConnectGmail
-            ? "Connect Gmail to sync your real inbox on this device. Mail stays local by default."
-            : "Live Gmail sign-in needs the GalMail Mac app. You can browse the demo mailbox in the browser."}
+          {canConnectLive
+            ? "Connect Gmail or Microsoft 365 to sync on this device. Mail stays local by default."
+            : "Live sign-in needs the GalMail Mac app and a configured provider client ID. You can browse the demo mailbox in the browser."}
         </p>
         <div className="sign-in-actions">
           {props.canConnectGmail && (
@@ -33,10 +36,25 @@ export function SignInScreen(props: {
               onClick={props.onConnectGmail}
             />
           )}
+          {props.canConnectMicrosoft && (
+            <ActionButton
+              label={
+                props.connecting
+                  ? "Waiting for Microsoft…"
+                  : "Sign in with Microsoft"
+              }
+              icon={<Icons.microsoft />}
+              variant={props.canConnectGmail ? "quiet" : "primary"}
+              reveal={false}
+              showShortcut={false}
+              disabled={props.connecting}
+              onClick={props.onConnectMicrosoft}
+            />
+          )}
           {props.showDemoOption && (
             <ActionButton
               label="Browse demo mailbox"
-              variant={props.canConnectGmail ? "quiet" : "primary"}
+              variant={canConnectLive ? "quiet" : "primary"}
               showShortcut={false}
               disabled={props.connecting}
               onClick={props.onUseDemo}
@@ -48,9 +66,9 @@ export function SignInScreen(props: {
             {props.error}
           </p>
         )}
-        {props.canConnectGmail && (
+        {canConnectLive && (
           <p className="sign-in-hint">
-            A browser window will open for Google. Approve access, then return
+            A browser window will open for sign-in. Approve access, then return
             here.
           </p>
         )}

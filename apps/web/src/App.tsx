@@ -18,8 +18,9 @@ import { REMOTE_OPT_IN_DISCLOSURE_VERSION } from "@galmail/remote-opt-in";
 import { isEditableTarget, resolveEscapeAction } from "@galmail/keyboard";
 import {
   clearLiveGmailAccount,
+  clearLiveMicrosoftAccount,
   persistDemoMailboxPreference,
-  shouldPromptGmailSignIn,
+  shouldPromptSignIn,
 } from "./lib/account-session";
 import {
   connectGmailWithPkce,
@@ -27,6 +28,25 @@ import {
   googleDesktopClientId,
   invokeErrorMessage,
 } from "./lib/gmail-connect";
+import {
+  connectMicrosoftWithPkce,
+  disconnectMicrosoftAccount,
+  microsoftClientId,
+} from "./lib/microsoft-connect";
+import {
+  createGoogleEvent,
+  deleteGoogleEvent,
+  loadGoogleCalendarEvents,
+  updateGoogleEvent,
+} from "./lib/google-calendar";
+import {
+  createMicrosoftEvent,
+  deleteMicrosoftEvent,
+  loadMicrosoftCalendarEvents,
+  updateMicrosoftEvent,
+  type CalendarEvent,
+  type CalendarEventWrite,
+} from "./lib/microsoft-calendar";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
 import type { NativeGmailSyncEngine } from "./lib/native-sync";
 import {
@@ -43,6 +63,30 @@ import {
   subscribeSystemTheme,
   type ResolvedTheme,
 } from "./lib/themes";
+import {
+  capabilityForMessage,
+  performUnsubscribe,
+  unsubscribeButtonVisible,
+  unsubscribeFailureStatus,
+  unsubscribeSenderLabel,
+  unsubscribeSuccessStatus,
+  unsubscribeTooltip,
+} from "./lib/unsubscribe";
+import { CalendarView } from "./components/CalendarView";
+import { CommandPalette } from "./components/CommandPalette";
+import { ComposeModal, type ComposeDraft } from "./components/ComposeModal";
+import {
+  FloatingDrafts,
+  type FloatingDraft,
+} from "./components/FloatingDrafts";
+import { Icons } from "./components/Icons";
+import { RemoteOptInModal } from "./components/RemoteOptInModal";
+import { type SettingsState } from "./components/SettingsBar";
+import { ActionButton } from "./components/ActionButton";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { SafeMailBody } from "./components/SafeMailBody";
+import { SignInScreen } from "./components/SignInScreen";
+import { StatusBar, type EditorMode } from "./components/StatusBar";
 
 function labelStatusName(labelId: string, labels: MailLabel[]): string {
   switch (labelId) {
@@ -68,29 +112,6 @@ function threadsFromSync(rt: GalMailRuntime): MailThread[] {
   }
   return [];
 }
-import {
-  capabilityForMessage,
-  performUnsubscribe,
-  unsubscribeButtonVisible,
-  unsubscribeFailureStatus,
-  unsubscribeSenderLabel,
-  unsubscribeSuccessStatus,
-  unsubscribeTooltip,
-} from "./lib/unsubscribe";
-import { CommandPalette } from "./components/CommandPalette";
-import { ComposeModal, type ComposeDraft } from "./components/ComposeModal";
-import {
-  FloatingDrafts,
-  type FloatingDraft,
-} from "./components/FloatingDrafts";
-import { Icons } from "./components/Icons";
-import { RemoteOptInModal } from "./components/RemoteOptInModal";
-import { type SettingsState } from "./components/SettingsBar";
-import { ActionButton } from "./components/ActionButton";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { SafeMailBody } from "./components/SafeMailBody";
-import { SignInScreen } from "./components/SignInScreen";
-import { StatusBar, type EditorMode } from "./components/StatusBar";
 
 function formatScheduleToast(raw: string): string {
   const d = new Date(raw);
@@ -292,12 +313,21 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [gmailConnecting, setGmailConnecting] = useState(false);
+  const [microsoftConnecting, setMicrosoftConnecting] = useState(false);
   const [gmailConnectError, setGmailConnectError] = useState<string | null>(
     null,
   );
   const [awaitingSignIn, setAwaitingSignIn] = useState(() =>
-    shouldPromptGmailSignIn(Boolean(googleDesktopClientId())),
+    shouldPromptSignIn({
+      googleClientIdConfigured: Boolean(googleDesktopClientId()),
+      microsoftClientIdConfigured: Boolean(microsoftClientId()),
+    }),
   );
+  const [mainView, setMainView] = useState<"mail" | "calendar">("mail");
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarSaving, setCalendarSaving] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
   const [status, setStatus] = useState(
     awaitingSignIn ? "Sign in to sync your inbox" : "Hydrating local inbox…",
   );
@@ -386,9 +416,11 @@ export function App() {
     const c = await rt.remoteOptIn.getConsent(rt.gmailAccountId);
     setConsent(c);
     try {
-      await rt.sync.pullDeltas(rt.gmailAccountId);
-      if (rt.microsoftAccountId) {
-        await rt.sync.pullDeltas(rt.microsoftAccountId);
+      const accountIds = [
+        ...new Set(rt.accounts.map((account) => account.accountId)),
+      ];
+      for (const accountId of accountIds) {
+        await rt.sync.pullDeltas(accountId);
       }
       await rt.sync.flushOutbox();
       // Prefer in-memory threads from the sync engine (avoids empty store races).
@@ -491,7 +523,12 @@ export function App() {
         setStatus(`${labelName} · synced`);
       } catch (error) {
         if (!cancelled) {
-          setStatus(invokeErrorMessage(error, `Failed to load ${labelName}`));
+          const message = invokeErrorMessage(
+            error,
+            `Failed to load ${labelName}`,
+          );
+          setStatus(message);
+          toast.error(message);
         }
       }
     })();
@@ -648,6 +685,7 @@ export function App() {
       setComposeOpen(false);
       setOptInOpen(false);
       setSettingsOpen(false);
+      setMainView("mail");
       setSelectedId(threads[0]?.id ?? null);
       setActiveLabel("INBOX");
       setOpenedId(null);
@@ -895,9 +933,22 @@ export function App() {
   const customLabels = useMemo(
     () =>
       labels
-        .filter(
-          (label) => label.kind === "label" || label.kind === "category",
-        )
+        .filter((label) => {
+          if (label.kind === "label" || label.kind === "category") return true;
+          // Microsoft folders (skip system well-known names already in the nav).
+          if (label.kind !== "folder") return false;
+          const name = label.name.toLowerCase();
+          return ![
+            "inbox",
+            "archive",
+            "deleted items",
+            "junk email",
+            "sent items",
+            "drafts",
+            "outbox",
+            "conversation history",
+          ].includes(name);
+        })
         .slice(0, 12),
     [labels],
   );
@@ -1034,8 +1085,192 @@ export function App() {
       const message = invokeErrorMessage(error, "Google sign-in failed");
       setGmailConnectError(message);
       setStatus(message);
+      toast.error(message);
     } finally {
       setGmailConnecting(false);
+    }
+  };
+
+  const connectMicrosoft = async () => {
+    setGmailConnectError(null);
+    setMicrosoftConnecting(true);
+    setStatus("Opening Microsoft sign-in…");
+    try {
+      const connected = await connectMicrosoftWithPkce();
+      setAwaitingSignIn(false);
+      setStatus(`Connected ${connected.email} · syncing…`);
+      const next = await createGalMailRuntime();
+      await hydrateRuntime(next);
+      setSettingsOpen(false);
+    } catch (error) {
+      const message = invokeErrorMessage(error, "Microsoft sign-in failed");
+      setGmailConnectError(message);
+      setStatus(message);
+      toast.error(message);
+    } finally {
+      setMicrosoftConnecting(false);
+    }
+  };
+
+  const refreshCalendar = async (rt: GalMailRuntime = runtime!) => {
+    const gmailAccount = rt.accounts.find((account) =>
+      account.accountId.startsWith("gmail:"),
+    );
+    const microsoftAccount = rt.accounts.find((account) =>
+      account.accountId.startsWith("microsoft:"),
+    );
+    if (rt.providerMode !== "live" || (!gmailAccount && !microsoftAccount)) {
+      setCalendarEvents([]);
+      setCalendarError(
+        rt.providerMode === "live"
+          ? "Connect Gmail or Microsoft 365 to load calendar events."
+          : "Calendar is available after connecting a live Gmail or Microsoft account.",
+      );
+      return;
+    }
+    setCalendarLoading(true);
+    setCalendarError(null);
+    const start = new Date();
+    const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const loads: Array<Promise<CalendarEvent[]>> = [];
+    if (gmailAccount) {
+      loads.push(
+        loadGoogleCalendarEvents({
+          accountId: gmailAccount.accountId,
+          start,
+          end,
+          limit: 50,
+        }),
+      );
+    }
+    if (microsoftAccount) {
+      loads.push(
+        loadMicrosoftCalendarEvents({
+          accountId: microsoftAccount.accountId,
+          start,
+          end,
+          limit: 50,
+        }),
+      );
+    }
+    const settled = await Promise.allSettled(loads);
+    const events = settled
+      .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      .sort((a, b) => a.start.localeCompare(b.start));
+    const errors = settled
+      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+      .map((result) => invokeErrorMessage(result.reason, "Calendar sync failed"));
+    setCalendarEvents(events);
+    if (errors.length > 0 && events.length === 0) {
+      const message = errors.join(" ");
+      setCalendarError(message);
+      setStatus(message);
+    } else if (errors.length > 0) {
+      setCalendarError(errors.join(" "));
+      setStatus(`Calendar · ${events.length} upcoming`);
+    } else {
+      setCalendarError(null);
+      setStatus(`Calendar · ${events.length} upcoming`);
+    }
+    setCalendarLoading(false);
+  };
+
+  const calendarAccounts = useMemo(() => {
+    if (!runtime || runtime.providerMode !== "live") return [];
+    return runtime.accounts
+      .filter(
+        (account) =>
+          account.accountId.startsWith("gmail:") ||
+          account.accountId.startsWith("microsoft:"),
+      )
+      .map((account) => ({
+        accountId: account.accountId,
+        email: account.email,
+        provider: account.accountId.startsWith("gmail:")
+          ? ("google" as const)
+          : ("microsoft" as const),
+      }));
+  }, [runtime]);
+
+  const createCalendarEvent = async (input: {
+    accountId: string;
+    event: CalendarEventWrite;
+  }) => {
+    setCalendarSaving(true);
+    try {
+      if (input.accountId.startsWith("gmail:")) {
+        await createGoogleEvent(input);
+      } else if (input.accountId.startsWith("microsoft:")) {
+        await createMicrosoftEvent(input);
+      } else {
+        throw new Error("Unsupported calendar account");
+      }
+      toast.success("Event created");
+      await refreshCalendar();
+    } catch (error) {
+      const message = invokeErrorMessage(error, "Could not create event");
+      toast.error(message);
+      throw error instanceof Error ? error : new Error(message);
+    } finally {
+      setCalendarSaving(false);
+    }
+  };
+
+  const updateCalendarEvent = async (input: {
+    accountId: string;
+    eventId: string;
+    event: CalendarEventWrite;
+  }) => {
+    setCalendarSaving(true);
+    try {
+      if (input.accountId.startsWith("gmail:")) {
+        await updateGoogleEvent(input);
+      } else if (input.accountId.startsWith("microsoft:")) {
+        await updateMicrosoftEvent(input);
+      } else {
+        throw new Error("Unsupported calendar account");
+      }
+      toast.success("Event updated");
+      await refreshCalendar();
+    } catch (error) {
+      const message = invokeErrorMessage(error, "Could not update event");
+      toast.error(message);
+      throw error instanceof Error ? error : new Error(message);
+    } finally {
+      setCalendarSaving(false);
+    }
+  };
+
+  const deleteCalendarEvent = async (input: {
+    accountId: string;
+    eventId: string;
+  }) => {
+    setCalendarSaving(true);
+    try {
+      if (input.accountId.startsWith("gmail:")) {
+        await deleteGoogleEvent(input);
+      } else if (input.accountId.startsWith("microsoft:")) {
+        await deleteMicrosoftEvent(input);
+      } else {
+        throw new Error("Unsupported calendar account");
+      }
+      toast.success("Event deleted");
+      await refreshCalendar();
+    } catch (error) {
+      const message = invokeErrorMessage(error, "Could not delete event");
+      toast.error(message);
+      throw error instanceof Error ? error : new Error(message);
+    } finally {
+      setCalendarSaving(false);
+    }
+  };
+
+  const openExternalLink = async (url: string) => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_external_url", { url });
+    } catch {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -1219,7 +1454,9 @@ export function App() {
           toast.success("Trash undone");
         };
         setTimeout(() => void runtime.sync.flushOutbox(), 5_000);
-        toast.success(statusMessage);
+        toast.success(statusMessage, {
+          description: "Undo available for 5 seconds",
+        });
       });
   };
 
@@ -1316,11 +1553,13 @@ export function App() {
     return (
       <div className="app" data-theme={resolvedTheme}>
         <SignInScreen
-          connecting={gmailConnecting}
+          connecting={gmailConnecting || microsoftConnecting}
           error={gmailConnectError}
           canConnectGmail={Boolean(googleDesktopClientId())}
+          canConnectMicrosoft={Boolean(microsoftClientId())}
           showDemoOption
           onConnectGmail={() => void connectGmail()}
+          onConnectMicrosoft={() => void connectMicrosoft()}
           onUseDemo={() => void useDemoMailbox()}
         />
       </div>
@@ -1358,40 +1597,65 @@ export function App() {
           </div>
           <div className="sidebar-main">
             <ActionButton
-              className={`nav-item ${activeLabel === "INBOX" ? "active" : ""}`}
+              className={`nav-item ${mainView === "mail" && activeLabel === "INBOX" ? "active" : ""}`}
               variant="quiet"
               label="Unified inbox"
               icon={<Icons.inbox />}
               command="go_to_inbox"
-              onClick={() => runtime.commands.dispatch("go_to_inbox")}
+              onClick={() => {
+                setMainView("mail");
+                runtime.commands.dispatch("go_to_inbox");
+              }}
             />
             <ActionButton
-              className={`nav-item ${activeLabel === "ARCHIVE" ? "active" : ""}`}
+              className={`nav-item ${mainView === "calendar" ? "active" : ""}`}
+              variant="quiet"
+              label="Calendar"
+              icon={<Icons.calendar />}
+              onClick={() => {
+                setMainView("calendar");
+                void refreshCalendar();
+              }}
+            />
+            <ActionButton
+              className={`nav-item ${mainView === "mail" && activeLabel === "ARCHIVE" ? "active" : ""}`}
               variant="quiet"
               label="Archive"
               icon={<Icons.archive />}
-              onClick={() => setActiveLabel("ARCHIVE")}
+              onClick={() => {
+                setMainView("mail");
+                setActiveLabel("ARCHIVE");
+              }}
             />
             <ActionButton
-              className={`nav-item ${activeLabel === "STARRED" ? "active" : ""}`}
+              className={`nav-item ${mainView === "mail" && activeLabel === "STARRED" ? "active" : ""}`}
               variant="quiet"
               label="Starred"
               icon={<Icons.star />}
-              onClick={() => setActiveLabel("STARRED")}
+              onClick={() => {
+                setMainView("mail");
+                setActiveLabel("STARRED");
+              }}
             />
             <ActionButton
-              className={`nav-item ${activeLabel === "TRASH" ? "active" : ""}`}
+              className={`nav-item ${mainView === "mail" && activeLabel === "TRASH" ? "active" : ""}`}
               variant="quiet"
               label="Trash"
               icon={<Icons.trash />}
-              onClick={() => setActiveLabel("TRASH")}
+              onClick={() => {
+                setMainView("mail");
+                setActiveLabel("TRASH");
+              }}
             />
             <ActionButton
-              className={`nav-item ${activeLabel === "SPAM" ? "active" : ""}`}
+              className={`nav-item ${mainView === "mail" && activeLabel === "SPAM" ? "active" : ""}`}
               variant="quiet"
               label="Spam"
               icon={<Icons.warning />}
-              onClick={() => setActiveLabel("SPAM")}
+              onClick={() => {
+                setMainView("mail");
+                setActiveLabel("SPAM");
+              }}
             />
             {customLabels.length > 0 && (
               <div className="sidebar-labels">
@@ -1419,7 +1683,10 @@ export function App() {
                         label={label.name}
                         icon={<Icons.tag />}
                         showShortcut={false}
-                        onClick={() => setActiveLabel(label.id)}
+                        onClick={() => {
+                          setMainView("mail");
+                          setActiveLabel(label.id);
+                        }}
                       />
                     ))}
                   </div>
@@ -1481,6 +1748,22 @@ export function App() {
           </div>
         </aside>
 
+        {mainView === "calendar" ? (
+          <CalendarView
+            events={calendarEvents}
+            loading={calendarLoading}
+            error={calendarError}
+            rangeLabel="Next 7 days"
+            accounts={calendarAccounts}
+            saving={calendarSaving}
+            onRefresh={() => void refreshCalendar()}
+            onOpenLink={(url) => void openExternalLink(url)}
+            onCreate={createCalendarEvent}
+            onUpdate={updateCalendarEvent}
+            onDelete={deleteCalendarEvent}
+          />
+        ) : (
+          <>
         <section
           className="thread-list panel"
           aria-label="Thread list"
@@ -1792,15 +2075,26 @@ export function App() {
             </div>
           )}
         </section>
+          </>
+        )}
       </div>
 
       <StatusBar
         mode={inputMode}
         status={status}
         counts={{
-          label: labelStatusName(activeLabel, labels),
-          unread: filteredThreads.filter((t) => t.unreadCount > 0).length,
-          total: filteredThreads.length,
+          label:
+            mainView === "calendar"
+              ? "Calendar"
+              : labelStatusName(activeLabel, labels),
+          unread:
+            mainView === "calendar"
+              ? 0
+              : filteredThreads.filter((t) => t.unreadCount > 0).length,
+          total:
+            mainView === "calendar"
+              ? calendarEvents.length
+              : filteredThreads.length,
         }}
       />
 
@@ -1923,7 +2217,9 @@ export function App() {
           inviteCode={inviteCode}
           providerMode={runtime.providerMode}
           canConnectGmail={runtime.gmailConnect.available}
+          canConnectMicrosoft={runtime.microsoftConnect.available}
           gmailConnecting={gmailConnecting}
+          microsoftConnecting={microsoftConnecting}
           connectError={gmailConnectError}
           accounts={runtime.accounts.map((account) => ({
             email: account.email,
@@ -1944,6 +2240,7 @@ export function App() {
             `OPFS: ${runtime.adapters.opfsAvailable ? "available" : "unavailable"}`,
             `WebCrypto: ${runtime.adapters.webCryptoAvailable ? "available" : "unavailable"}`,
             `Gmail connect: ${runtime.gmailConnect.available ? "ready" : runtime.gmailConnect.clientIdConfigured ? "needs native app" : "client ID missing"}`,
+            `Microsoft connect: ${runtime.microsoftConnect.available ? "ready" : runtime.microsoftConnect.clientIdConfigured ? "needs native app" : "client ID missing"}`,
           ]}
           onChange={updateSettings}
           onClose={() => setSettingsOpen(false)}
@@ -1959,23 +2256,61 @@ export function App() {
             });
           }}
           onConnectGmail={() => void connectGmail()}
+          onConnectMicrosoft={() => void connectMicrosoft()}
           onDisconnectGmail={
             runtime.providerMode === "live" &&
-            runtime.gmailAccountId.startsWith("gmail:")
+            runtime.accounts.some((account) =>
+              account.accountId.startsWith("gmail:"),
+            )
               ? async () => {
                   setGmailConnectError(null);
+                  const gmailId =
+                    runtime.accounts.find((account) =>
+                      account.accountId.startsWith("gmail:"),
+                    )?.accountId ?? runtime.gmailAccountId;
                   try {
-                    await disconnectGmailAccount(runtime.gmailAccountId);
+                    await disconnectGmailAccount(gmailId);
                   } catch {
                     // Local session still clears even if remote revoke fails.
                   }
                   clearLiveGmailAccount();
                   setSettingsOpen(false);
                   setAwaitingSignIn(
-                    shouldPromptGmailSignIn(Boolean(googleDesktopClientId())),
+                    shouldPromptSignIn({
+                      googleClientIdConfigured: Boolean(
+                        googleDesktopClientId(),
+                      ),
+                      microsoftClientIdConfigured: Boolean(microsoftClientId()),
+                    }),
                   );
                   setRuntime(null);
                   toast.success("Disconnected Gmail");
+                }
+              : undefined
+          }
+          onDisconnectMicrosoft={
+            runtime.providerMode === "live" && runtime.microsoftAccountId
+              ? async () => {
+                  setGmailConnectError(null);
+                  try {
+                    await disconnectMicrosoftAccount(runtime.microsoftAccountId!);
+                  } catch {
+                    // Local session still clears even if remote revoke fails.
+                  }
+                  clearLiveMicrosoftAccount();
+                  setCalendarEvents([]);
+                  setMainView("mail");
+                  setSettingsOpen(false);
+                  setAwaitingSignIn(
+                    shouldPromptSignIn({
+                      googleClientIdConfigured: Boolean(
+                        googleDesktopClientId(),
+                      ),
+                      microsoftClientIdConfigured: Boolean(microsoftClientId()),
+                    }),
+                  );
+                  setRuntime(null);
+                  toast.success("Disconnected Microsoft");
                 }
               : undefined
           }
