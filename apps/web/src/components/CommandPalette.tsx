@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CommandDef, CommandId } from "@galmail/keyboard";
+import { ActionButton } from "./ActionButton";
 
 export function CommandPalette(props: {
   commands: CommandDef[];
@@ -47,14 +48,11 @@ export function CommandPalette(props: {
             <span className="kbd">{c.defaultKeys.join(" · ")}</span>
           </button>
         ))}
-        <button
-          className="btn"
-          type="button"
-          title="Close · Esc"
+        <ActionButton
+          label="Close"
+          command="back"
           onClick={props.onClose}
-        >
-          Close
-        </button>
+        />
       </div>
     </div>
   );

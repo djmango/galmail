@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { DevVaultCrypto, MemoryEncryptedStore } from "./memory-store.js";
 
 describe("DevVaultCrypto + MemoryEncryptedStore", () => {
@@ -13,5 +13,26 @@ describe("DevVaultCrypto + MemoryEncryptedStore", () => {
     expect(loaded).not.toBeNull();
     const opened = await crypto.open(loaded!, key);
     expect(new TextDecoder().decode(opened)).toBe("galmail-secret");
+  });
+
+  it("rejects tampering and wrong keys", async () => {
+    const crypto = new DevVaultCrypto();
+    const key = await crypto.generateVaultKey();
+    const wrongKey = await crypto.generateVaultKey();
+    const sealed = await crypto.seal(new Uint8Array([1, 2, 3]), key);
+    const tampered = sealed.slice();
+    tampered[tampered.length - 1]! ^= 1;
+
+    await expect(crypto.open(tampered, key)).rejects.toThrow();
+    await expect(crypto.open(sealed, wrongKey)).rejects.toThrow();
+  });
+
+  it("uses a fresh nonce for each envelope", async () => {
+    const crypto = new DevVaultCrypto();
+    const key = await crypto.generateVaultKey();
+    const first = await crypto.seal(new Uint8Array([1]), key);
+    const second = await crypto.seal(new Uint8Array([1]), key);
+
+    expect(first).not.toEqual(second);
   });
 });

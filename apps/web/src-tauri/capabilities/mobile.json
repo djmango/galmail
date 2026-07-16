@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile",
+  "description": "GalMail iOS capability boundary",
+  "windows": ["main"],
+  "platforms": ["iOS"],
+  "permissions": ["core:default", "deep-link:default"]
+}

@@ -1,605 +1,138 @@
-/* GalMail theme + layout system.
-   Two themes via [data-theme="dark"|"light"].
-   Layouts switch grid templates via [data-layout="..."] plus React conditional rendering.
-*/
-
-:root {
-  /* Extended design tokens (defaults = Dark). Overridden per-theme below. */
-  --radius: 8px;
-  --radius-lg: 10px;
-  --radius-sm: 6px;
-  --shadow-card: none;
-  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.5);
-  --density-pad: 0.75rem;
-  --gap-panes: 0;
-  --content-font: var(--font);
-  --chrome-font: var(--font);
-  --avatar-style: "initials";
-  --priority-bar: var(--accent);
-  --kbd-bg: rgba(255, 255, 255, 0.05);
-  --kbd-border: rgba(255, 255, 255, 0.1);
-  --selection-bg: rgba(94, 106, 210, 0.16);
-  --topbar-bg: rgba(8, 9, 10, 0.82);
-  --surface-card: var(--bg2);
-  --sidebar-w: 220px;
-  --sidebar-rail: 0px;
-}
-
-/* ===================== THEME: dark (Linear-inspired) ===================== */
+:root,
 [data-theme="dark"] {
   --bg0: #08090a;
   --bg1: #0d0e10;
   --bg2: #161719;
   --bg3: #1c1e22;
   --ink: #e6e8ec;
-  --muted: #6a7180;
-  --muted-strong: #8a90a0;
+  --muted: #747b8a;
+  --muted-strong: #969cab;
   --accent: #5e6ad2;
-  --accent-dim: #3d44a8;
-  --accent-soft: rgba(94, 106, 210, 0.14);
+  --accent-hover: #6d78dd;
+  --accent-ink: #fff;
   --warn: #e6b35a;
   --danger: #e07a6c;
-  --line: rgba(255, 255, 255, 0.06);
-  --line-strong: rgba(255, 255, 255, 0.1);
-  --focus: rgba(94, 106, 210, 0.4);
-  --font: "Inter", "DM Sans", "Segoe UI", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
-  --radius: 8px;
-  --radius-lg: 10px;
-  --radius-sm: 6px;
-  --shadow-card: none;
-  --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.55);
-  --density-pad: 0.7rem;
-  --content-font: var(--font);
-  --chrome-font: var(--font);
-  --avatar-style: "initials";
-  --priority-bar: var(--accent);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --focus: rgba(94, 106, 210, 0.52);
+  --selection-bg: rgba(94, 106, 210, 0.16);
   --kbd-bg: rgba(255, 255, 255, 0.05);
   --kbd-border: rgba(255, 255, 255, 0.12);
-  --selection-bg: rgba(94, 106, 210, 0.16);
-  --topbar-bg: rgba(8, 9, 10, 0.86);
-  --surface-card: var(--bg2);
+  --topbar-bg: rgba(8, 9, 10, 0.92);
+  --font: "Inter", "DM Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  --content-font: var(--font);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-lg: 10px;
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --pane-pad: 0.75rem;
   color-scheme: dark;
 }
 
-/* ===================== THEME: light (Readwise Reader-inspired) =========== */
 [data-theme="light"] {
   --bg0: #f4ede0;
   --bg1: #fbf6ec;
   --bg2: #fdfaf3;
-  --bg3: #f1e8d6;
+  --bg3: #eee3d0;
   --ink: #2b2620;
-  --muted: #8a7e6a;
+  --muted: #695d4e;
   --muted-strong: #5d5346;
-  --accent: #c98a1e;
-  --accent-dim: #a36d12;
-  --accent-soft: rgba(201, 138, 30, 0.14);
-  --warn: #c97a2a;
-  --danger: #c0492d;
-  --line: rgba(43, 38, 32, 0.1);
-  --line-strong: rgba(43, 38, 32, 0.18);
-  --focus: rgba(201, 138, 30, 0.34);
-  /* Chrome stays clean sans-serif; reading pane uses serif via --content-font. */
-  --font: "Inter", "DM Sans", "Segoe UI", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
-  --radius: 6px;
-  --radius-lg: 10px;
-  --radius-sm: 4px;
-  --shadow-card: 0 1px 2px rgba(43, 38, 32, 0.05);
-  --shadow-pop: 0 18px 50px rgba(43, 38, 32, 0.16);
-  --density-pad: 1rem;
-  --content-font: "Iowan Old Style", "Charter", "Source Serif Pro", "Georgia",
-    "Times New Roman", serif;
-  --chrome-font: var(--font);
-  --avatar-style: "initials";
-  --priority-bar: var(--warn);
+  --accent: #955e0a;
+  --accent-hover: #7d4d06;
+  --accent-ink: #fffdf7;
+  --warn: #b96b20;
+  --danger: #b83f28;
+  --line: rgba(43, 38, 32, 0.12);
+  --line-strong: rgba(43, 38, 32, 0.2);
+  --focus: rgba(166, 109, 18, 0.42);
+  --selection-bg: rgba(220, 164, 54, 0.2);
   --kbd-bg: rgba(43, 38, 32, 0.05);
   --kbd-border: rgba(43, 38, 32, 0.16);
-  --selection-bg: rgba(240, 192, 64, 0.22);
-  --topbar-bg: rgba(244, 237, 224, 0.9);
-  --surface-card: var(--bg1);
+  --topbar-bg: rgba(244, 237, 224, 0.94);
+  --content-font: "Iowan Old Style", "Charter", "Source Serif Pro", Georgia, serif;
+  --radius: 7px;
+  --radius-sm: 5px;
+  --radius-lg: 11px;
+  --shadow-pop: 0 18px 50px rgba(43, 38, 32, 0.16);
+  --pane-pad: 1rem;
   color-scheme: light;
 }
 
-/* ===================== Layout grids ===================== */
 .app[data-layout="three-panel"] .shell {
-  grid-template-columns: 220px minmax(300px, 1fr) minmax(360px, 1.3fr);
+  grid-template-columns: 220px minmax(300px, 0.9fr) minmax(360px, 1.25fr);
 }
+
 .app[data-layout="two-panel"] .shell {
-  /* Always-mode reserves the rail width; auto-mode reserves nothing (overlay). */
-  grid-template-columns: var(--sidebar-rail) minmax(300px, 1fr) minmax(360px, 1.3fr);
+  grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.25fr);
 }
+
+.app[data-layout="two-panel"] .sidebar,
+.app[data-layout="fullscreen"] .sidebar {
+  display: none;
+}
+
+.app[data-layout="two-panel"] .settings-top-trigger,
+.app[data-layout="fullscreen"] .settings-top-trigger {
+  display: inline-flex;
+}
+
 .app[data-layout="fullscreen"] .shell {
-  grid-template-columns: 1fr;
-}
-.app[data-layout="fullscreen"] .sidebar,
-.app[data-layout="fullscreen"] .thread-list[data-fullscreen="false"] {
-  display: none;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-/* ---------------------------------------------------------------------------
-   Sidebar behavior.
-
-   3-panel: always visible, normal flow.
-   2-panel "always": a slim icon rail (48px) that expands on hover into the
-                     220px panel. Reserved space in the grid so list never
-                     reflows jankily.
-   2-panel "auto":   completely hidden (rail = 0px in grid). A thin hover
-                     trigger strip sits at the left edge; moving the cursor
-                     into it reveals the full sidebar as an overlay. The
-                     sidebar stays open while the pointer is anywhere over it
-                     or the trigger, and collapses with a short grace delay
-                     once the pointer leaves — no flicker, no stuck state.
-
-   The "is-open" state is driven by a data attribute on the .shell container
-   so a single CSS rule controls geometry and the transition is one-shot.
----------------------------------------------------------------------------- */
-
-.app[data-layout="two-panel"] .sidebar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: var(--sidebar-w);
-  z-index: 25;
-  background: var(--bg1);
-  border-right: 1px solid var(--line);
-  box-shadow: var(--shadow-pop);
-  overflow: hidden;
-  /* Geometry transitions only — opacity is handled separately so content
-     can fade slightly without a layout jump. */
-  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    width 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  will-change: transform;
-}
-
-/* "always": reserve a 48px rail in the grid; sidebar starts collapsed to rail. */
-.app[data-layout="two-panel"][data-sidebar="always"] {
-  --sidebar-rail: 48px;
-}
-.app[data-layout="two-panel"][data-sidebar="always"] .sidebar {
-  width: 48px;
-  transform: translateX(0);
-}
-.app[data-layout="two-panel"][data-sidebar="always"] .shell[data-sidebar-open="true"] .sidebar {
-  width: var(--sidebar-w);
-}
-
-/* "auto": reserve nothing; sidebar lives as an overlay that slides in. */
-.app[data-layout="two-panel"][data-sidebar="auto"] {
-  --sidebar-rail: 0px;
-}
-.app[data-layout="two-panel"][data-sidebar="auto"] .sidebar {
-  transform: translateX(-100%);
-  box-shadow: var(--shadow-pop);
-}
-.app[data-layout="two-panel"][data-sidebar="auto"] .shell[data-sidebar-open="true"] .sidebar {
-  transform: translateX(0);
-}
-
-/* Edge hover trigger for auto mode. Invisible 8px strip at the left edge. */
-.sidebar-hover-trigger {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 8px;
-  z-index: 24;
-  /* Needs to be hoverable but invisible. */
-  background: transparent;
-}
-.app[data-layout="two-panel"][data-sidebar="auto"] .sidebar-hover-trigger {
-  display: block;
-}
-.app[data-layout="two-panel"][data-sidebar="always"] .sidebar-hover-trigger,
-.app[data-layout="fullscreen"] .sidebar-hover-trigger,
-.app[data-layout="three-panel"] .sidebar-hover-trigger {
-  display: none;
-}
-
-/* Collapsed rail labels: hidden until open. */
-.app[data-layout="two-panel"] .sidebar .nav-label,
-.app[data-layout="two-panel"] .sidebar .nav-suffix {
-  opacity: 0;
-  pointer-events: none;
-  white-space: nowrap;
-  transition: opacity 120ms ease 40ms;
-}
-.app[data-layout="two-panel"] .shell[data-sidebar-open="true"] .sidebar .nav-label,
-.app[data-layout="two-panel"] .shell[data-sidebar-open="true"] .sidebar .nav-suffix {
-  opacity: 1;
-  pointer-events: auto;
-}
-.app[data-layout="two-panel"] .sidebar .nav-item {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-.app[data-layout="two-panel"] .sidebar .nav-icon {
-  width: 24px;
-  text-align: center;
-  flex: none;
-}
-.app[data-layout="two-panel"] .sidebar .warn-note {
-  display: none;
-}
-
-/* Fullscreen: list takes whole stage; reading pane replaces it on select. */
-.app[data-layout="fullscreen"] .thread-list[data-fullscreen="true"] {
-  grid-column: 1;
-  max-width: 820px;
-  margin: 0 auto;
-  width: 100%;
-}
-.app[data-layout="fullscreen"] .reading-pane[data-fullscreen="true"] {
-  grid-column: 1;
-  max-width: 820px;
-  margin: 0 auto;
-  width: 100%;
-}
+.app[data-layout="fullscreen"] .thread-list[data-fullscreen="false"],
 .app[data-layout="fullscreen"] .reading-pane[data-fullscreen="false"] {
   display: none;
 }
 
-/* ===================== Theme-aware base ===================== */
-
-.app {
-  background: var(--bg0);
-  color: var(--ink);
+.app[data-layout="fullscreen"] .thread-list[data-fullscreen="true"],
+.app[data-layout="fullscreen"] .reading-pane[data-fullscreen="true"] {
+  width: min(100%, 860px);
+  margin-inline: auto;
 }
 
-[data-theme="dark"] .app {
-  background:
-    radial-gradient(900px 480px at 8% -8%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
-    var(--bg0);
-}
-[data-theme="light"] .app {
-  background:
-    radial-gradient(900px 480px at 8% -8%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
-    var(--bg0);
-}
-
-.topbar {
-  background: var(--topbar-bg);
-  backdrop-filter: blur(12px) saturate(1.1);
-  -webkit-backdrop-filter: blur(12px) saturate(1.1);
-}
-
-.btn {
-  border-radius: var(--radius-sm);
-  background: var(--bg2);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-card);
-}
-
-.panel {
-  padding: var(--density-pad);
-}
-
-.thread {
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-  background: transparent;
-}
-.thread:hover,
-.thread.selected {
+[data-theme="dark"] .thread.selected {
   background: var(--selection-bg);
-  border-color: var(--line);
-}
-.thread.selected {
-  box-shadow: 0 0 0 1px var(--focus), var(--shadow-card);
 }
 
-.nav-item {
-  border-radius: var(--radius-sm);
+[data-theme="dark"] .reading {
+  padding: 1.5rem 1.6rem;
 }
 
-.compose-card,
-.modal-card {
-  border-radius: var(--radius-lg);
-  background: var(--bg1);
-  box-shadow: var(--shadow-pop);
-  border: 1px solid var(--line);
-}
-.compose-card input,
-.compose-card textarea,
-.palette input {
-  border-radius: var(--radius-sm);
-  background: var(--bg0);
-  border: 1px solid var(--line);
+[data-theme="light"] .reading {
+  padding: 2.4rem 3rem;
 }
 
-/* kbd badges (Linear principle — kept for both themes, subtle in Light) */
-.kbd {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  background: var(--kbd-bg);
-  border: 1px solid var(--kbd-border);
-  border-radius: 4px;
-  padding: 0.05rem 0.35rem;
-  color: var(--muted);
-}
-
-/* Reading body uses the content font (serif in Light, sans in Dark — like Readwise). */
-.reading .body {
+[data-theme="light"] .reading h1,
+[data-theme="light"] .reading .body {
   font-family: var(--content-font);
-  line-height: 1.7;
 }
 
-/* ===================== Dark theme refinements ===================== */
-[data-theme="dark"] .thread-from { font-size: 0.86rem; }
-[data-theme="dark"] .thread-subject { font-size: 0.84rem; }
-[data-theme="dark"] .thread-snippet { font-size: 0.76rem; color: var(--muted); }
-[data-theme="dark"] .thread { padding: 0.55rem 0.65rem; margin-bottom: 0.2rem; }
-[data-theme="dark"] .reading h1 { font-size: 1.15rem; letter-spacing: -0.01em; }
-[data-theme="dark"] .brand-name { letter-spacing: 0; }
-[data-theme="dark"] .thread.unread .thread-from { color: var(--ink); font-weight: 600; }
-[data-theme="dark"] .thread.unread .thread-subject { color: var(--ink); }
-[data-theme="dark"] .thread.selected { background: var(--accent-soft); }
-[data-theme="dark"] .nav-item.active,
-[data-theme="dark"] .nav-item:hover { background: var(--accent-soft); color: var(--ink); }
-[data-theme="dark"] .reading { padding: 1.5rem 1.6rem; }
-[data-theme="dark"] .reading .meta { color: var(--muted); }
-
-/* ===================== Light theme refinements (Readwise) ================ */
-[data-theme="light"] .thread {
-  padding: 0.7rem 0.85rem;
-  margin-bottom: 0.3rem;
-  background: transparent;
-  border: 1px solid transparent;
-}
-[data-theme="light"] .thread:hover {
-  background: color-mix(in srgb, var(--bg2) 70%, transparent);
-}
-[data-theme="light"] .thread.selected {
-  background: var(--selection-bg);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-}
-[data-theme="light"] .thread.unread { border-left: 3px solid var(--accent); padding-left: calc(0.85rem - 2px); }
-[data-theme="light"] .thread.unread .thread-from { color: var(--ink); font-weight: 600; }
-[data-theme="light"] .thread-from { color: var(--muted-strong); }
-[data-theme="light"] .thread-subject { color: var(--ink); }
-[data-theme="light"] .thread-snippet { color: var(--muted); }
-[data-theme="light"] .reading { padding: 2.4rem 3rem; }
-[data-theme="light"] .reading .reading-toolbar { margin-bottom: 1.4rem; }
 [data-theme="light"] .reading h1 {
-  font-family: var(--content-font);
-  font-weight: 600;
   font-size: 1.5rem;
   line-height: 1.25;
-  letter-spacing: -0.005em;
 }
-[data-theme="light"] .reading .meta { color: var(--muted); font-size: 0.86rem; }
+
 [data-theme="light"] .reading .body {
   font-size: 1.05rem;
-  color: var(--ink);
-}
-[data-theme="light"] .nav-item.active,
-[data-theme="light"] .nav-item:hover {
-  background: var(--selection-bg);
-  color: var(--ink);
-}
-[data-theme="light"] .brand-name { letter-spacing: 0; }
-
-/* ===================== Avatars ===================== */
-.avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  flex: none;
-  display: grid;
-  place-items: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #fff;
-  background: var(--accent-dim);
-  overflow: hidden;
-}
-.thread-row {
-  display: flex;
-  gap: 0.6rem;
-  align-items: flex-start;
-}
-.thread-row .thread-main { flex: 1; min-width: 0; }
-
-/* ===================== Priority sparkline ===================== */
-.priority-spark {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 14px;
-  width: 22px;
-  flex: none;
-  opacity: 0.7;
-}
-.priority-spark i {
-  flex: 1;
-  background: var(--muted);
-  border-radius: 1px;
-  opacity: 0.5;
-}
-.priority-spark.high i { background: var(--danger); opacity: 0.9; }
-.priority-spark.mid i { background: var(--accent); opacity: 0.8; }
-.priority-spark.low i { background: var(--muted); opacity: 0.4; }
-
-/* ===================== Settings bar ===================== */
-.settings-bar {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.menu {
-  position: relative;
-}
-.menu-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-.menu-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 260px;
-  background: var(--bg1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
-  padding: 0.4rem;
-  z-index: 60;
-  animation: rise 140ms ease;
-}
-.menu-section {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  padding: 0.4rem 0.5rem 0.25rem;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  color: var(--ink);
-  padding: 0.5rem 0.5rem;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.menu-item:hover { background: var(--selection-bg); }
-.menu-item.active { box-shadow: inset 0 0 0 1px var(--focus); }
-.menu-item .swatch {
-  display: flex;
-  gap: 2px;
-  flex: none;
-}
-.menu-item .swatch span {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-}
-.menu-item .menu-text { flex: 1; min-width: 0; }
-.menu-item .menu-title { font-size: 0.86rem; font-weight: 600; }
-.menu-item .menu-blurb { font-size: 0.72rem; color: var(--muted); line-height: 1.3; }
-.menu-item .menu-check { color: var(--accent); flex: none; }
-.menu-sub {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem 0.4rem;
-}
-.menu-sub button {
-  flex: 1;
-  background: var(--bg2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  padding: 0.35rem 0.5rem;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-.menu-sub button.active {
-  background: var(--accent);
-  color: #fff;
-  border-color: transparent;
-  font-weight: 600;
 }
 
-/* Theme toggle button (sun/moon). */
-.theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  width: 34px;
-  height: 30px;
-  padding: 0;
-  border-radius: var(--radius-sm);
-  background: var(--bg2);
-  border: 1px solid var(--line);
-  cursor: pointer;
-  color: var(--ink);
-  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
-}
-.theme-toggle:hover { border-color: var(--accent-dim); background: var(--bg3); }
-.theme-toggle:active { transform: translateY(1px); }
-.theme-toggle .theme-toggle-icon { font-size: 0.95rem; line-height: 1; }
-
-/* ===================== Picture-in-Picture compose ===================== */
-.pip {
-  position: fixed;
-  z-index: 70;
-  width: 320px;
-  background: var(--bg1);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: rise 160ms ease;
-}
-.pip-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.6rem;
-  cursor: grab;
-  user-select: none;
-  background: var(--bg2);
-  border-bottom: 1px solid var(--line);
-}
-.pip-header:active { cursor: grabbing; }
-.pip-title { flex: 1; min-width: 0; font-size: 0.82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pip-actions { display: flex; gap: 0.25rem; }
-.pip-icon-btn {
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-.pip-icon-btn:hover { background: var(--selection-bg); }
-.pip-body { padding: 0.6rem; font-size: 0.78rem; color: var(--muted); }
-.pip-body .pip-field { margin-bottom: 0.3rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pip-body .pip-field strong { color: var(--ink); font-weight: 600; }
-.pip-dragging { opacity: 0.9; }
-
-/* Fullscreen back button */
-.back-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin-bottom: 0.8rem;
+[data-theme="light"] .thread.unread {
+  border-left-color: var(--accent);
 }
 
-.compose-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
+@media (max-width: 900px) {
+  .app[data-layout] .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-@keyframes rise {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+  .app[data-layout] .sidebar,
+  .app[data-layout] .reading-pane:not([data-fullscreen="true"]) {
+    display: none;
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  .app[data-layout="two-panel"] .sidebar,
-  .menu-pop, .pip, .compose-card, .modal-card {
-    transition: none !important;
-    animation: none !important;
+  .app[data-layout] .settings-top-trigger {
+    display: inline-flex;
   }
 }

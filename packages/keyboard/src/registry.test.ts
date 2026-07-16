@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, mock } from "bun:test";
 import {
   CommandRegistry,
   formatShortcutChord,
@@ -7,14 +7,7 @@ import {
 } from "./registry.js";
 
 describe("CommandRegistry", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("matches Superhuman-style j/k/e and palette", () => {
+  it("matches Superhuman-style navigation, open, and palette", () => {
     const reg = new CommandRegistry();
     expect(reg.match({ key: "j", metaKey: false, ctrlKey: false, altKey: false })).toBe(
       "navigate_down",
@@ -22,6 +15,9 @@ describe("CommandRegistry", () => {
     expect(reg.match({ key: "e", metaKey: false, ctrlKey: false, altKey: false })).toBe(
       "archive",
     );
+    expect(
+      reg.match({ key: "Enter", metaKey: false, ctrlKey: false, altKey: false }),
+    ).toBe("open_thread");
     expect(reg.match({ key: "k", metaKey: true, ctrlKey: false, altKey: false })).toBe(
       "command_palette",
     );
@@ -48,7 +44,7 @@ describe("CommandRegistry", () => {
 
   it("dispatches handlers", () => {
     const reg = new CommandRegistry();
-    const spy = vi.fn();
+    const spy = mock();
     reg.on("archive", spy);
     expect(reg.dispatch("archive")).toBe(true);
     expect(spy).toHaveBeenCalledOnce();

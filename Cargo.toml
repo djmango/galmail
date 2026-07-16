@@ -4,5 +4,6 @@ members = [
   "crates/galmail-core",
   "crates/galmail-wasm",
 ]
+exclude = ["apps/web/src-tauri"]
 # Tauri shell builds via apps/web/src-tauri (separate from default workspace tests).
-# Run: pnpm tauri:dev / cargo build --manifest-path apps/web/src-tauri/Cargo.toml
+# Run: bun run tauri:dev / cargo build --manifest-path apps/web/src-tauri/Cargo.toml

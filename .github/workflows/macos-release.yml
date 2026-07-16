@@ -1,0 +1,225 @@
+name: macOS release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+      - "v*.*.*-alpha.*"
+      - "v*.*.*-beta.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver without the v prefix"
+        required: true
+        type: string
+      channel:
+        description: "Release channel"
+        required: true
+        type: choice
+        options:
+          - alpha
+          - beta
+          - stable
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: zsh -e {0}
+
+jobs:
+  signed-release:
+    name: Signed Apple Silicon release
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Resolve and validate channel
+        id: release
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            channel="${INPUT_CHANNEL}"
+            version="${INPUT_VERSION}"
+            tag="v${version}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+            if [[ "${version}" == *"-alpha."* ]]; then
+              channel="alpha"
+            elif [[ "${version}" == *"-beta."* ]]; then
+              channel="beta"
+            else
+              channel="stable"
+            fi
+          fi
+          [[ "${version}" =~ '^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)\.[0-9]+)?$' ]]
+          if [[ "${channel}" == "stable" ]]; then
+            [[ "${version}" != *-* ]]
+          else
+            [[ "${version}" == *"-${channel}."* ]]
+          fi
+          {
+            echo "channel=${channel}"
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "prerelease=$([[ "${channel}" == "stable" ]] && echo false || echo true)"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Require Apple and updater credentials
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          for name in \
+            APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+            APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID \
+            TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+            TAURI_UPDATER_PUBLIC_KEY; do
+            [[ -n "${(P)name}" ]] || {
+              echo "::error::Missing required release credential: ${name}"
+              exit 1
+            }
+          done
+
+      - run: bun install --frozen-lockfile
+
+      - name: Prevent channel rollback
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          channel_tag="updates-${{ steps.release.outputs.channel }}"
+          previous_directory="${RUNNER_TEMP}/previous-channel"
+          mkdir -p "${previous_directory}"
+          if gh release view "${channel_tag}" >/dev/null 2>&1; then
+            gh release download "${channel_tag}" \
+              --pattern latest.json \
+              --dir "${previous_directory}"
+            bun scripts/assert-release-monotonic.ts \
+              "${{ steps.release.outputs.version }}" \
+              "${previous_directory}/latest.json"
+          fi
+
+      - name: Prepare channel-scoped Tauri configuration
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          bun scripts/prepare-tauri-release-config.ts \
+            "${{ steps.release.outputs.channel }}" \
+            "${{ steps.release.outputs.version }}" \
+            "${{ github.repository }}" \
+            "${TAURI_UPDATER_PUBLIC_KEY}" \
+            "${APPLE_SIGNING_IDENTITY}" \
+            "${RUNNER_TEMP}/tauri.release.json"
+
+      - name: Build, sign, notarize, and draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GALMAIL_RELEASE_CHANNEL: ${{ steps.release.outputs.channel }}
+        with:
+          projectPath: apps/web
+          tagName: ${{ steps.release.outputs.tag }}
+          releaseName: GalMail ${{ steps.release.outputs.version }}
+          releaseBody: "Signed and notarized GalMail ${{ steps.release.outputs.channel }} release."
+          releaseDraft: true
+          prerelease: ${{ steps.release.outputs.prerelease }}
+          includeUpdaterJson: true
+          args: >-
+            --target aarch64-apple-darwin
+            --config ${{ runner.temp }}/tauri.release.json
+
+      - name: Verify signed and notarized artifacts
+        run: |
+          bundle="apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle"
+          apps=("${bundle}"/macos/*.app(N))
+          dmgs=("${bundle}"/dmg/*.dmg(N))
+          archives=("${bundle}"/macos/*.app.tar.gz(N))
+          signatures=("${bundle}"/macos/*.app.tar.gz.sig(N))
+          (( ${#apps} == 1 && ${#dmgs} == 1 && ${#archives} == 1 && ${#signatures} == 1 ))
+          codesign --verify --deep --strict --verbose=2 "${apps[1]}"
+          spctl --assess --type execute --verbose=2 "${apps[1]}"
+          xcrun stapler validate "${apps[1]}"
+          xcrun stapler validate "${dmgs[1]}"
+          [[ -s "${signatures[1]}" ]]
+          shasum -a 256 "${dmgs[1]}" "${archives[1]}" > "${bundle}/SHA256SUMS"
+          shasum -a 256 -c "${bundle}/SHA256SUMS"
+          bun scripts/create-updater-manifest.ts \
+            "${bundle}" "${{ github.repository }}" "${{ steps.release.outputs.tag }}" \
+            "${{ steps.release.outputs.version }}" "${{ steps.release.outputs.channel }}" \
+            "${bundle}/latest.json"
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle
+          format: spdx-json
+          output-file: apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/galmail.spdx.json
+
+      - name: Upload verification metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bundle="apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle"
+          gh release upload "${{ steps.release.outputs.tag }}" \
+            "${bundle}/SHA256SUMS" \
+            "${bundle}/galmail.spdx.json" \
+            "${bundle}/latest.json" \
+            --clobber
+
+      - name: Attest release provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/SHA256SUMS
+            apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/galmail.spdx.json
+
+      - name: Publish verified release and channel manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          channel_tag="updates-${{ steps.release.outputs.channel }}"
+          manifest="apps/web/src-tauri/target/aarch64-apple-darwin/release/bundle/latest.json"
+          gh release edit "${{ steps.release.outputs.tag }}" --draft=false
+          if gh release view "${channel_tag}" >/dev/null 2>&1; then
+            gh release upload "${channel_tag}" "${manifest}" --clobber
+          else
+            gh release create "${channel_tag}" "${manifest}" \
+              --title "GalMail ${{ steps.release.outputs.channel }} updates" \
+              --notes "Machine-readable updater channel. Install a versioned release artifact."
+          fi

@@ -1,16 +1,14 @@
 import type { SyncEngine, SyncEvent } from "./capabilities.js";
 import type {
   AccountId,
+  ComposeDraft,
   MailMessage,
   MailThread,
   OutboxMutation,
   SyncCursor,
 } from "./types.js";
 import type { MailProvider } from "./capabilities.js";
-
-function id(): string {
-  return `mut_${Math.random().toString(36).slice(2, 12)}`;
-}
+import { matchesMailSearch, parseMailSearch } from "./search.js";
 
 /** Linear-style local-first sync engine used by the Gmail vertical slice. */
 export class MemorySyncEngine implements SyncEngine {
@@ -20,7 +18,21 @@ export class MemorySyncEngine implements SyncEngine {
   private outbox: OutboxMutation[] = [];
   private listeners = new Set<(e: SyncEvent) => void>();
 
-  constructor(private readonly providers: MailProvider[]) {}
+  private readonly now: () => Date;
+  private readonly createId: () => string;
+
+  constructor(
+    private readonly providers: MailProvider[],
+    options: {
+      now?: () => Date;
+      createId?: () => string;
+    } = {},
+  ) {
+    this.now = options.now ?? (() => new Date());
+    this.createId =
+      options.createId ??
+      (() => `mut_${Math.random().toString(36).slice(2, 12)}`);
+  }
 
   private emit(event: SyncEvent): void {
     for (const l of this.listeners) l(event);
@@ -86,12 +98,39 @@ export class MemorySyncEngine implements SyncEngine {
   async enqueue(
     mutation: Omit<OutboxMutation, "id" | "attempts" | "status" | "createdAt">,
   ): Promise<OutboxMutation> {
+    if (mutation.kind === "send") {
+      const draftId = (mutation.payload?.draft as { id?: string } | undefined)
+        ?.id;
+      for (const item of this.outbox) {
+        if (
+          draftId &&
+          item.kind === "save_draft" &&
+          item.targetIds[0] === draftId &&
+          item.status === "pending"
+        ) {
+          item.status = "cancelled";
+        }
+      }
+    }
+    if (mutation.kind === "save_draft") {
+      const existing = this.outbox.find(
+        (item) =>
+          item.kind === "save_draft" &&
+          item.status === "pending" &&
+          item.accountId === mutation.accountId &&
+          item.targetIds[0] === mutation.targetIds[0],
+      );
+      if (existing) {
+        existing.payload = mutation.payload;
+        return existing;
+      }
+    }
     const row: OutboxMutation = {
       ...mutation,
-      id: id(),
+      id: this.createId(),
       attempts: 0,
       status: "pending",
-      createdAt: new Date().toISOString(),
+      createdAt: this.now().toISOString(),
     };
     this.outbox.push(row);
     this.emit({ type: "outbox", mutationId: row.id, status: "pending" });
@@ -104,18 +143,36 @@ export class MemorySyncEngine implements SyncEngine {
     let flushed = 0;
     let failed = 0;
     for (const m of this.outbox) {
-      if (m.status === "done") continue;
+      if (m.status === "done" || m.status === "cancelled") continue;
       if (accountId && m.accountId !== accountId) continue;
+      if (m.availableAt && new Date(m.availableAt) > this.now()) continue;
       m.status = "inflight";
       m.attempts += 1;
       this.emit({ type: "outbox", mutationId: m.id, status: "inflight" });
       try {
         const provider = this.providerFor(m.accountId);
-        await provider.applyMutation(m.accountId, {
-          kind: m.kind,
-          targetIds: m.targetIds,
-          payload: m.payload,
-        });
+        if (m.kind === "send") {
+          await provider.sendDraft(
+            m.accountId,
+            m.payload?.draft as unknown as ComposeDraft,
+          );
+        } else if (m.kind === "save_draft") {
+          await provider.saveDraft(
+            m.accountId,
+            m.payload?.draft as unknown as ComposeDraft,
+          );
+        } else if (m.kind === "delete_draft") {
+          await provider.deleteDraft(
+            m.accountId,
+            String(m.payload?.providerDraftId ?? ""),
+          );
+        } else {
+          await provider.applyMutation(m.accountId, {
+            kind: m.kind,
+            targetIds: m.targetIds,
+            payload: m.payload,
+          });
+        }
         m.status = "done";
         flushed += 1;
         this.emit({ type: "outbox", mutationId: m.id, status: "done" });
@@ -137,6 +194,40 @@ export class MemorySyncEngine implements SyncEngine {
   observe(listener: (event: SyncEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  async listOutbox(accountId?: AccountId): Promise<OutboxMutation[]> {
+    return this.outbox.filter(
+      (item) => !accountId || item.accountId === accountId,
+    );
+  }
+
+  async cancelOutbox(mutationId: string): Promise<boolean> {
+    const mutation = this.outbox.find((item) => item.id === mutationId);
+    if (!mutation || mutation.status !== "pending") return false;
+    mutation.status = "cancelled";
+    this.emit({ type: "outbox", mutationId, status: "cancelled" });
+    return true;
+  }
+
+  async retryOutbox(mutationId: string): Promise<boolean> {
+    const mutation = this.outbox.find((item) => item.id === mutationId);
+    if (!mutation || mutation.status !== "failed") return false;
+    mutation.status = "pending";
+    mutation.lastError = undefined;
+    this.emit({ type: "outbox", mutationId, status: "pending" });
+    return true;
+  }
+
+  async searchLocal(accountId: AccountId, input: string) {
+    const query = parseMailSearch(input);
+    return [...this.messages.values()]
+      .filter((message) => {
+        if (message.accountId !== accountId) return false;
+        const thread = this.threads.get(`${accountId}:${message.threadId}`);
+        return thread ? matchesMailSearch(message, thread, query) : false;
+      })
+      .map((message) => message.id);
   }
 
   /** Test helpers */

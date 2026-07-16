@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { sanitizeHtml } from "@galmail/core-api";
 
 describe("web reading pane sanitizer wiring", () => {

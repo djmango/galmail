@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { MemorySyncEngine } from "./memory-sync.js";
 import type { MailProvider } from "./capabilities.js";
 import {
@@ -71,6 +71,13 @@ function fixtureProvider(): MailProvider {
     async sendDraft() {
       return messageId;
     },
+    async saveDraft(_accountId, draft) {
+      return draft.id;
+    },
+    async deleteDraft() {},
+    async *fetchAttachment() {
+      yield new Uint8Array();
+    },
     async fetchDeltas(_accountId, cursor) {
       return {
         upserts: [],
@@ -109,5 +116,78 @@ describe("MemorySyncEngine", () => {
     expect(result.flushed).toBe(1);
     expect(result.failed).toBe(0);
     expect(sync.getOutbox()[0]?.status).toBe("done");
+  });
+
+  it("supports delayed send, cancellation, retry, and draft coalescing", async () => {
+    const sync = new MemorySyncEngine([fixtureProvider()]);
+    const accountId = asAccountId("gmail:demo");
+    const draft = {
+      id: "d1",
+      accountId,
+      to: [{ email: "a@example.com" }],
+      subject: "Queued",
+      bodyHtml: "<p>body</p>",
+      bodyText: "body",
+      updatedAt: new Date().toISOString(),
+    };
+    const first = await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft },
+    });
+    const second = await sync.enqueue({
+      accountId,
+      kind: "save_draft",
+      targetIds: [draft.id],
+      payload: { draft: { ...draft, subject: "Updated" } },
+    });
+    expect(second.id).toBe(first.id);
+    const send = await sync.enqueue({
+      accountId,
+      kind: "send",
+      targetIds: [],
+      payload: { draft },
+      availableAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expect((await sync.flushOutbox(accountId)).flushed).toBe(0);
+    expect(await sync.cancelOutbox(send.id)).toBe(true);
+    expect(
+      (await sync.listOutbox(accountId)).find((item) => item.id === send.id)
+        ?.status,
+    ).toBe("cancelled");
+  });
+
+  it("is deterministic under an injected clock and id source", async () => {
+    const now = new Date("2026-07-15T12:00:00.000Z");
+    const ids = ["mutation-1", "mutation-2"];
+    const sync = new MemorySyncEngine([fixtureProvider()], {
+      now: () => now,
+      createId: () => ids.shift() ?? "unexpected",
+    });
+    const accountId = asAccountId("gmail:demo");
+
+    const first = await sync.enqueue({
+      accountId,
+      kind: "mark_read",
+      targetIds: ["m1"],
+    });
+    const delayed = await sync.enqueue({
+      accountId,
+      kind: "mark_unread",
+      targetIds: ["m1"],
+      availableAt: "2026-07-15T12:00:01.000Z",
+    });
+
+    expect(first).toMatchObject({
+      id: "mutation-1",
+      createdAt: now.toISOString(),
+    });
+    expect(delayed.id).toBe("mutation-2");
+    expect(await sync.flushOutbox(accountId)).toEqual({
+      flushed: 1,
+      failed: 0,
+    });
+    expect(delayed.status).toBe("pending");
   });
 });

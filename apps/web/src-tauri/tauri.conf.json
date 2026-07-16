@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "app.galmail.client",
   "build": {
-    "beforeDevCommand": "pnpm --filter @galmail/web dev",
+    "beforeDevCommand": "bun run --filter @galmail/web dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm --filter @galmail/web build",
+    "beforeBuildCommand": "bun run --filter @galmail/web build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -23,16 +23,50 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
-    "icon": [],
+    "active": true,
+    "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
     "iOS": {
       "developmentTeam": ""
     },
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist",
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
     }
   },
 
-  "plugins": {}
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["galmail"]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVDMjBCNDQyNUU3OTM2ODMKUldTRE5ubGVRclFnN0hlaUh6eWNiNW5YeHpjSEhLZzluK2g0dzdkVStnVERsZWlQaEJwdFh4bWkK",
+      "endpoints": [
+        "https://github.com/galmail/galmail/releases/download/updates-stable/latest.json"
+      ]
+    }
+  }
 }

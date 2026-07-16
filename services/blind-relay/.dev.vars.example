@@ -1,0 +1,16 @@
+# Local-only placeholders. Copy to .dev.vars and replace every value.
+# Never reuse these values or commit .dev.vars.
+ACCOUNT_AUTH_SECRET=replace-with-local-random-secret
+RELAY_INGRESS_SECRET=replace-with-distinct-local-random-secret
+TOKEN_ENCRYPTION_KEY=replace-with-base64url-encoded-32-byte-key
+APNS_TEAM_ID=local-team-id
+APNS_KEY_ID=local-key-id
+APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+replace-with-local-p256-pkcs8-key
+-----END PRIVATE KEY-----"
+APNS_TOPIC=app.galmail.local
+WEB_PUSH_SUBJECT=mailto:local@example.invalid
+WEB_PUSH_PUBLIC_KEY=replace-with-local-vapid-public-key
+WEB_PUSH_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+replace-with-local-p256-pkcs8-key
+-----END PRIVATE KEY-----"

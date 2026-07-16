@@ -1,5 +1,6 @@
 import type {
   AccountId,
+  AttachmentMetadata,
   ClassificationResult,
   ComposeDraft,
   MailLabel,
@@ -34,6 +35,12 @@ export interface MailProvider {
     mutation: Pick<OutboxMutation, "kind" | "targetIds" | "payload">,
   ): Promise<void>;
   sendDraft(accountId: AccountId, draft: ComposeDraft): Promise<MessageId>;
+  saveDraft(accountId: AccountId, draft: ComposeDraft): Promise<string>;
+  deleteDraft(accountId: AccountId, providerDraftId: string): Promise<void>;
+  fetchAttachment(
+    accountId: AccountId,
+    attachment: AttachmentMetadata,
+  ): AsyncIterable<Uint8Array>;
   fetchDeltas(
     accountId: AccountId,
     cursor: SyncCursor | null,
@@ -41,6 +48,8 @@ export interface MailProvider {
     upserts: MailMessage[];
     deletes: MessageId[];
     nextCursor: SyncCursor;
+    /** True when the result is a complete provider snapshot after cursor expiry. */
+    fullReconcile?: boolean;
   }>;
 }
 
@@ -51,8 +60,16 @@ export interface SyncEngine {
     cursor: SyncCursor | null;
   }>;
   pullDeltas(accountId: AccountId): Promise<void>;
-  enqueue(mutation: Omit<OutboxMutation, "id" | "attempts" | "status" | "createdAt">): Promise<OutboxMutation>;
-  flushOutbox(accountId?: AccountId): Promise<{ flushed: number; failed: number }>;
+  enqueue(
+    mutation: Omit<OutboxMutation, "id" | "attempts" | "status" | "createdAt">,
+  ): Promise<OutboxMutation>;
+  flushOutbox(
+    accountId?: AccountId,
+  ): Promise<{ flushed: number; failed: number }>;
+  listOutbox(accountId?: AccountId): Promise<OutboxMutation[]>;
+  cancelOutbox(mutationId: string): Promise<boolean>;
+  retryOutbox(mutationId: string): Promise<boolean>;
+  searchLocal(accountId: AccountId, query: string): Promise<MessageId[]>;
   observe(listener: (event: SyncEvent) => void): () => void;
 }
 
@@ -71,8 +88,14 @@ export interface EncryptedStore {
 
 export interface VaultCrypto {
   generateVaultKey(): Promise<Uint8Array>;
-  wrapKey(vaultKey: Uint8Array, devicePublicKey: Uint8Array): Promise<Uint8Array>;
-  unwrapKey(wrapped: Uint8Array, devicePrivateKey: Uint8Array): Promise<Uint8Array>;
+  wrapKey(
+    vaultKey: Uint8Array,
+    devicePublicKey: Uint8Array,
+  ): Promise<Uint8Array>;
+  unwrapKey(
+    wrapped: Uint8Array,
+    devicePrivateKey: Uint8Array,
+  ): Promise<Uint8Array>;
   seal(plaintext: Uint8Array, vaultKey: Uint8Array): Promise<Uint8Array>;
   open(ciphertext: Uint8Array, vaultKey: Uint8Array): Promise<Uint8Array>;
 }
@@ -91,7 +114,10 @@ export interface Classifier {
 }
 
 export interface NotificationPolicy {
-  shouldNotify(result: ClassificationResult, message: MailMessage): Promise<{
+  shouldNotify(
+    result: ClassificationResult,
+    message: MailMessage,
+  ): Promise<{
     notify: boolean;
     /** Blind mode: generic/delayed when true */
     blindHintOnly: boolean;
@@ -101,7 +127,10 @@ export interface NotificationPolicy {
 }
 
 export interface ReceiptService {
-  requestReceipt(messageId: MessageId, mode: "standard" | "pixel"): Promise<void>;
+  requestReceipt(
+    messageId: MessageId,
+    mode: "standard" | "pixel",
+  ): Promise<void>;
   status(messageId: MessageId): Promise<ReceiptStatus>;
 }
 
@@ -123,7 +152,9 @@ export interface BlindRelayClient {
 export interface DeviceLinking {
   createInvite(): Promise<{ inviteCode: string; expiresAt: string }>;
   acceptInvite(inviteCode: string): Promise<{ deviceId: string }>;
-  listDevices(): Promise<Array<{ deviceId: string; name: string; createdAt: string }>>;
+  listDevices(): Promise<
+    Array<{ deviceId: string; name: string; createdAt: string }>
+  >;
   revokeDevice(deviceId: string): Promise<void>;
 }
 
@@ -157,7 +188,10 @@ export const MUTATION_KINDS: MutationKind[] = [
   "apply_label",
   "remove_label",
   "snooze",
+  "spam",
+  "not_spam",
   "send",
   "save_draft",
+  "delete_draft",
   "move_folder",
 ];

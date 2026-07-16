@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActionButton } from "./ActionButton";
 
 export interface PipDraft {
   id: string;
@@ -77,30 +78,27 @@ function PipWindow(props: {
         <span aria-hidden>✉️</span>
         <span className="pip-title">{props.draft.subject || "Untitled draft"}</span>
         <div className="pip-actions">
-          <button
-            type="button"
-            className="pip-icon-btn"
-            title="Send now"
+          <ActionButton
+            label="Send now"
+            icon="➤"
+            iconOnly
+            variant="quiet"
             onClick={props.onSend}
-          >
-            ➤
-          </button>
-          <button
-            type="button"
-            className="pip-icon-btn"
-            title="Expand to full composer"
+          />
+          <ActionButton
+            label="Expand to full composer"
+            icon="⤢"
+            iconOnly
+            variant="quiet"
             onClick={props.onExpand}
-          >
-            ⤢
-          </button>
-          <button
-            type="button"
-            className="pip-icon-btn"
-            title="Close draft"
+          />
+          <ActionButton
+            label="Close draft"
+            icon="✕"
+            iconOnly
+            variant="quiet"
             onClick={props.onClose}
-          >
-            ✕
-          </button>
+          />
         </div>
       </div>
       <div className="pip-body">

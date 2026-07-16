@@ -53,38 +53,37 @@ export type LayoutMode = "fullscreen" | "two-panel" | "three-panel";
 export interface LayoutMeta {
   id: LayoutMode;
   label: string;
+  shortLabel: string;
+  icon: string;
   blurb: string;
 }
 
 export const LAYOUTS: LayoutMeta[] = [
   {
     id: "fullscreen",
-    label: "1-panel · Fullscreen",
-    blurb: "One thing at a time. Big inbox → tap a thread → full-screen email. Back returns to list.",
+    label: "Single panel",
+    shortLabel: "Single",
+    icon: "▣",
+    blurb: "Open the selected thread full-screen; Back returns to the inbox.",
   },
   {
     id: "two-panel",
-    label: "2-panel · Auto sidebar",
-    blurb: "Sidebar auto-collapses to a rail (or hides until hover). Main area = list + reading pane.",
+    label: "Split view",
+    shortLabel: "Split",
+    icon: "◫",
+    blurb: "Thread list and reading pane, without an overlay sidebar.",
   },
   {
     id: "three-panel",
-    label: "3-panel · Traditional",
+    label: "Three panel",
+    shortLabel: "Three",
+    icon: "▥",
     blurb: "Sidebar + thread list + reading pane. Classic triage layout.",
   },
 ];
 
-/** Sidebar behavior within 2-panel mode. */
-export type SidebarMode = "always" | "auto";
-
-export const SIDEBAR_LABELS: Record<SidebarMode, string> = {
-  auto: "Auto · hide until hover",
-  always: "Always · icon rail",
-};
-
 export const DEFAULT_THEME: ThemeId = "dark";
 export const DEFAULT_LAYOUT: LayoutMode = "three-panel";
-export const DEFAULT_SIDEBAR: SidebarMode = "auto";
 
 const THEME_STORAGE_KEY = "galmail.theme";
 

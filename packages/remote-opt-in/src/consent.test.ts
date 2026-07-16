@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   LocalRemoteOptInService,
   REMOTE_OPT_IN_DISCLOSURE_VERSION,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { isStaleHistoryError, reconcileCursor } from "./cursor.js";
 import { asAccountId } from "./types.js";
 

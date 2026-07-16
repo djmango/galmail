@@ -1,6 +1,33 @@
-export { createGmailFixtureProvider, createGmailLiveProvider } from "./gmail/fixture.js";
+export { createGmailFixtureProvider } from "./gmail/fixture.js";
 export {
-  createMicrosoftFixtureProvider,
+  createGmailLiveProvider,
+  GmailReauthenticationRequired,
+  type GmailHttpClient,
+  type GmailHttpResponse,
+  type GmailLiveOptions,
+  type GmailTokenSource,
+} from "./gmail/live.js";
+export { createMicrosoftFixtureProvider } from "./microsoft/fixture.js";
+export {
   createMicrosoftLiveProvider,
-} from "./microsoft/fixture.js";
-export { listUnifiedInbox, demoAccounts, type UnifiedAccount } from "./unified.js";
+  MicrosoftAuthorizationRequired,
+  microsoftDeltaCursor,
+  type GraphHttpClient,
+  type GraphHttpResponse,
+  type MicrosoftConsentState,
+  type MicrosoftLiveOptions,
+  type MicrosoftTokenSource,
+} from "./microsoft/live.js";
+export {
+  beginMicrosoftPkce,
+  exchangeMicrosoftCode,
+  microsoftAdminConsentUrl,
+  MICROSOFT_GRAPH_SCOPES,
+  type MicrosoftPkceAttempt,
+  type MicrosoftTokenResponse,
+} from "./microsoft/oauth.js";
+export {
+  listUnifiedInbox,
+  demoAccounts,
+  type UnifiedAccount,
+} from "./unified.js";

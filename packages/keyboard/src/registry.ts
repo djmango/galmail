@@ -1,6 +1,7 @@
 export type CommandId =
   | "navigate_down"
   | "navigate_up"
+  | "open_thread"
   | "archive"
   | "trash"
   | "mark_read_toggle"
@@ -24,6 +25,7 @@ export interface CommandDef {
 export const SUPERHUMAN_DEFAULTS: CommandDef[] = [
   { id: "navigate_down", title: "Next thread", defaultKeys: ["j"], scope: "list" },
   { id: "navigate_up", title: "Previous thread", defaultKeys: ["k"], scope: "list" },
+  { id: "open_thread", title: "Open thread", defaultKeys: ["enter"], scope: "list" },
   { id: "archive", title: "Archive", defaultKeys: ["e"], scope: "list" },
   { id: "trash", title: "Trash", defaultKeys: ["#"], scope: "list" },
   { id: "mark_read_toggle", title: "Toggle read", defaultKeys: ["u"], scope: "list" },

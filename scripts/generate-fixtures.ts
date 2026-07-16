@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 /**
  * Generate medium/large fixture mailboxes for performance harnesses.
- * Usage: pnpm exec tsx scripts/generate-fixtures.ts 10000
+ * Usage: bunx tsx scripts/generate-fixtures.ts 10000
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";

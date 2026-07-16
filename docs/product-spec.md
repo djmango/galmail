@@ -8,11 +8,11 @@ A Superhuman-speed, Linear-style local-first mail client that does not force use
 
 ## Platforms
 
-| Platform | Shell | UI |
-|----------|-------|-----|
-| Web / PWA | Browser adapters | Shared React |
-| macOS | Tauri 2 + WKWebView | Shared React |
-| iOS | Tauri 2 + WKWebView | Shared React (responsive) |
+| Platform  | Shell               | UI                        |
+| --------- | ------------------- | ------------------------- |
+| Web / PWA | Browser adapters    | Shared React              |
+| macOS     | Tauri 2 + WKWebView | Shared React              |
+| iOS       | Tauri 2 + WKWebView | Shared React (responsive) |
 
 Thin Swift only for APNs, notification actions/extensions, Keychain, OAuth presentation, App Groups.
 
@@ -24,7 +24,7 @@ Thin Swift only for APNs, notification actions/extensions, Keychain, OAuth prese
 
 ## Core capabilities (v0.1 target)
 
-- Gmail + Microsoft OAuth (fixture mode until client secrets configured)
+- Gmail + Microsoft public-client OAuth (fixture mode until PKCE clients are registered and implemented)
 - Initial + incremental sync; multi-account unified inbox
 - Threads, labels/folders (provider semantics preserved)
 - Compose / reply / forward; automatic drafts; attachments

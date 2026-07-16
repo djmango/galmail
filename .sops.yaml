@@ -1,0 +1,7 @@
+creation_rules:
+  - path_regex: secrets/.*\.(ya?ml|json)$
+    key_groups:
+      - age:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK4RmXrS61fSaWojx1aK9oB1N1LzllAkOpcLrcXsUsVz sulaiman.ghori@outlook.com
+  # Keep encrypted secrets committed; ignore plaintext temps and downloads.
+

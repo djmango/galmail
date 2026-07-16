@@ -1,0 +1,202 @@
+name: galmail-tauri
+options:
+  bundleIdPrefix: app.galmail.client
+  deploymentTarget:
+    iOS: 16.0
+fileGroups: [../../src]
+configs:
+  debug: debug
+  release: release
+settingGroups:
+  app:
+    base:
+      PRODUCT_NAME: GalMail
+      PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client
+      DEVELOPMENT_TEAM: ""
+schemes:
+  GalMailAppleTests:
+    build:
+      targets:
+        GalMailAppleTests: [test]
+    test:
+      targets:
+        - GalMailAppleTests
+targetTemplates:
+  app:
+    type: application
+    sources:
+      - path: Sources
+      - path: ../../../../../swift/GalMailApple/Sources
+      - path: ../../../../../swift/GalMailApple/Shared
+    scheme:
+      environmentVariables:
+        RUST_BACKTRACE: full
+        RUST_LOG: info
+    settings:
+      groups: [app]
+targets:
+  galmail-tauri_iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: ../../../../../swift/GalMailApple/Sources
+      - path: ../../../../../swift/GalMailApple/Shared
+      - path: Assets.xcassets
+      - path: Externals
+      - path: galmail-tauri_iOS
+      - path: assets
+        buildPhase: resources
+        type: folder
+      - path: LaunchScreen.storyboard
+    info:
+      path: galmail-tauri_iOS/Info.plist
+      properties:
+        LSRequiresIPhoneOS: true
+        UILaunchStoryboardName: LaunchScreen
+        UIRequiredDeviceCapabilities: [arm64, metal]
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "0.1.0"
+        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)app.galmail.client.keychain
+        BGTaskSchedulerPermittedIdentifiers:
+          - app.galmail.client.refresh
+          - app.galmail.client.sync
+        UIBackgroundModes:
+          - fetch
+          - processing
+          - remote-notification
+        CFBundleURLTypes:
+          - CFBundleURLName: app.galmail.client.oauth
+            CFBundleURLSchemes: [galmail]
+    entitlements:
+      path: galmail-tauri_iOS/galmail-tauri_iOS.entitlements
+      properties:
+        aps-environment: $(APS_ENVIRONMENT)
+        com.apple.security.application-groups:
+          - group.app.galmail.client
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)app.galmail.client.keychain
+    scheme:
+      testTargets:
+        - GalMailAppleTests
+      environmentVariables:
+        RUST_BACKTRACE: full
+        RUST_LOG: info
+    settings:
+      base:
+        ENABLE_BITCODE: false
+        ARCHS: [arm64]
+        VALID_ARCHS: arm64
+        LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
+        LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
+        EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+      groups: [app]
+    dependencies:
+      - framework: libapp.a
+        embed: false
+      - target: GalMailNotificationService
+        embed: true
+      - target: GalMailShareExtension
+        embed: true
+      - sdk: CoreGraphics.framework
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
+      - sdk: Security.framework
+      - sdk: UIKit.framework
+      - sdk: WebKit.framework
+    preBuildScripts:
+      - script: bun run --cwd ../../.. tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
+        name: Build Rust Code
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
+          - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  GalMailNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../../../../swift/GalMailApple/Shared
+      - path: ../../../../../swift/GalMailApple/NotificationService
+    info:
+      path: GalMailNotificationService/Info.plist
+      properties:
+        CFBundleDisplayName: GalMail Notification Service
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "1"
+        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)app.galmail.client.keychain
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    entitlements:
+      path: GalMailNotificationService/GalMailNotificationService.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.app.galmail.client
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)app.galmail.client.keychain
+    settings:
+      base:
+        PRODUCT_NAME: GalMailNotificationService
+        PRODUCT_MODULE_NAME: GalMailNotificationService
+        PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client.notification-service
+        APPLICATION_EXTENSION_API_ONLY: true
+        SKIP_INSTALL: true
+      groups: [app]
+  GalMailShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ../../../../../swift/GalMailApple/ShareExtension
+    info:
+      path: GalMailShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: GalMail Share
+        CFBundleShortVersionString: 0.1.0
+        CFBundleVersion: "1"
+        GalMailKeychainAccessGroup: $(AppIdentifierPrefix)app.galmail.client.keychain
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 10
+    entitlements:
+      path: GalMailShareExtension/GalMailShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.app.galmail.client
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)app.galmail.client.keychain
+    settings:
+      base:
+        PRODUCT_NAME: GalMailShareExtension
+        PRODUCT_MODULE_NAME: GalMailShareExtension
+        PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client.share
+        APPLICATION_EXTENSION_API_ONLY: true
+        SKIP_INSTALL: true
+      groups: [app]
+  GalMailAppleTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ../../../../../swift/GalMailApple/Shared
+      - path: ../../../../../swift/GalMailApple/Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.galmail.client.tests
+        GENERATE_INFOPLIST_FILE: true
+      groups: [app]

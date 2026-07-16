@@ -48,6 +48,7 @@ export function createGmailFixtureProvider(
   }
 
   const messages = new Map<string, MailMessage>();
+  const drafts = new Map<string, Parameters<MailProvider["saveDraft"]>[1]>();
   for (const m of fixture.messages) {
     messages.set(m.id, {
       id: asMessageId(m.id),
@@ -58,6 +59,7 @@ export function createGmailFixtureProvider(
       snippet: m.snippet,
       from: m.from,
       to: m.to,
+      cc: "cc" in m ? m.cc : undefined,
       date: m.date,
       unread: m.unread,
       starred: m.starred,
@@ -83,7 +85,16 @@ export function createGmailFixtureProvider(
       }
       list.sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
       const limit = opts?.limit ?? 50;
-      return { threads: list.slice(0, limit) };
+      const offset = opts?.pageToken ? Number(opts.pageToken) : 0;
+      if (!Number.isSafeInteger(offset) || offset < 0) {
+        throw new Error("invalid fixture page token");
+      }
+      const nextOffset = offset + limit;
+      return {
+        threads: list.slice(offset, nextOffset),
+        nextPageToken:
+          nextOffset < list.length ? String(nextOffset) : undefined,
+      };
     },
     async getThread(_a, threadId: ThreadId) {
       const t = threads.get(threadId);
@@ -114,6 +125,34 @@ export function createGmailFixtureProvider(
         if (mutation.kind === "unstar") msg.starred = false;
         if (mutation.kind === "trash") {
           msg.labelIds = [asLabelId("TRASH")];
+        }
+        if (mutation.kind === "spam") {
+          msg.labelIds = [asLabelId("SPAM")];
+        }
+        if (mutation.kind === "not_spam") {
+          msg.labelIds = [asLabelId("INBOX")];
+        }
+        if (
+          mutation.kind === "apply_label" &&
+          typeof mutation.payload?.labelId === "string"
+        ) {
+          msg.labelIds = [
+            ...new Set([...msg.labelIds, asLabelId(mutation.payload.labelId)]),
+          ];
+        }
+        if (
+          mutation.kind === "remove_label" &&
+          typeof mutation.payload?.labelId === "string"
+        ) {
+          msg.labelIds = msg.labelIds.filter(
+            (label) => label !== mutation.payload?.labelId,
+          );
+        }
+        if (
+          mutation.kind === "move_folder" &&
+          typeof mutation.payload?.labelId === "string"
+        ) {
+          msg.labelIds = [asLabelId(mutation.payload.labelId)];
         }
         messages.set(target, { ...msg });
       }
@@ -153,6 +192,22 @@ export function createGmailFixtureProvider(
       });
       return mid;
     },
+    async saveDraft(_a, draft) {
+      const id = draft.providerDraftId ?? `fixture-draft-${draft.id}`;
+      drafts.set(id, { ...draft, providerDraftId: id });
+      return id;
+    },
+    async deleteDraft(_a, providerDraftId) {
+      drafts.delete(providerDraftId);
+    },
+    async *fetchAttachment(_a, attachment) {
+      const message = messages.get(attachment.messageId);
+      const found = message?.attachments?.find(
+        (item) => item.id === attachment.id,
+      );
+      if (!found) throw new Error("attachment not found");
+      yield new Uint8Array();
+    },
     async fetchDeltas(_a, cursor: SyncCursor | null) {
       history += 1;
       return {
@@ -161,19 +216,12 @@ export function createGmailFixtureProvider(
         nextCursor: {
           accountId,
           provider: "gmail",
-          token: cursor ? String(Number(cursor.token || 0) + 1) : String(history),
+          token: cursor
+            ? String(Number(cursor.token || 0) + 1)
+            : String(history),
           updatedAt: new Date().toISOString(),
         },
       };
     },
   };
-}
-
-/** Live Gmail path — requires OAuth client; not used in fixture mode. */
-export function createGmailLiveProvider(_opts: {
-  accessToken: string;
-}): MailProvider {
-  throw new Error(
-    "Live Gmail provider requires OAuth credentials. Set GALMAIL_PROVIDER_MODE=fixture or implement token exchange.",
-  );
 }

@@ -11,13 +11,16 @@
   "threads": [
     {
       "id": "t_welcome",
-      "subject": "Welcome to GalMail",
-      "snippet": "Your privacy-first inbox is ready.",
-      "participants": [{ "email": "hello@galmail.local", "name": "GalMail" }],
-      "messageIds": ["m_welcome"],
+      "subject": "Thursday launch review",
+      "snippet": "I added the revised agenda and confirmed the design review.",
+      "participants": [
+        { "email": "maya.chen@example.com", "name": "Maya Chen" },
+        { "email": "demo@galmail.local", "name": "Alex Morgan" }
+      ],
+      "messageIds": ["m_launch_1", "m_launch_2", "m_launch_3"],
       "labelIds": ["INBOX"],
       "unreadCount": 1,
-      "lastMessageAt": "2026-07-15T10:00:00.000Z"
+      "lastMessageAt": "2026-07-15T17:42:00.000Z"
     },
     {
       "id": "t_security",
@@ -42,19 +45,61 @@
   ],
   "messages": [
     {
-      "id": "m_welcome",
+      "id": "m_launch_1",
       "threadId": "t_welcome",
-      "subject": "Welcome to GalMail",
-      "snippet": "Your privacy-first inbox is ready.",
-      "from": { "email": "hello@galmail.local", "name": "GalMail" },
-      "to": [{ "email": "demo@galmail.local" }],
-      "date": "2026-07-15T10:00:00.000Z",
+      "subject": "Thursday launch review",
+      "snippet": "Can we use the first half for the customer walkthrough?",
+      "from": { "email": "maya.chen@example.com", "name": "Maya Chen" },
+      "to": [
+        { "email": "demo@galmail.local", "name": "Alex Morgan" },
+        { "email": "sam.rivera@example.com", "name": "Sam Rivera" }
+      ],
+      "cc": [{ "email": "nora.patel@example.com", "name": "Nora Patel" }],
+      "date": "2026-07-15T15:08:00.000Z",
+      "unread": false,
+      "starred": false,
+      "labelIds": ["INBOX"],
+      "hasAttachments": false,
+      "bodyText": "Hi Alex,\n\nCan we use the first half of Thursday's review for the customer walkthrough? Sam can cover the migration notes after that.\n\nThanks,\nMaya",
+      "bodyHtml": "<p>Hi Alex,</p><p>Can we use the first half of Thursday's review for the customer walkthrough? Sam can cover the migration notes after that.</p><p>Thanks,<br>Maya</p>"
+    },
+    {
+      "id": "m_launch_2",
+      "threadId": "t_welcome",
+      "subject": "Re: Thursday launch review",
+      "snippet": "That works. I will send the updated agenda this afternoon.",
+      "from": { "email": "demo@galmail.local", "name": "Alex Morgan" },
+      "to": [{ "email": "maya.chen@example.com", "name": "Maya Chen" }],
+      "cc": [
+        { "email": "sam.rivera@example.com", "name": "Sam Rivera" },
+        { "email": "nora.patel@example.com", "name": "Nora Patel" }
+      ],
+      "date": "2026-07-15T16:21:00.000Z",
+      "unread": false,
+      "starred": false,
+      "labelIds": ["INBOX", "SENT"],
+      "hasAttachments": false,
+      "bodyText": "That works. I will send the updated agenda this afternoon and leave ten minutes at the end for open questions.\n\nAlex",
+      "bodyHtml": "<p>That works. I will send the updated agenda this afternoon and leave ten minutes at the end for open questions.</p><p>Alex</p>"
+    },
+    {
+      "id": "m_launch_3",
+      "threadId": "t_welcome",
+      "subject": "Re: Thursday launch review",
+      "snippet": "I added the revised agenda and confirmed the design review.",
+      "from": { "email": "maya.chen@example.com", "name": "Maya Chen" },
+      "to": [{ "email": "demo@galmail.local", "name": "Alex Morgan" }],
+      "cc": [
+        { "email": "sam.rivera@example.com", "name": "Sam Rivera" },
+        { "email": "nora.patel@example.com", "name": "Nora Patel" }
+      ],
+      "date": "2026-07-15T17:42:00.000Z",
       "unread": true,
       "starred": false,
       "labelIds": ["INBOX"],
       "hasAttachments": false,
-      "bodyText": "Welcome to GalMail.\n\nDefault mode is blind zero-access. Remote processing is per-account opt-in only.",
-      "bodyHtml": "<p>Welcome to <strong>GalMail</strong>.</p><p>Default mode is blind zero-access. Remote processing is per-account opt-in only.</p>"
+      "bodyText": "Perfect. I added the revised agenda and confirmed that Nora will join for the design review.\n\nSee you Thursday,\nMaya",
+      "bodyHtml": "<p>Perfect. I added the revised agenda and confirmed that Nora will join for the design review.</p><p>See you Thursday,<br>Maya</p>"
     },
     {
       "id": "m_security",

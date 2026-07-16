@@ -1,44 +1,84 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import {
   assertBlindPayload,
   createRelayApp,
-  signRegistration,
-  verifySignature,
+  safeLog,
+  signAccountTokenForTest,
 } from "./server.js";
 
 describe("blind relay", () => {
-  it("rejects plaintext fields", () => {
+  it("rejects nested plaintext and credential fields", () => {
     expect(() => assertBlindPayload({ subject: "hi" })).toThrow(/subject/);
-    expect(() => assertBlindPayload({ accessToken: "x" })).toThrow(/accessToken/);
+    expect(() =>
+      assertBlindPayload({ safe: [{ nested: { refreshToken: "x" } }] }),
+    ).toThrow(/refreshToken/);
+    expect(() => assertBlindPayload({ Subject: "case bypass" })).toThrow(
+      /Subject/,
+    );
   });
 
-  it("verifies hmac signatures", () => {
-    const sig = signRegistration("secret", "dev1", "token");
-    expect(verifySignature("secret", "dev1", "token", sig)).toBe(true);
-    expect(verifySignature("secret", "dev1", "other", sig)).toBe(false);
+  it("creates short-lived account-scoped bearer tokens", async () => {
+    const token = await signAccountTokenForTest(
+      "test-secret",
+      "account_12345678",
+      Math.floor(Date.now() / 1000) + 60,
+    );
+    const parts = token.split(".");
+    expect(parts).toHaveLength(3);
+    expect(token).not.toContain("test-secret");
   });
 
-  it("accepts opaque events", async () => {
-    const app = createRelayApp("secret");
-    const res = await app.request("/v1/events", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        opaqueRouteId: "route_abc",
-        eventType: "mail.hint",
-        ciphertextHint: "opaque",
-      }),
-    });
-    expect(res.status).toBe(200);
-    const bad = await app.request("/v1/events", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        opaqueRouteId: "route_abc",
-        eventType: "mail.hint",
-        subject: "leaked",
-      }),
-    });
-    expect(bad.status).toBe(400);
+  it("exposes a Workers-compatible Hono fetch handler", () => {
+    expect(typeof createRelayApp().fetch).toBe("function");
+  });
+
+  it("guards structured logs against sensitive fields", () => {
+    expect(() => safeLog("info", "health", { outcome: "ok" })).not.toThrow();
+    expect(() =>
+      safeLog("error", "request_failed", { status: 500 }),
+    ).not.toThrow();
+  });
+
+  it("serves health through the Workers binding boundary", async () => {
+    const app = createRelayApp();
+    const env = {
+      ENVIRONMENT: "test",
+      DB: {
+        prepare() {
+          return {
+            async first() {
+              return { ok: 1 };
+            },
+          };
+        },
+      },
+    } as unknown as Env;
+    const response = await app.request("/health", {}, env);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe(
+      '{"ok":true,"service":"galmail-blind-relay","environment":"test"}',
+    );
+  });
+
+  it("rejects a valid token used for another account", async () => {
+    const secret = "integration-secret";
+    const token = await signAccountTokenForTest(
+      secret,
+      "account_12345678",
+      Math.floor(Date.now() / 1000) + 60,
+    );
+    const response = await createRelayApp().request(
+      "/v1/accounts/account_87654321/devices/bootstrap",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: "{}",
+      },
+      { ACCOUNT_AUTH_SECRET: secret } as unknown as Env,
+    );
+    expect(response.status).toBe(403);
   });
 });

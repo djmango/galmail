@@ -23,9 +23,15 @@ export class MemoryEncryptedStore implements EncryptedStore {
   }
 }
 
-/**
- * Dev/test vault crypto using XOR + random — NOT for production.
- * Production browser path must use WebCrypto AES-GCM + non-exportable keys.
+const ENVELOPE_HEADER = new Uint8Array([
+  0x47, 0x4d, 0x41, 0x45, 0x01, 0x02, 0x0c, 0x00,
+]);
+const BROWSER_AAD = new TextEncoder().encode("galmail/browser-envelope/v1");
+const NONCE_LENGTH = 12;
+
+/** Authenticated browser crypto. Native production uses the matching v1 envelope
+ * framing with XChaCha20-Poly1305 (algorithm 1); WebCrypto uses AES-256-GCM
+ * (algorithm 2). The Wasm adapter is the cross-platform XChaCha implementation.
  */
 export class DevVaultCrypto implements VaultCrypto {
   async generateVaultKey(): Promise<Uint8Array> {
@@ -38,42 +44,82 @@ export class DevVaultCrypto implements VaultCrypto {
     vaultKey: Uint8Array,
     devicePublicKey: Uint8Array,
   ): Promise<Uint8Array> {
-    const out = new Uint8Array(vaultKey.length);
-    for (let i = 0; i < vaultKey.length; i++) {
-      out[i] = vaultKey[i]! ^ devicePublicKey[i % devicePublicKey.length]!;
-    }
-    return out;
+    return this.seal(vaultKey, devicePublicKey);
   }
 
   async unwrapKey(
     wrapped: Uint8Array,
     devicePrivateKey: Uint8Array,
   ): Promise<Uint8Array> {
-    return this.wrapKey(wrapped, devicePrivateKey);
+    return this.open(wrapped, devicePrivateKey);
   }
 
   async seal(plaintext: Uint8Array, vaultKey: Uint8Array): Promise<Uint8Array> {
-    const out = new Uint8Array(plaintext.length + 4);
-    out[0] = 0x47; // G
-    out[1] = 0x4d; // M
-    out[2] = 0x01; // version
-    out[3] = 0x00;
-    for (let i = 0; i < plaintext.length; i++) {
-      out[i + 4] = plaintext[i]! ^ vaultKey[i % vaultKey.length]!;
-    }
-    return out;
+    const key = await importAesKey(vaultKey, ["encrypt"]);
+    const nonce = crypto.getRandomValues(new Uint8Array(NONCE_LENGTH));
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: nonce, additionalData: BROWSER_AAD },
+      key,
+      toArrayBuffer(plaintext),
+    );
+    return concat(ENVELOPE_HEADER, nonce, new Uint8Array(ciphertext));
   }
 
-  async open(ciphertext: Uint8Array, vaultKey: Uint8Array): Promise<Uint8Array> {
-    if (ciphertext[0] !== 0x47 || ciphertext[1] !== 0x4d) {
-      throw new Error("invalid ciphertext header");
+  async open(
+    ciphertext: Uint8Array,
+    vaultKey: Uint8Array,
+  ): Promise<Uint8Array> {
+    if (
+      ciphertext.length < ENVELOPE_HEADER.length + NONCE_LENGTH + 16 ||
+      !ENVELOPE_HEADER.every((byte, index) => ciphertext[index] === byte)
+    ) {
+      throw new Error("unsupported ciphertext envelope");
     }
-    const out = new Uint8Array(ciphertext.length - 4);
-    for (let i = 0; i < out.length; i++) {
-      out[i] = ciphertext[i + 4]! ^ vaultKey[i % vaultKey.length]!;
-    }
-    return out;
+    const key = await importAesKey(vaultKey, ["decrypt"]);
+    const nonce = ciphertext.slice(
+      ENVELOPE_HEADER.length,
+      ENVELOPE_HEADER.length + NONCE_LENGTH,
+    );
+    const payload = ciphertext.slice(ENVELOPE_HEADER.length + NONCE_LENGTH);
+    const plaintext = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: nonce, additionalData: BROWSER_AAD },
+      key,
+      payload,
+    );
+    return new Uint8Array(plaintext);
   }
+}
+
+async function importAesKey(
+  raw: Uint8Array,
+  usages: KeyUsage[],
+): Promise<CryptoKey> {
+  if (raw.length !== 32) {
+    throw new Error("vault keys must be 256 bits");
+  }
+  return crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(raw),
+    "AES-GCM",
+    false,
+    usages,
+  );
+}
+
+function concat(...parts: Uint8Array[]): Uint8Array {
+  const output = new Uint8Array(
+    parts.reduce((length, part) => length + part.length, 0),
+  );
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return Uint8Array.from(bytes).buffer;
 }
 
 /** Browser adapter surface — IndexedDB/OPFS wiring is progressive enhancement. */

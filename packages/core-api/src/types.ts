@@ -33,6 +33,30 @@ export interface MailLabel {
   providerNativeId: string;
 }
 
+export interface AttachmentMetadata {
+  id: string;
+  providerNativeId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  messageId: MessageId;
+  disposition?: "attachment" | "inline";
+  contentId?: string;
+  quarantined?: boolean;
+  quarantineReason?: string;
+}
+
+export interface DraftAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  /** Base64 payload. Native clients persist this in the encrypted attachment store. */
+  data: string;
+  disposition?: "attachment" | "inline";
+  contentId?: string;
+}
+
 export interface MailMessage {
   id: MessageId;
   threadId: ThreadId;
@@ -49,9 +73,17 @@ export interface MailMessage {
   starred: boolean;
   labelIds: LabelId[];
   hasAttachments: boolean;
+  attachments?: AttachmentMetadata[];
   /** Body may be lazily hydrated */
   bodyHtml?: string;
   bodyText?: string;
+  headers?: Record<string, string>;
+  inReplyTo?: string;
+  references?: string[];
+  calendarInvite?: {
+    method?: string;
+    content: string;
+  };
 }
 
 export interface MailThread {
@@ -85,8 +117,11 @@ export type MutationKind =
   | "apply_label"
   | "remove_label"
   | "snooze"
+  | "spam"
+  | "not_spam"
   | "send"
   | "save_draft"
+  | "delete_draft"
   | "move_folder";
 
 export interface OutboxMutation {
@@ -97,8 +132,10 @@ export interface OutboxMutation {
   payload?: Record<string, unknown>;
   createdAt: string;
   attempts: number;
-  status: "pending" | "inflight" | "failed" | "done";
+  status: "pending" | "inflight" | "failed" | "done" | "cancelled";
   lastError?: string;
+  availableAt?: string;
+  undoUntil?: string;
 }
 
 export interface ComposeDraft {
@@ -111,10 +148,17 @@ export interface ComposeDraft {
   bodyHtml: string;
   bodyText: string;
   inReplyTo?: MessageId;
+  references?: string[];
+  alias?: MailAddress;
+  signature?: string;
+  attachments?: DraftAttachment[];
+  requestReadReceipt?: boolean;
+  providerDraftId?: string;
   updatedAt: string;
 }
 
-export type ReceiptStatus = "receipt_received" | "likely_opened" | "none";
+export type ReceiptStatus =
+  "receipt_received" | "likely_opened" | "proxy_or_prefetch" | "none";
 
 export interface ClassificationResult {
   messageId: MessageId;

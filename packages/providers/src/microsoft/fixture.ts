@@ -16,7 +16,7 @@ export function createMicrosoftFixtureProvider(): MailProvider {
   const accountId = asAccountId("microsoft:demo");
   const labels: MailLabel[] = [
     {
-      id: asLabelId("inbox"),
+      id: asLabelId("INBOX"),
       name: "Inbox",
       kind: "folder",
       providerNativeId: "Inbox",
@@ -40,7 +40,7 @@ export function createMicrosoftFixtureProvider(): MailProvider {
     snippet: "Folders and categories map into the unified view.",
     participants: [{ email: "outlook@example.com", name: "Outlook Bot" }],
     messageIds: [messageId],
-    labelIds: [asLabelId("inbox"), asLabelId("cat_focus")],
+    labelIds: [asLabelId("INBOX"), asLabelId("cat_focus")],
     unreadCount: 1,
     lastMessageAt: "2026-07-15T12:00:00.000Z",
   };
@@ -67,6 +67,7 @@ export function createMicrosoftFixtureProvider(): MailProvider {
 
   const threads = new Map<string, MailThread>([[threadId, thread]]);
   const messages = new Map<string, MailMessage>([[messageId, message]]);
+  const drafts = new Map<string, unknown>();
   let delta = 1;
 
   return {
@@ -97,7 +98,7 @@ export function createMicrosoftFixtureProvider(): MailProvider {
         const msg = messages.get(target);
         if (!msg) continue;
         if (mutation.kind === "archive" || mutation.kind === "move_folder") {
-          msg.labelIds = msg.labelIds.filter((l) => l !== "inbox");
+          msg.labelIds = msg.labelIds.filter((l) => l !== "INBOX");
         }
         if (mutation.kind === "mark_read") msg.unread = false;
         messages.set(target, { ...msg });
@@ -105,6 +106,17 @@ export function createMicrosoftFixtureProvider(): MailProvider {
     },
     async sendDraft() {
       return asMessageId(`ms_sent_${Date.now()}`);
+    },
+    async saveDraft(_a, draft) {
+      const id = draft.providerDraftId ?? `ms-draft-${draft.id}`;
+      drafts.set(id, draft);
+      return id;
+    },
+    async deleteDraft(_a, providerDraftId) {
+      drafts.delete(providerDraftId);
+    },
+    async *fetchAttachment() {
+      yield new Uint8Array();
     },
     async fetchDeltas(_a, cursor) {
       delta += 1;
@@ -114,20 +126,10 @@ export function createMicrosoftFixtureProvider(): MailProvider {
         nextCursor: {
           accountId,
           provider: "microsoft",
-          token: cursor?.token
-            ? `${cursor.token}+${delta}`
-            : `delta_${delta}`,
+          token: cursor?.token ? `${cursor.token}+${delta}` : `delta_${delta}`,
           updatedAt: new Date().toISOString(),
         },
       };
     },
   };
-}
-
-export function createMicrosoftLiveProvider(_opts: {
-  accessToken: string;
-}): MailProvider {
-  throw new Error(
-    "Live Microsoft Graph provider requires OAuth. Use fixture mode or configure MS_CLIENT_ID.",
-  );
 }

@@ -1,0 +1,214 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "galmail-blind-relay-local",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "minify": true,
+  "limits": { "cpu_ms": 50 },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.05,
+    "logs": { "enabled": true, "head_sampling_rate": 0.05 },
+  },
+  "vars": {
+    "ENVIRONMENT": "local",
+    "RELAY_EVENT_RETENTION_HOURS": "24",
+    "AUDIT_RETENTION_DAYS": "30",
+    "PUSH_REGISTRATION_INACTIVE_DAYS": "90",
+    "MAX_BLOB_BYTES": "1048576",
+  },
+  "secrets": {
+    "required": [
+      "ACCOUNT_AUTH_SECRET",
+      "RELAY_INGRESS_SECRET",
+      "TOKEN_ENCRYPTION_KEY",
+      "APNS_TEAM_ID",
+      "APNS_KEY_ID",
+      "APNS_PRIVATE_KEY",
+      "APNS_TOPIC",
+      "WEB_PUSH_SUBJECT",
+      "WEB_PUSH_PUBLIC_KEY",
+      "WEB_PUSH_PRIVATE_KEY",
+    ],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "galmail-hosted-local",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    { "binding": "SYNC_BLOBS", "bucket_name": "galmail-sync-local" },
+  ],
+  "analytics_engine_datasets": [
+    { "binding": "METRICS", "dataset": "galmail_relay_local" },
+  ],
+  "queues": {
+    "producers": [{ "binding": "PUSH_QUEUE", "queue": "galmail-push-local" }],
+    "consumers": [
+      {
+        "queue": "galmail-push-local",
+        "max_batch_size": 10,
+        "max_batch_timeout": 2,
+        "max_retries": 5,
+        "retry_delay": 30,
+        "dead_letter_queue": "galmail-push-dlq-local",
+      },
+    ],
+  },
+  "ratelimits": [
+    {
+      "name": "API_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 120, "period": 60 },
+    },
+    {
+      "name": "EVENT_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 300, "period": 60 },
+    },
+  ],
+  "triggers": { "crons": ["17 * * * *"] },
+  "env": {
+    "staging": {
+      "name": "galmail-blind-relay-staging",
+      "triggers": { "crons": ["17 * * * *"] },
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "RELAY_EVENT_RETENTION_HOURS": "24",
+        "AUDIT_RETENTION_DAYS": "30",
+        "PUSH_REGISTRATION_INACTIVE_DAYS": "90",
+        "MAX_BLOB_BYTES": "1048576",
+      },
+      "secrets": {
+        "required": [
+          "ACCOUNT_AUTH_SECRET",
+          "RELAY_INGRESS_SECRET",
+          "TOKEN_ENCRYPTION_KEY",
+          "APNS_TEAM_ID",
+          "APNS_KEY_ID",
+          "APNS_PRIVATE_KEY",
+          "APNS_TOPIC",
+          "WEB_PUSH_SUBJECT",
+          "WEB_PUSH_PUBLIC_KEY",
+          "WEB_PUSH_PRIVATE_KEY",
+        ],
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "galmail-hosted-staging",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "SYNC_BLOBS",
+          "bucket_name": "galmail-sync-staging",
+        },
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "galmail_relay_staging" },
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "PUSH_QUEUE", "queue": "galmail-push-staging" },
+        ],
+        "consumers": [
+          {
+            "queue": "galmail-push-staging",
+            "max_batch_size": 10,
+            "max_batch_timeout": 2,
+            "max_retries": 5,
+            "retry_delay": 30,
+            "dead_letter_queue": "galmail-push-dlq-staging",
+          },
+        ],
+      },
+      "ratelimits": [
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "1101",
+          "simple": { "limit": 120, "period": 60 },
+        },
+        {
+          "name": "EVENT_RATE_LIMITER",
+          "namespace_id": "1102",
+          "simple": { "limit": 300, "period": 60 },
+        },
+      ],
+    },
+    "production": {
+      "name": "galmail-blind-relay",
+      "workers_dev": false,
+      "triggers": { "crons": ["17 * * * *"] },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "RELAY_EVENT_RETENTION_HOURS": "24",
+        "AUDIT_RETENTION_DAYS": "30",
+        "PUSH_REGISTRATION_INACTIVE_DAYS": "90",
+        "MAX_BLOB_BYTES": "1048576",
+      },
+      "secrets": {
+        "required": [
+          "ACCOUNT_AUTH_SECRET",
+          "RELAY_INGRESS_SECRET",
+          "TOKEN_ENCRYPTION_KEY",
+          "APNS_TEAM_ID",
+          "APNS_KEY_ID",
+          "APNS_PRIVATE_KEY",
+          "APNS_TOPIC",
+          "WEB_PUSH_SUBJECT",
+          "WEB_PUSH_PUBLIC_KEY",
+          "WEB_PUSH_PRIVATE_KEY",
+        ],
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "galmail-hosted-production",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        {
+          "binding": "SYNC_BLOBS",
+          "bucket_name": "galmail-sync-production",
+        },
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "galmail_relay_production" },
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "PUSH_QUEUE", "queue": "galmail-push-production" },
+        ],
+        "consumers": [
+          {
+            "queue": "galmail-push-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 2,
+            "max_retries": 5,
+            "retry_delay": 30,
+            "dead_letter_queue": "galmail-push-dlq-production",
+          },
+        ],
+      },
+      "ratelimits": [
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "1201",
+          "simple": { "limit": 120, "period": 60 },
+        },
+        {
+          "name": "EVENT_RATE_LIMITER",
+          "namespace_id": "1202",
+          "simple": { "limit": 300, "period": 60 },
+        },
+      ],
+    },
+  },
+}

@@ -1,0 +1,159 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "galmail-opt-in-processor-local",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "minify": true,
+  "limits": { "cpu_ms": 50 },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.05,
+    "logs": { "enabled": true, "head_sampling_rate": 0.05 },
+  },
+  "vars": {
+    "ENVIRONMENT": "local",
+    "CONSENT_VERSION": "2026-07-15.v1",
+    "PROCESSING_REGION": "local",
+    "MAX_RETENTION_HOURS": "24",
+    "REVOCATION_JOB_RETENTION_HOURS": "24",
+  },
+  "secrets": {
+    "required": ["ACCOUNT_AUTH_SECRET", "TOKEN_ENCRYPTION_KEY"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "galmail-processor-local",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "analytics_engine_datasets": [
+    { "binding": "METRICS", "dataset": "galmail_processor_local" },
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "REVOCATION_QUEUE", "queue": "galmail-revocation-local" },
+    ],
+    "consumers": [
+      {
+        "queue": "galmail-revocation-local",
+        "max_batch_size": 5,
+        "max_batch_timeout": 2,
+        "max_retries": 8,
+        "retry_delay": 60,
+        "dead_letter_queue": "galmail-revocation-dlq-local",
+      },
+    ],
+  },
+  "ratelimits": [
+    {
+      "name": "API_RATE_LIMITER",
+      "namespace_id": "2001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
+  "triggers": { "crons": ["31 * * * *"] },
+  "env": {
+    "staging": {
+      "name": "galmail-opt-in-processor-staging",
+      "triggers": { "crons": ["31 * * * *"] },
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "CONSENT_VERSION": "2026-07-15.v1",
+        "PROCESSING_REGION": "wnam",
+        "MAX_RETENTION_HOURS": "24",
+        "REVOCATION_JOB_RETENTION_HOURS": "24",
+      },
+      "secrets": {
+        "required": ["ACCOUNT_AUTH_SECRET", "TOKEN_ENCRYPTION_KEY"],
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "galmail-processor-staging",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "galmail_processor_staging" },
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "REVOCATION_QUEUE",
+            "queue": "galmail-revocation-staging",
+          },
+        ],
+        "consumers": [
+          {
+            "queue": "galmail-revocation-staging",
+            "max_batch_size": 5,
+            "max_batch_timeout": 2,
+            "max_retries": 8,
+            "retry_delay": 60,
+            "dead_letter_queue": "galmail-revocation-dlq-staging",
+          },
+        ],
+      },
+      "ratelimits": [
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "2101",
+          "simple": { "limit": 60, "period": 60 },
+        },
+      ],
+    },
+    "production": {
+      "name": "galmail-opt-in-processor",
+      "workers_dev": false,
+      "triggers": { "crons": ["31 * * * *"] },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "CONSENT_VERSION": "2026-07-15.v1",
+        "PROCESSING_REGION": "wnam",
+        "MAX_RETENTION_HOURS": "24",
+        "REVOCATION_JOB_RETENTION_HOURS": "24",
+      },
+      "secrets": {
+        "required": ["ACCOUNT_AUTH_SECRET", "TOKEN_ENCRYPTION_KEY"],
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "galmail-processor-production",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "analytics_engine_datasets": [
+        { "binding": "METRICS", "dataset": "galmail_processor_production" },
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "REVOCATION_QUEUE",
+            "queue": "galmail-revocation-production",
+          },
+        ],
+        "consumers": [
+          {
+            "queue": "galmail-revocation-production",
+            "max_batch_size": 5,
+            "max_batch_timeout": 2,
+            "max_retries": 8,
+            "retry_delay": 60,
+            "dead_letter_queue": "galmail-revocation-dlq-production",
+          },
+        ],
+      },
+      "ratelimits": [
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "2201",
+          "simple": { "limit": 60, "period": 60 },
+        },
+      ],
+    },
+  },
+}

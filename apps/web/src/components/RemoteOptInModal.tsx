@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { RemoteProcessingConsent } from "@galmail/core-api";
 import type { REMOTE_OPT_IN_COPY } from "@galmail/remote-opt-in";
+import { ActionButton } from "./ActionButton";
 
 export function RemoteOptInModal(props: {
   copy: typeof REMOTE_OPT_IN_COPY;
@@ -58,9 +59,9 @@ export function RemoteOptInModal(props: {
           {props.copy.confirmLabel}
         </label>
         <div className="top-actions">
-          <button
-            className="btn btn-primary"
-            type="button"
+          <ActionButton
+            label="Save"
+            variant="primary"
             disabled={enabled && !acked}
             onClick={() =>
               props.onSave({
@@ -70,17 +71,12 @@ export function RemoteOptInModal(props: {
                 retentionHours: enabled ? retentionHours : 0,
               })
             }
-          >
-            Save
-          </button>
-          <button
-            className="btn"
-            type="button"
-            title="Cancel · Esc"
+          />
+          <ActionButton
+            label={props.copy.cancelLabel}
+            command="back"
             onClick={props.onClose}
-          >
-            {props.copy.cancelLabel}
-          </button>
+          />
         </div>
       </div>
     </div>

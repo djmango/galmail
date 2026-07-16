@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { createGmailFixtureProvider } from "./gmail/fixture.js";
 import { createMicrosoftFixtureProvider } from "./microsoft/fixture.js";
 import { demoAccounts, listUnifiedInbox } from "./unified.js";

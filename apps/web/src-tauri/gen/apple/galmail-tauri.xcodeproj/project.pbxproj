@@ -1,0 +1,860 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08AB2FFDE13A24807790D8F6 /* GalMailNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CCF302CF907B2A8026E91509 /* GalMailNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0FD2778FD38CADD64396A5B7 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9A1DB5127267A72A2FB39AD /* WebKit.framework */; };
+		15A5C6422FF06358E4F9CAEA /* GalMailApplePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBBC73907BC909920E778A0 /* GalMailApplePlugin.swift */; };
+		17B92FE3202FD6690AB4823B /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E77526E2C03744A2E9FFF3B /* NotificationService.swift */; };
+		27AAE0CAD79D2966BC498A71 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 20157DB38844335A13ECA793 /* main.mm */; };
+		2ED34D226FAFE941AC77D4A7 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 96365DCBFCCA526D137B61D4 /* LaunchScreen.storyboard */; };
+		2FD290887638625674F2C938 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B544BB3E580A8184B13D9F27 /* libapp.a */; };
+		3552DCD744CA9D834E318349 /* NotificationBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D2434676E3D92D5F8B25D0 /* NotificationBridge.swift */; };
+		3B3BDF0B05B4A6F767C68DE5 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 27760AF9E0A8385CA2FC0EF7 /* libapp.a */; };
+		4134FBF922AA7A76367744BD /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 13DA12D8AF370D20BC685086 /* assets */; };
+		751C593DB5EF6069C1F2CD77 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5D9C4179495F4FB057646FC8 /* UIKit.framework */; };
+		75B688A240C0B0C546716DA0 /* GalMailShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5302AFD83CA1509A85AF03A4 /* GalMailShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7AE4D909B25FDDE2CED372AA /* BlindNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8749B16C02FBF816B3D56A28 /* BlindNotification.swift */; };
+		7CA00AC01B23B92D7549E1CB /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DDCEFD388C5DD3AADE7427E4 /* MetalKit.framework */; };
+		8838B9AFF0DF595FEF9A2A31 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5D495F6B494A622A446D4569 /* Assets.xcassets */; };
+		8A3DCB332F07DC0858818FD4 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DDE4E7714450F24DB2510596 /* Metal.framework */; };
+		976103E11E0EE496407E9C51 /* BlindNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F5CCA32CB9B2839A47B7B24 /* BlindNotificationTests.swift */; };
+		9828DA413C484E5478FA3790 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E305A1350A1FE75385F37333 /* ShareViewController.swift */; };
+		D1973B94CF24B06CCF3A8D91 /* BlindNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8749B16C02FBF816B3D56A28 /* BlindNotification.swift */; };
+		D9AEE403E2E0376D2BAEBC71 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A7A7E38E3163AC72AADF796E /* Security.framework */; };
+		DB0D60D3861348DF65C110DB /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D246BB9546741E2BAE682A32 /* QuartzCore.framework */; };
+		E8053CD2678EEBB9F0DCEB1A /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 89A26656A295000BF6639CB6 /* CoreGraphics.framework */; };
+		EAFFDA1FB50FB9500E746DA2 /* BlindNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8749B16C02FBF816B3D56A28 /* BlindNotification.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4B79E246A9C39EE95D3530BD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D23B5B38B0D92CA022484D5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B1C11A17D6B2FD534338D3D1;
+			remoteInfo = GalMailShareExtension;
+		};
+		8EDC4557DA87964E5B54196A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D23B5B38B0D92CA022484D5D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B63AF0A7AB597C03EF598533;
+			remoteInfo = GalMailNotificationService;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BFB0A223FB7ADC23BC208FB1 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				08AB2FFDE13A24807790D8F6 /* GalMailNotificationService.appex in Embed Foundation Extensions */,
+				75B688A240C0B0C546716DA0 /* GalMailShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		13DA12D8AF370D20BC685086 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		1974488DE63CF2DC35F96849 /* secure_storage.rs */ = {isa = PBXFileReference; path = secure_storage.rs; sourceTree = "<group>"; };
+		1D11EDD77809EA504DCC453D /* gmail_oauth.rs */ = {isa = PBXFileReference; path = gmail_oauth.rs; sourceTree = "<group>"; };
+		20157DB38844335A13ECA793 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		27760AF9E0A8385CA2FC0EF7 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		284FE41070C9293F39109963 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		3F70E622D4C72D12B3DA10F4 /* microsoft_oauth.rs */ = {isa = PBXFileReference; path = microsoft_oauth.rs; sourceTree = "<group>"; };
+		40EE10072B7A486EE77A6F13 /* galmail-tauri_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "galmail-tauri_iOS.entitlements"; sourceTree = "<group>"; };
+		4E77526E2C03744A2E9FFF3B /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		5302AFD83CA1509A85AF03A4 /* GalMailShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GalMailShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5D495F6B494A622A446D4569 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5D9C4179495F4FB057646FC8 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		69EC8B01986A67CD2F9272D8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		71119A0F3CC472BF1CAF4608 /* GalMailAppleTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GalMailAppleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F5CCA32CB9B2839A47B7B24 /* BlindNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlindNotificationTests.swift; sourceTree = "<group>"; };
+		8749B16C02FBF816B3D56A28 /* BlindNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlindNotification.swift; sourceTree = "<group>"; };
+		89A26656A295000BF6639CB6 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		8F5FD934AB4D61F2B8FE1F98 /* release_support.rs */ = {isa = PBXFileReference; path = release_support.rs; sourceTree = "<group>"; };
+		96365DCBFCCA526D137B61D4 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		9B52E2AE06F698103E212348 /* galmail-tauri_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "galmail-tauri_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7A7E38E3163AC72AADF796E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		AD14F17AA84684733F745A67 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		B0D2434676E3D92D5F8B25D0 /* NotificationBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBridge.swift; sourceTree = "<group>"; };
+		B544BB3E580A8184B13D9F27 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		C9A1DB5127267A72A2FB39AD /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		CCF302CF907B2A8026E91509 /* GalMailNotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GalMailNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D246BB9546741E2BAE682A32 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		DBBBC73907BC909920E778A0 /* GalMailApplePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalMailApplePlugin.swift; sourceTree = "<group>"; };
+		DDCEFD388C5DD3AADE7427E4 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		DDE4E7714450F24DB2510596 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		E305A1350A1FE75385F37333 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		F9BA79180B1155C6A53BF8F7 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3763046CF4B2802533F1E278 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2FD290887638625674F2C938 /* libapp.a in Frameworks */,
+				E8053CD2678EEBB9F0DCEB1A /* CoreGraphics.framework in Frameworks */,
+				8A3DCB332F07DC0858818FD4 /* Metal.framework in Frameworks */,
+				7CA00AC01B23B92D7549E1CB /* MetalKit.framework in Frameworks */,
+				DB0D60D3861348DF65C110DB /* QuartzCore.framework in Frameworks */,
+				D9AEE403E2E0376D2BAEBC71 /* Security.framework in Frameworks */,
+				751C593DB5EF6069C1F2CD77 /* UIKit.framework in Frameworks */,
+				0FD2778FD38CADD64396A5B7 /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0C5782CD8BEFA38C3655B85D /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				27760AF9E0A8385CA2FC0EF7 /* libapp.a */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
+		1CBF7555CBEE0E567242DDA6 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				8749B16C02FBF816B3D56A28 /* BlindNotification.swift */,
+			);
+			name = Shared;
+			path = ../../../../../swift/GalMailApple/Shared;
+			sourceTree = "<group>";
+		};
+		26C36D783FCF3E20C71FDD81 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				43E724C013434D4E90301AFA /* galmail-tauri */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		2AF904641A19FF1C113346C9 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				7F5CCA32CB9B2839A47B7B24 /* BlindNotificationTests.swift */,
+			);
+			name = Tests;
+			path = ../../../../../swift/GalMailApple/Tests;
+			sourceTree = "<group>";
+		};
+		3203393CE83ADC2BD10BCBDF /* src */ = {
+			isa = PBXGroup;
+			children = (
+				1D11EDD77809EA504DCC453D /* gmail_oauth.rs */,
+				F9BA79180B1155C6A53BF8F7 /* lib.rs */,
+				284FE41070C9293F39109963 /* main.rs */,
+				3F70E622D4C72D12B3DA10F4 /* microsoft_oauth.rs */,
+				8F5FD934AB4D61F2B8FE1F98 /* release_support.rs */,
+				1974488DE63CF2DC35F96849 /* secure_storage.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		38C8C7FA1271AD6DEB253628 /* arm64 */ = {
+			isa = PBXGroup;
+			children = (
+				0C5782CD8BEFA38C3655B85D /* debug */,
+			);
+			path = arm64;
+			sourceTree = "<group>";
+		};
+		43E724C013434D4E90301AFA /* galmail-tauri */ = {
+			isa = PBXGroup;
+			children = (
+				20157DB38844335A13ECA793 /* main.mm */,
+				8AC185647A65406FA603AE0C /* bindings */,
+			);
+			path = "galmail-tauri";
+			sourceTree = "<group>";
+		};
+		59012BD2BC3C8E31DCCE94DC /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+				38C8C7FA1271AD6DEB253628 /* arm64 */,
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		8380F2B4768C6AC461B674C5 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				DBBBC73907BC909920E778A0 /* GalMailApplePlugin.swift */,
+				B0D2434676E3D92D5F8B25D0 /* NotificationBridge.swift */,
+			);
+			name = Sources;
+			path = ../../../../../swift/GalMailApple/Sources;
+			sourceTree = "<group>";
+		};
+		8AC185647A65406FA603AE0C /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				AD14F17AA84684733F745A67 /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		BAFEB9CF31DB1437B5BA1131 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				E305A1350A1FE75385F37333 /* ShareViewController.swift */,
+			);
+			name = ShareExtension;
+			path = ../../../../../swift/GalMailApple/ShareExtension;
+			sourceTree = "<group>";
+		};
+		BB0A0C7F875DE27FBF2E8925 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9B52E2AE06F698103E212348 /* galmail-tauri_iOS.app */,
+				71119A0F3CC472BF1CAF4608 /* GalMailAppleTests.xctest */,
+				CCF302CF907B2A8026E91509 /* GalMailNotificationService.appex */,
+				5302AFD83CA1509A85AF03A4 /* GalMailShareExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C3C0CA9752FFC5C0100950AC /* NotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				4E77526E2C03744A2E9FFF3B /* NotificationService.swift */,
+			);
+			name = NotificationService;
+			path = ../../../../../swift/GalMailApple/NotificationService;
+			sourceTree = "<group>";
+		};
+		CE9FFF7EC167F14C9455326F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				89A26656A295000BF6639CB6 /* CoreGraphics.framework */,
+				B544BB3E580A8184B13D9F27 /* libapp.a */,
+				DDE4E7714450F24DB2510596 /* Metal.framework */,
+				DDCEFD388C5DD3AADE7427E4 /* MetalKit.framework */,
+				D246BB9546741E2BAE682A32 /* QuartzCore.framework */,
+				A7A7E38E3163AC72AADF796E /* Security.framework */,
+				5D9C4179495F4FB057646FC8 /* UIKit.framework */,
+				C9A1DB5127267A72A2FB39AD /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		EB24621FEB0F3B976515B06E = {
+			isa = PBXGroup;
+			children = (
+				13DA12D8AF370D20BC685086 /* assets */,
+				5D495F6B494A622A446D4569 /* Assets.xcassets */,
+				96365DCBFCCA526D137B61D4 /* LaunchScreen.storyboard */,
+				59012BD2BC3C8E31DCCE94DC /* Externals */,
+				F375DDBE11F489725A5F84A1 /* galmail-tauri_iOS */,
+				C3C0CA9752FFC5C0100950AC /* NotificationService */,
+				1CBF7555CBEE0E567242DDA6 /* Shared */,
+				BAFEB9CF31DB1437B5BA1131 /* ShareExtension */,
+				26C36D783FCF3E20C71FDD81 /* Sources */,
+				8380F2B4768C6AC461B674C5 /* Sources */,
+				3203393CE83ADC2BD10BCBDF /* src */,
+				2AF904641A19FF1C113346C9 /* Tests */,
+				CE9FFF7EC167F14C9455326F /* Frameworks */,
+				BB0A0C7F875DE27FBF2E8925 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F375DDBE11F489725A5F84A1 /* galmail-tauri_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				40EE10072B7A486EE77A6F13 /* galmail-tauri_iOS.entitlements */,
+				69EC8B01986A67CD2F9272D8 /* Info.plist */,
+			);
+			path = "galmail-tauri_iOS";
+			sourceTree = "<group>";
+		};
+		"TEMP_BF7CBB17-9CF0-464A-927D-ECB850F87C3C" /* x86_64 */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = x86_64;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		98F0DCBD13E5B2AA0AEA3272 /* GalMailAppleTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CDA9549BFBB97EE763C8E074 /* Build configuration list for PBXNativeTarget "GalMailAppleTests" */;
+			buildPhases = (
+				8FE80D5B71C4291D3C2516E3 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GalMailAppleTests;
+			packageProductDependencies = (
+			);
+			productName = GalMailAppleTests;
+			productReference = 71119A0F3CC472BF1CAF4608 /* GalMailAppleTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B1C11A17D6B2FD534338D3D1 /* GalMailShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4D726BF87E18DD30B1C29CCF /* Build configuration list for PBXNativeTarget "GalMailShareExtension" */;
+			buildPhases = (
+				26780B5029386C1368D0351E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GalMailShareExtension;
+			packageProductDependencies = (
+			);
+			productName = GalMailShareExtension;
+			productReference = 5302AFD83CA1509A85AF03A4 /* GalMailShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		B63AF0A7AB597C03EF598533 /* GalMailNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA4AA132AB2E8C0ABDE81FA2 /* Build configuration list for PBXNativeTarget "GalMailNotificationService" */;
+			buildPhases = (
+				49094528752007670E19A393 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GalMailNotificationService;
+			packageProductDependencies = (
+			);
+			productName = GalMailNotificationService;
+			productReference = CCF302CF907B2A8026E91509 /* GalMailNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		E8A64F0879BFBDA35512FEC3 /* galmail-tauri_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 32E7B6BBBFBEA2EB846115F4 /* Build configuration list for PBXNativeTarget "galmail-tauri_iOS" */;
+			buildPhases = (
+				EB8DB10D2D33BCEEE73598A9 /* Build Rust Code */,
+				E73ECFE53731A13DE4253ABD /* Sources */,
+				EE84E81C494F2B7E7F23379B /* Resources */,
+				3763046CF4B2802533F1E278 /* Frameworks */,
+				BFB0A223FB7ADC23BC208FB1 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D2765289B9E26A4AEB668EE6 /* PBXTargetDependency */,
+				A913426C40449D62237F6158 /* PBXTargetDependency */,
+			);
+			name = "galmail-tauri_iOS";
+			packageProductDependencies = (
+			);
+			productName = "galmail-tauri_iOS";
+			productReference = 9B52E2AE06F698103E212348 /* galmail-tauri_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D23B5B38B0D92CA022484D5D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					98F0DCBD13E5B2AA0AEA3272 = {
+						DevelopmentTeam = "";
+					};
+					B1C11A17D6B2FD534338D3D1 = {
+						DevelopmentTeam = "";
+					};
+					B63AF0A7AB597C03EF598533 = {
+						DevelopmentTeam = "";
+					};
+					E8A64F0879BFBDA35512FEC3 = {
+						DevelopmentTeam = "";
+					};
+				};
+			};
+			buildConfigurationList = B536A0751CFDAB6FE751E099 /* Build configuration list for PBXProject "galmail-tauri" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = EB24621FEB0F3B976515B06E;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = BB0A0C7F875DE27FBF2E8925 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				98F0DCBD13E5B2AA0AEA3272 /* GalMailAppleTests */,
+				B63AF0A7AB597C03EF598533 /* GalMailNotificationService */,
+				B1C11A17D6B2FD534338D3D1 /* GalMailShareExtension */,
+				E8A64F0879BFBDA35512FEC3 /* galmail-tauri_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EE84E81C494F2B7E7F23379B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8838B9AFF0DF595FEF9A2A31 /* Assets.xcassets in Resources */,
+				2ED34D226FAFE941AC77D4A7 /* LaunchScreen.storyboard in Resources */,
+				4134FBF922AA7A76367744BD /* assets in Resources */,
+				3B3BDF0B05B4A6F767C68DE5 /* libapp.a in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		EB8DB10D2D33BCEEE73598A9 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "bun run --cwd ../../.. tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} 0 ${ARCHS:?}";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		26780B5029386C1368D0351E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9828DA413C484E5478FA3790 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		49094528752007670E19A393 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EAFFDA1FB50FB9500E746DA2 /* BlindNotification.swift in Sources */,
+				17B92FE3202FD6690AB4823B /* NotificationService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8FE80D5B71C4291D3C2516E3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7AE4D909B25FDDE2CED372AA /* BlindNotification.swift in Sources */,
+				976103E11E0EE496407E9C51 /* BlindNotificationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E73ECFE53731A13DE4253ABD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D1973B94CF24B06CCF3A8D91 /* BlindNotification.swift in Sources */,
+				15A5C6422FF06358E4F9CAEA /* GalMailApplePlugin.swift in Sources */,
+				3552DCD744CA9D834E318349 /* NotificationBridge.swift in Sources */,
+				27AAE0CAD79D2966BC498A71 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A913426C40449D62237F6158 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B1C11A17D6B2FD534338D3D1 /* GalMailShareExtension */;
+			targetProxy = 4B79E246A9C39EE95D3530BD /* PBXContainerItemProxy */;
+		};
+		D2765289B9E26A4AEB668EE6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B63AF0A7AB597C03EF598533 /* GalMailNotificationService */;
+			targetProxy = 8EDC4557DA87964E5B54196A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2AFABD9F9064C1B6D8D0C226 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = GalMailShareExtension/GalMailShareExtension.entitlements;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = GalMailShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.share;
+				PRODUCT_MODULE_NAME = GalMailShareExtension;
+				PRODUCT_NAME = GalMailShareExtension;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
+		58F41FB5356524D0C91F6B05 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		5AF8B8F5BF1C76B983A633A2 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.tests;
+				PRODUCT_NAME = GalMail;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
+		602F12B58F114058AC6F43E8 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = GalMailShareExtension/GalMailShareExtension.entitlements;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = GalMailShareExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.share;
+				PRODUCT_MODULE_NAME = GalMailShareExtension;
+				PRODUCT_NAME = GalMailShareExtension;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
+		8B0C4EB60C730DC71626C5C1 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+		9C50D931E2715328D35589E2 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "galmail-tauri_iOS/galmail-tauri_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "galmail-tauri_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client;
+				PRODUCT_NAME = GalMail;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = debug;
+		};
+		9C8FA1817EA84E5C6E81BBF6 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "galmail-tauri_iOS/galmail-tauri_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "galmail-tauri_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client;
+				PRODUCT_NAME = GalMail;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+			};
+			name = release;
+		};
+		B74EA476F3EF31E223D71DCC /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = GalMailNotificationService/GalMailNotificationService.entitlements;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = GalMailNotificationService/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.galmail.client.notification-service";
+				PRODUCT_MODULE_NAME = GalMailNotificationService;
+				PRODUCT_NAME = GalMailNotificationService;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = release;
+		};
+		C49B4A2EC35E6CE0479167A3 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = GalMailNotificationService/GalMailNotificationService.entitlements;
+				DEVELOPMENT_TEAM = "";
+				INFOPLIST_FILE = GalMailNotificationService/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "app.galmail.client.notification-service";
+				PRODUCT_MODULE_NAME = GalMailNotificationService;
+				PRODUCT_NAME = GalMailNotificationService;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
+		FF544BB32E8A624BB368DDD8 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = app.galmail.client.tests;
+				PRODUCT_NAME = GalMail;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		32E7B6BBBFBEA2EB846115F4 /* Build configuration list for PBXNativeTarget "galmail-tauri_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9C50D931E2715328D35589E2 /* debug */,
+				9C8FA1817EA84E5C6E81BBF6 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		4D726BF87E18DD30B1C29CCF /* Build configuration list for PBXNativeTarget "GalMailShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2AFABD9F9064C1B6D8D0C226 /* debug */,
+				602F12B58F114058AC6F43E8 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		B536A0751CFDAB6FE751E099 /* Build configuration list for PBXProject "galmail-tauri" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B0C4EB60C730DC71626C5C1 /* debug */,
+				58F41FB5356524D0C91F6B05 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		CDA9549BFBB97EE763C8E074 /* Build configuration list for PBXNativeTarget "GalMailAppleTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF544BB32E8A624BB368DDD8 /* debug */,
+				5AF8B8F5BF1C76B983A633A2 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		FA4AA132AB2E8C0ABDE81FA2 /* Build configuration list for PBXNativeTarget "GalMailNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C49B4A2EC35E6CE0479167A3 /* debug */,
+				B74EA476F3EF31E223D71DCC /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D23B5B38B0D92CA022484D5D /* Project object */;
+}
