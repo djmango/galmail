@@ -128,8 +128,12 @@
       "starred": false,
       "labelIds": ["INBOX"],
       "hasAttachments": false,
-      "bodyText": "j/k navigate\ne archive\nc compose\ncmd+k command palette\nu undo",
-      "bodyHtml": "<pre>j/k navigate\ne archive\nc compose\ncmd+k command palette\nu undo</pre>"
+      "bodyText": "j/k navigate\ne archive\nc compose\ncmd+k command palette\nu undo\n\nUnsubscribe: https://tips.galmail.local/unsubscribe",
+      "bodyHtml": "<pre>j/k navigate\ne archive\nc compose\ncmd+k command palette\nu undo</pre><p><a href=\"https://tips.galmail.local/unsubscribe\">Unsubscribe</a></p>",
+      "headers": {
+        "List-Unsubscribe": "<mailto:leave@tips.galmail.local?subject=unsubscribe>, <https://tips.galmail.local/unsubscribe>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+      }
     }
   ]
 }

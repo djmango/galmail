@@ -67,23 +67,23 @@ const tokens = {
 };
 
 describe("Gmail live provider contract", () => {
-  test("paginates initial reconciliation and survives a restart cursor", async () => {
+  test("bootstraps a bounded inbox page and uses profile historyId", async () => {
     const { http, requests } = scripted((input) => {
       const url = new URL(input.url);
-      if (
-        url.pathname.endsWith("/messages") &&
-        !url.searchParams.has("pageToken")
-      ) {
-        return response(200, {
-          messages: [{ id: "m1" }],
-          nextPageToken: "next",
-        });
+      if (url.pathname.endsWith("/profile")) {
+        return response(200, { historyId: "99" });
       }
       if (
         url.pathname.endsWith("/messages") &&
-        url.searchParams.get("pageToken") === "next"
+        !url.pathname.includes("/messages/")
       ) {
-        return response(200, { messages: [{ id: "m2" }] });
+        expect(url.searchParams.get("labelIds")).toBe("INBOX");
+        expect(Number(url.searchParams.get("maxResults"))).toBeLessThanOrEqual(
+          50,
+        );
+        return response(200, {
+          messages: [{ id: "m1" }, { id: "m2" }],
+        });
       }
       if (url.pathname.endsWith("/messages/m1"))
         return response(200, message("m1", "10"));
@@ -99,12 +99,17 @@ describe("Gmail live provider contract", () => {
 
     const result = await provider.fetchDeltas(accountId, null);
     expect(result.upserts.map((item) => item.id)).toEqual(["m1", "m2"]);
-    expect(result.nextCursor.token).toBe("12");
+    expect(result.nextCursor.token).toBe("99");
+    expect(result.fullReconcile).toBe(true);
     expect(
-      requests.filter((item) =>
-        new URL(item.url).pathname.endsWith("/messages"),
-      ),
-    ).toHaveLength(2);
+      requests.filter((item) => {
+        const url = new URL(item.url);
+        return (
+          url.pathname.endsWith("/messages") &&
+          !url.pathname.includes("/messages/")
+        );
+      }),
+    ).toHaveLength(1);
   });
 
   test("consumes History API pages and normalizes deletes", async () => {
@@ -143,11 +148,17 @@ describe("Gmail live provider contract", () => {
       const url = new URL(input.url);
       if (url.pathname.endsWith("/history"))
         return response(404, { error: {} });
-      if (url.pathname.endsWith("/messages")) {
+      if (url.pathname.endsWith("/profile")) {
+        return response(200, { historyId: "44" });
+      }
+      if (
+        url.pathname.endsWith("/messages") &&
+        !url.pathname.includes("/messages/")
+      ) {
         return response(200, { messages: [{ id: "fresh" }] });
       }
       if (url.pathname.endsWith("/messages/fresh")) {
-        return response(200, message("fresh", "44"));
+        return response(200, message("fresh", "40"));
       }
       throw new Error(`Unexpected request: ${input.url}`);
     });
@@ -161,7 +172,13 @@ describe("Gmail live provider contract", () => {
     expect(result.upserts[0]?.id).toBe("fresh");
     expect(result.nextCursor.token).toBe("44");
     expect(
-      requests.some((item) => new URL(item.url).pathname.endsWith("/messages")),
+      requests.some((item) => {
+        const url = new URL(item.url);
+        return (
+          url.pathname.endsWith("/messages") &&
+          !url.pathname.includes("/messages/")
+        );
+      }),
     ).toBe(true);
   });
 
@@ -239,5 +256,29 @@ describe("Gmail live provider contract", () => {
     ]);
     const send = requests.find((item) => item.url.endsWith("/messages/send"));
     expect(String(send?.body)).toContain('"raw"');
+  });
+
+  test("surfaces Gmail error details on draft save failure", async () => {
+    const { http } = scripted(() =>
+      response(400, {
+        error: {
+          message: "Invalid From header",
+          errors: [{ reason: "invalidArgument", message: "Invalid From header" }],
+        },
+      }),
+    );
+    const provider = createGmailLiveProvider({ tokens, http, maxRetries: 0 });
+    await expect(
+      provider.saveDraft(accountId, {
+        id: "d1",
+        accountId,
+        to: [],
+        subject: "x",
+        bodyHtml: "<p>x</p>",
+        bodyText: "x",
+        alias: { email: "" },
+        updatedAt: new Date().toISOString(),
+      }),
+    ).rejects.toThrow(/Invalid From header/);
   });
 });

@@ -67,6 +67,10 @@ export function createGmailFixtureProvider(
       hasAttachments: m.hasAttachments,
       bodyText: m.bodyText,
       bodyHtml: m.bodyHtml,
+      headers:
+        "headers" in m && m.headers && typeof m.headers === "object"
+          ? (m.headers as Record<string, string>)
+          : undefined,
     });
   }
 

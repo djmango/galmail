@@ -348,9 +348,16 @@ export function createGmailLiveProvider(
       }
       if (response.status === 401) throw new GmailReauthenticationRequired();
       const payload = (await response.json().catch(() => ({}))) as {
-        error?: { errors?: Array<{ reason?: string }> };
+        error?: {
+          message?: string;
+          errors?: Array<{ reason?: string; message?: string }>;
+        };
       };
       const reason = payload.error?.errors?.[0]?.reason;
+      const detail =
+        payload.error?.message ??
+        payload.error?.errors?.[0]?.message ??
+        reason;
       const retryable =
         response.status === 429 ||
         response.status >= 500 ||
@@ -361,7 +368,11 @@ export function createGmailLiveProvider(
             "backendError",
           ].includes(reason ?? ""));
       if (!retryable || attempt >= maxRetries) {
-        const error = new Error(`Gmail request failed (${response.status})`);
+        const error = new Error(
+          detail
+            ? `Gmail request failed (${response.status}): ${detail}`
+            : `Gmail request failed (${response.status})`,
+        );
         Object.assign(error, { status: response.status });
         throw error;
       }
@@ -377,9 +388,14 @@ export function createGmailLiveProvider(
   async function loadMessage(
     accountId: AccountId,
     id: string,
+    format: "full" | "metadata" = "full",
   ): Promise<MailMessage> {
+    const query =
+      format === "metadata"
+        ? "format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date"
+        : "format=full";
     const raw = await request<GmailMessage>(
-      `/messages/${encodeURIComponent(id)}?format=full`,
+      `/messages/${encodeURIComponent(id)}?${query}`,
     );
     const normalized = normalizeMessage(accountId, raw);
     messages.set(normalized.id, normalized);
@@ -402,54 +418,61 @@ export function createGmailLiveProvider(
     return normalized;
   }
 
-  async function fullReconcile(accountId: AccountId): Promise<{
+  async function loadMessageBatch(
+    accountId: AccountId,
+    ids: string[],
+    format: "full" | "metadata",
+  ): Promise<MailMessage[]> {
+    const upserts: MailMessage[] = [];
+    for (let offset = 0; offset < ids.length; offset += 10) {
+      const batch = await Promise.all(
+        ids
+          .slice(offset, offset + 10)
+          .map((id) => loadMessage(accountId, id, format)),
+      );
+      upserts.push(...batch);
+    }
+    return upserts;
+  }
+
+  /**
+   * Bounded recent sync. Full-mailbox format=full reconcile hangs real accounts
+   * (thousands of API calls + huge IPC payloads) while labels already paint.
+   */
+  async function reconcileRecent(
+    accountId: AccountId,
+    options: { labelId?: string; limit: number },
+  ): Promise<{
     upserts: MailMessage[];
     nextCursor: SyncCursor;
   }> {
-    const upserts: MailMessage[] = [];
+    const profile = await request<{ historyId?: string }>("/profile");
+    const ids: string[] = [];
     let pageToken: string | undefined;
-    let latestHistoryId = "0";
     do {
       const query = new URLSearchParams({
-        maxResults: "500",
-        includeSpamTrash: "true",
+        maxResults: String(Math.min(100, options.limit - ids.length)),
       });
+      if (options.labelId) query.append("labelIds", options.labelId);
       if (pageToken) query.set("pageToken", pageToken);
       const page = await request<{
         messages?: Array<{ id?: string }>;
         nextPageToken?: string;
       }>(`/messages?${query}`);
-      const ids = (page.messages ?? []).flatMap((item) =>
-        item.id ? [item.id] : [],
-      );
-      for (let offset = 0; offset < ids.length; offset += 10) {
-        const batch = await Promise.all(
-          ids.slice(offset, offset + 10).map(async (id) => {
-            const raw = await request<GmailMessage>(
-              `/messages/${encodeURIComponent(id)}?format=full`,
-            );
-            return { raw, normalized: normalizeMessage(accountId, raw) };
-          }),
-        );
-        for (const { raw, normalized } of batch) {
-          messages.set(normalized.id, normalized);
-          upserts.push(normalized);
-          if (
-            raw.historyId &&
-            BigInt(raw.historyId) > BigInt(latestHistoryId)
-          ) {
-            latestHistoryId = raw.historyId;
-          }
-        }
+      for (const item of page.messages ?? []) {
+        if (item.id) ids.push(item.id);
+        if (ids.length >= options.limit) break;
       }
-      pageToken = page.nextPageToken;
+      pageToken =
+        ids.length >= options.limit ? undefined : page.nextPageToken;
     } while (pageToken);
+    const upserts = await loadMessageBatch(accountId, ids, "metadata");
     return {
       upserts,
       nextCursor: {
         accountId,
         provider: "gmail",
-        token: latestHistoryId,
+        token: profile.historyId ?? "1",
         updatedAt: now().toISOString(),
       },
     };
@@ -494,10 +517,14 @@ export function createGmailLiveProvider(
       return threads.get(threadId) ?? loadThread(accountId, threadId);
     },
     async getMessage(accountId, messageId: MessageId) {
-      return messages.get(messageId) ?? loadMessage(accountId, messageId);
+      const cached = messages.get(messageId);
+      if (cached?.bodyHtml || cached?.bodyText) return cached;
+      return loadMessage(accountId, messageId, "full");
     },
     async hydrateBodies(accountId, messageIds) {
-      return Promise.all(messageIds.map((id) => loadMessage(accountId, id)));
+      return Promise.all(
+        messageIds.map((id) => loadMessage(accountId, id, "full")),
+      );
     },
     async applyMutation(accountId, mutation) {
       const mutationId =
@@ -583,8 +610,11 @@ export function createGmailLiveProvider(
     },
     async fetchDeltas(accountId, cursor: SyncCursor | null) {
       if (!cursor) {
-        const reconciled = await fullReconcile(accountId);
-        return { ...reconciled, deletes: [], fullReconcile: true };
+        const bootstrapped = await reconcileRecent(accountId, {
+          labelId: "INBOX",
+          limit: 50,
+        });
+        return { ...bootstrapped, deletes: [], fullReconcile: true };
       }
       const upsertIds = new Set<string>();
       const deletes = new Set<MessageId>();
@@ -634,11 +664,13 @@ export function createGmailLiveProvider(
         } while (pageToken);
       } catch (error) {
         if ((error as { status?: number }).status !== 404) throw error;
-        const reconciled = await fullReconcile(accountId);
+        const reconciled = await reconcileRecent(accountId, { limit: 100 });
         return { ...reconciled, deletes: [], fullReconcile: true };
       }
-      const upserts = await Promise.all(
-        [...upsertIds].map((id) => loadMessage(accountId, id)),
+      const upserts = await loadMessageBatch(
+        accountId,
+        [...upsertIds],
+        "metadata",
       );
       return {
         upserts,
