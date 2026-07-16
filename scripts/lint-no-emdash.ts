@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 /**
  * Fail if frontend sources contain typographic em/en dashes.
- * Prefer ASCII "-" in product UI and frontend code.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
@@ -47,7 +46,7 @@ for (const file of filesUnder(frontendRoot)) {
 }
 
 if (offenders.length > 0) {
-  console.error("Frontend must not use typographic dashes. Use ASCII '-'.\n");
+  console.error("Frontend must not use typographic em/en dashes.\n");
   for (const offender of offenders) console.error(`  ${offender}`);
   process.exit(1);
 }

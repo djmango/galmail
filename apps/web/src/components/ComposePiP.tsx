@@ -103,10 +103,10 @@ function PipWindow(props: {
       </div>
       <div className="pip-body">
         <div className="pip-field">
-          <strong>To:</strong> {props.draft.to || "-"}
+          <strong>To:</strong> {props.draft.to || "No recipients"}
         </div>
         <div className="pip-field">
-          <strong>Subject:</strong> {props.draft.subject || "-"}
+          <strong>Subject:</strong> {props.draft.subject || "No subject"}
         </div>
         <div className="pip-field">{props.draft.body || "Empty body"}</div>
       </div>
