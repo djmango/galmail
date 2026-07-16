@@ -5,6 +5,7 @@ mod microsoft_oauth;
 mod oauth_callback_page;
 mod release_support;
 mod secure_storage;
+mod unsubscribe;
 
 use galmail_core::database::{EncryptedDatabase, SyncWrite, CURRENT_SCHEMA_VERSION};
 use gmail_oauth::{BeginOAuth, ConnectedAccount, GmailApiResponse, GmailOAuthState};
@@ -675,7 +676,9 @@ pub fn run() {
             export_redacted_diagnostics,
             reset_local_database,
             check_for_update,
-            install_update
+            install_update,
+            unsubscribe::one_click_unsubscribe,
+            unsubscribe::open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running GalMail");

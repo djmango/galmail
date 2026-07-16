@@ -5,3 +5,4 @@ export * from "./cursor.js";
 export * from "./sanitize.js";
 export * from "./mime.js";
 export * from "./search.js";
+export * from "./unsubscribe.js";
