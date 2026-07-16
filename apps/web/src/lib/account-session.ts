@@ -22,7 +22,20 @@ export function persistLiveGmailAccount(accountId: string): void {
 
 export function clearLiveGmailAccount(): void {
   localStorage.removeItem(GMAIL_ACCOUNT_KEY);
+  // Clear mode so the next launch can prompt for sign-in again.
+  localStorage.removeItem(PROVIDER_MODE_KEY);
+}
+
+/** Explicitly choose the local demo mailbox (skips the sign-in gate). */
+export function persistDemoMailboxPreference(): void {
   localStorage.setItem(PROVIDER_MODE_KEY, "fixture");
+}
+
+export function shouldPromptGmailSignIn(clientIdConfigured: boolean): boolean {
+  if (!isNativeShell() || !clientIdConfigured) return false;
+  if (readStoredGmailAccountId()) return false;
+  // Only skip the gate when the user explicitly chose demo mail.
+  return readStoredProviderMode() !== "fixture";
 }
 
 export function isNativeShell(): boolean {

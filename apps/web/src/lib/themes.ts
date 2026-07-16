@@ -50,11 +50,13 @@ export const THEMES: ThemeMeta[] = [
 
 export type LayoutMode = "fullscreen" | "two-panel" | "three-panel";
 
+export type LayoutIconId = "layoutSingle" | "layoutSplit" | "layoutThree";
+
 export interface LayoutMeta {
   id: LayoutMode;
   label: string;
   shortLabel: string;
-  icon: string;
+  icon: LayoutIconId;
   blurb: string;
 }
 
@@ -63,29 +65,31 @@ export const LAYOUTS: LayoutMeta[] = [
     id: "fullscreen",
     label: "Single panel",
     shortLabel: "Single",
-    icon: "▣",
+    icon: "layoutSingle",
     blurb: "Open the selected thread full-screen; Back returns to the inbox.",
   },
   {
     id: "two-panel",
     label: "Split view",
     shortLabel: "Split",
-    icon: "◫",
+    icon: "layoutSplit",
     blurb: "Thread list and reading pane, without an overlay sidebar.",
   },
   {
     id: "three-panel",
     label: "Three panel",
     shortLabel: "Three",
-    icon: "▥",
+    icon: "layoutThree",
     blurb: "Sidebar + thread list + reading pane. Classic triage layout.",
   },
 ];
 
 export const DEFAULT_THEME: ThemeId = "dark";
 export const DEFAULT_LAYOUT: LayoutMode = "three-panel";
+export const DEFAULT_SIDEBAR_COLLAPSED = false;
 
 const THEME_STORAGE_KEY = "galmail.theme";
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "galmail.sidebarCollapsed";
 
 /** Load persisted theme, falling back to the default / OS preference. */
 export function loadPersistedTheme(): ThemeId {
@@ -102,4 +106,19 @@ export function loadPersistedTheme(): ThemeId {
 export function persistTheme(theme: ThemeId): void {
   if (typeof localStorage === "undefined") return;
   localStorage.setItem(THEME_STORAGE_KEY, theme);
+}
+
+/** Load persisted sidebar collapsed preference. */
+export function loadPersistedSidebarCollapsed(): boolean {
+  if (typeof localStorage === "undefined") return DEFAULT_SIDEBAR_COLLAPSED;
+  const stored = localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+  if (stored === "1" || stored === "true") return true;
+  if (stored === "0" || stored === "false") return false;
+  return DEFAULT_SIDEBAR_COLLAPSED;
+}
+
+/** Persist the user's sidebar collapsed preference. */
+export function persistSidebarCollapsed(collapsed: boolean): void {
+  if (typeof localStorage === "undefined") return;
+  localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "1" : "0");
 }

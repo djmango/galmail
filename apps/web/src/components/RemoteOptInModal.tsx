@@ -39,9 +39,10 @@ export function RemoteOptInModal(props: {
           />{" "}
           Allow optional AI on this account
         </label>
-        <label>
-          Retention hours{" "}
+        <label className="field">
+          <span className="field-label">Retention hours</span>
           <input
+            className="field-input"
             type="number"
             min={0}
             max={168}

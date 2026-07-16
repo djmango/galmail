@@ -1,59 +1,53 @@
-import { useMemo, useState } from "react";
+import { Command } from "cmdk";
 import type { CommandDef, CommandId } from "@galmail/keyboard";
-import { ActionButton } from "./ActionButton";
+import { formatShortcutKeys } from "@galmail/keyboard";
 
 export function CommandPalette(props: {
+  open: boolean;
   commands: CommandDef[];
   onClose: () => void;
   onRun: (id: CommandId) => void;
 }) {
-  const [q, setQ] = useState("");
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return props.commands;
-    return props.commands.filter(
-      (c) =>
-        c.title.toLowerCase().includes(needle) ||
-        c.id.includes(needle) ||
-        c.defaultKeys.some((k) => k.includes(needle)),
-    );
-  }, [props.commands, q]);
-
   return (
-    <div className="modal" role="dialog" aria-label="Command palette">
-      <div className="modal-card palette">
-        <input
-          autoFocus
-          placeholder="Type a command…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              // App-level layered Escape handler owns dismiss + focus restore.
-              e.preventDefault();
-              return;
-            }
-            if (e.key === "Enter" && filtered[0]) props.onRun(filtered[0].id);
-          }}
-        />
-        {filtered.map((c, i) => (
-          <button
-            key={c.id}
-            type="button"
-            className={`palette-item ${i === 0 ? "active" : ""}`}
-            title={`${c.title} · ${c.defaultKeys.join(" · ")}`}
-            onClick={() => props.onRun(c.id)}
-          >
-            <span>{c.title}</span>
-            <span className="kbd">{c.defaultKeys.join(" · ")}</span>
-          </button>
-        ))}
-        <ActionButton
-          label="Close"
-          command="back"
-          onClick={props.onClose}
-        />
-      </div>
-    </div>
+    <Command.Dialog
+      open={props.open}
+      onOpenChange={(open) => {
+        if (!open) props.onClose();
+      }}
+      label="Command palette"
+      overlayClassName="cmdk-overlay"
+      contentClassName="cmdk-content"
+      loop
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          // App-level layered Escape handler owns dismiss + focus restore.
+          e.preventDefault();
+        }
+      }}
+    >
+      <Command.Input
+        className="field-input"
+        placeholder="Type a command or search…"
+        autoFocus
+      />
+      <Command.List>
+        <Command.Empty>No matching commands.</Command.Empty>
+        <Command.Group heading="Commands">
+          {props.commands.map((command) => (
+            <Command.Item
+              key={command.id}
+              value={`${command.title} ${command.id} ${command.defaultKeys.join(" ")}`}
+              keywords={[command.id, ...command.defaultKeys]}
+              onSelect={() => props.onRun(command.id)}
+            >
+              <span>{command.title}</span>
+              <span className="kbd">
+                {formatShortcutKeys(command.defaultKeys)}
+              </span>
+            </Command.Item>
+          ))}
+        </Command.Group>
+      </Command.List>
+    </Command.Dialog>
   );
 }

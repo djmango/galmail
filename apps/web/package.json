@@ -22,6 +22,7 @@
     "@galmail/remote-opt-in": "workspace:*",
     "@galmail/sync": "workspace:*",
     "@tauri-apps/api": "^2.2.0",
+    "cmdk": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

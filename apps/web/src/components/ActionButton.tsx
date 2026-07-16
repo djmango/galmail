@@ -15,7 +15,14 @@ type ActionButtonProps = Omit<
   command?: CommandId;
   shortcutKeys?: string[];
   variant?: "default" | "primary" | "quiet";
+  /** Force a compact icon control with no hover reveal. */
   iconOnly?: boolean;
+  /**
+   * Icon-first control; label flyout on hover/focus (transform + opacity).
+   * Defaults to true whenever an icon is provided (unless iconOnly).
+   * Sidebar nav keeps labels open when the rail is expanded.
+   */
+  reveal?: boolean;
   showShortcut?: boolean;
   tooltip?: string;
 };
@@ -44,6 +51,7 @@ export function ActionButton({
   shortcutKeys,
   variant = "default",
   iconOnly = false,
+  reveal,
   showShortcut = true,
   tooltip,
   className = "",
@@ -53,14 +61,24 @@ export function ActionButton({
   const keys = shortcutKeys ?? (command ? keysForCommand(command) : []);
   const shortcut = formatShortcutKeys(keys);
   const title = tooltip ?? shortcutTooltip(label, keys);
+  const useReveal = !iconOnly && (reveal ?? Boolean(icon));
+  const labelText = children ?? label;
 
   return (
     <button
       {...buttonProps}
       type={buttonProps.type ?? "button"}
-      className={`ui-button ui-button-${variant} ${iconOnly ? "ui-icon-button" : ""} ${className}`}
+      className={[
+        "ui-button",
+        `ui-button-${variant}`,
+        iconOnly ? "ui-icon-button" : "",
+        useReveal ? "ui-button-reveal" : "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       title={title}
-      aria-label={iconOnly ? label : buttonProps["aria-label"]}
+      aria-label={iconOnly || useReveal ? label : buttonProps["aria-label"]}
       aria-keyshortcuts={buttonProps["aria-keyshortcuts"] ?? ariaShortcut(keys)}
     >
       {icon && (
@@ -68,9 +86,15 @@ export function ActionButton({
           {icon}
         </span>
       )}
-      {!iconOnly && <span>{children ?? label}</span>}
-      {!iconOnly && showShortcut && shortcut && (
-        <span className="kbd">{shortcut}</span>
+      {!iconOnly && (
+        <span className="ui-button-copy">
+          <span className="ui-button-copy-clip">
+            <span className="ui-button-label">{labelText}</span>
+            {showShortcut && shortcut ? (
+              <span className="kbd">{shortcut}</span>
+            ) : null}
+          </span>
+        </span>
       )}
     </button>
   );
