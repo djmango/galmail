@@ -35,6 +35,25 @@ fn validate_https_url(raw: &str) -> Result<Url, String> {
     Ok(parsed)
 }
 
+/// Allow http/https (browser) and mailto (mail client) for user-activated link opens.
+fn validate_external_url(raw: &str) -> Result<Url, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > 8_192 {
+        return Err("URL is invalid".into());
+    }
+    let parsed = Url::parse(trimmed).map_err(|_| "URL is invalid".to_string())?;
+    match parsed.scheme() {
+        "https" | "http" => {
+            if parsed.host_str().is_none() {
+                return Err("URL is missing a host".into());
+            }
+            Ok(parsed)
+        }
+        "mailto" => Ok(parsed),
+        _ => Err("only http, https, and mailto URLs are allowed".into()),
+    }
+}
+
 #[tauri::command]
 pub async fn one_click_unsubscribe(
     request: OneClickUnsubscribeRequest,
@@ -79,7 +98,7 @@ pub async fn open_external_url(
     app: tauri::AppHandle,
     request: OpenExternalUrlRequest,
 ) -> Result<(), String> {
-    let url = validate_https_url(&request.url)?;
+    let url = validate_external_url(&request.url)?;
     // Prefer shell:allow-open (already granted) over introducing tauri-plugin-opener.
     #[allow(deprecated)]
     let opened = tauri_plugin_shell::ShellExt::shell(&app).open(url.as_str(), None);
@@ -98,6 +117,17 @@ mod tests {
         assert!(validate_https_url("data:text/html,hi").is_err());
         assert!(validate_https_url("mailto:a@b.com").is_err());
         assert!(validate_https_url("").is_err());
+    }
+
+    #[test]
+    fn validate_external_url_allows_http_https_mailto() {
+        assert!(validate_external_url("https://example.com/path").is_ok());
+        assert!(validate_external_url("http://example.com/path").is_ok());
+        assert!(validate_external_url("mailto:a@b.com").is_ok());
+        assert!(validate_external_url("javascript:alert(1)").is_err());
+        assert!(validate_external_url("data:text/html,hi").is_err());
+        assert!(validate_external_url("file:///etc/passwd").is_err());
+        assert!(validate_external_url("").is_err());
     }
 
     #[test]
