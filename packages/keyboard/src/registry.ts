@@ -8,6 +8,7 @@ export type CommandId =
   | "compose"
   | "reply"
   | "command_palette"
+  | "open_settings"
   | "undo"
   | "search"
   | "snooze"
@@ -39,6 +40,12 @@ export const SUPERHUMAN_DEFAULTS: CommandDef[] = [
     id: "command_palette",
     title: "Command palette",
     defaultKeys: ["meta+k", "ctrl+k"],
+    scope: "global",
+  },
+  {
+    id: "open_settings",
+    title: "Settings",
+    defaultKeys: ["meta+,", "ctrl+,"],
     scope: "global",
   },
   { id: "undo", title: "Undo", defaultKeys: ["z"], scope: "global" },

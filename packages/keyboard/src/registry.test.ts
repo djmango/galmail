@@ -37,6 +37,12 @@ describe("CommandRegistry", () => {
     expect(reg.match({ key: "k", metaKey: true, ctrlKey: false, altKey: false })).toBe(
       "command_palette",
     );
+    expect(reg.match({ key: ",", metaKey: true, ctrlKey: false, altKey: false })).toBe(
+      "open_settings",
+    );
+    expect(reg.match({ key: ",", metaKey: false, ctrlKey: true, altKey: false })).toBe(
+      "open_settings",
+    );
   });
 
   it("binds Enter to reply in thread scope without conflicting list open", () => {
