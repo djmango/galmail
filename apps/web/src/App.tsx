@@ -14,22 +14,46 @@ import {
   toFts5Query,
 } from "@galmail/core-api";
 import { REMOTE_OPT_IN_DISCLOSURE_VERSION } from "@galmail/remote-opt-in";
-import { isEditableTarget } from "@galmail/keyboard";
-import { clearLiveGmailAccount } from "./lib/account-session";
+import { isEditableTarget, resolveEscapeAction } from "@galmail/keyboard";
+import {
+  clearLiveGmailAccount,
+  persistDemoMailboxPreference,
+  shouldPromptGmailSignIn,
+} from "./lib/account-session";
 import {
   connectGmailWithPkce,
   disconnectGmailAccount,
+  googleDesktopClientId,
+  invokeErrorMessage,
 } from "./lib/gmail-connect";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
-import { DEFAULT_LAYOUT, loadPersistedTheme, persistTheme } from "./lib/themes";
+import {
+  DEFAULT_LAYOUT,
+  loadPersistedSidebarCollapsed,
+  loadPersistedTheme,
+  persistSidebarCollapsed,
+  persistTheme,
+} from "./lib/themes";
+import {
+  capabilityForMessage,
+  performUnsubscribe,
+  unsubscribeButtonVisible,
+  unsubscribeTooltip,
+} from "./lib/unsubscribe";
 import { CommandPalette } from "./components/CommandPalette";
 import { ComposeModal, type ComposeDraft } from "./components/ComposeModal";
-import { ComposePiP, type PipDraft } from "./components/ComposePiP";
+import {
+  FloatingDrafts,
+  type FloatingDraft,
+} from "./components/FloatingDrafts";
+import { Icons } from "./components/Icons";
 import { RemoteOptInModal } from "./components/RemoteOptInModal";
 import { type SettingsState } from "./components/SettingsBar";
 import { ActionButton } from "./components/ActionButton";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { SafeMailBody } from "./components/SafeMailBody";
+import { SignInScreen } from "./components/SignInScreen";
+import { StatusBar, type EditorMode } from "./components/StatusBar";
 
 function formatMessageDate(raw: string): string {
   const d = new Date(raw);
@@ -50,6 +74,7 @@ function MessageCard(props: {
   message: MailMessage;
   defaultExpanded: boolean;
   developerMode: boolean;
+  theme: SettingsState["theme"];
   onDownloadAttachment: (
     message: MailMessage,
     attachment: NonNullable<MailMessage["attachments"]>[number],
@@ -68,9 +93,6 @@ function MessageCard(props: {
         aria-controls={detailsId}
         onClick={() => setExpanded((value) => !value)}
       >
-        <span className="avatar" aria-hidden>
-          {sender.slice(0, 2).toUpperCase()}
-        </span>
         <span className="message-summary-main">
           <strong>{sender}</strong>
           <span>{props.message.snippet}</span>
@@ -79,7 +101,7 @@ function MessageCard(props: {
           {formatMessageDate(props.message.date)}
         </time>
         <span className="message-chevron" aria-hidden>
-          {expanded ? "⌃" : "⌄"}
+          {expanded ? <Icons.chevronUp /> : <Icons.chevronDown />}
         </span>
       </button>
       {expanded && (
@@ -118,6 +140,7 @@ function MessageCard(props: {
             html={props.message.bodyHtml}
             text={props.message.bodyText ?? props.message.snippet}
             sender={props.message.from.email}
+            theme={props.theme}
           />
           {props.message.attachments &&
             props.message.attachments.length > 0 && (
@@ -177,6 +200,7 @@ export function App() {
   const [labels, setLabels] = useState<MailLabel[]>([]);
   const [outbox, setOutbox] = useState<OutboxMutation[]>([]);
   const [activeLabel, setActiveLabel] = useState<string>("INBOX");
+  const [customLabelsOpen, setCustomLabelsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [message, setMessage] = useState<MailMessage | null>(null);
@@ -192,7 +216,7 @@ export function App() {
   const [composeInitial, setComposeInitial] = useState<
     ComposeDraft | undefined
   >(undefined);
-  const [pipDrafts, setPipDrafts] = useState<PipDraft[]>([]);
+  const [drafts, setDrafts] = useState<FloatingDraft[]>([]);
   const [optInOpen, setOptInOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -200,28 +224,53 @@ export function App() {
   const [gmailConnectError, setGmailConnectError] = useState<string | null>(
     null,
   );
-  const [status, setStatus] = useState("Hydrating local inbox…");
+  const [awaitingSignIn, setAwaitingSignIn] = useState(() =>
+    shouldPromptGmailSignIn(Boolean(googleDesktopClientId())),
+  );
+  const [status, setStatus] = useState(
+    awaitingSignIn ? "Sign in to sync your inbox" : "Hydrating local inbox…",
+  );
+  const [inputMode, setInputMode] = useState<EditorMode>("normal");
   const [consent, setConsent] = useState<RemoteProcessingConsent | null>(null);
   const [settings, setSettings] = useState<SettingsState>(() => ({
     theme: loadPersistedTheme(),
     layout: DEFAULT_LAYOUT,
     developerMode: false,
+    requestReadReceipt: false,
   }));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    loadPersistedSidebarCollapsed(),
+  );
   const [, startTransition] = useTransition();
   const threadListRef = useRef<HTMLElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const undoRef = useRef<null | (() => Promise<void>)>(null);
+  const inputModeRef = useRef<EditorMode>("normal");
+  const selectedIdRef = useRef<string | null>(null);
+  const filteredThreadsRef = useRef<MailThread[]>([]);
+  const bulkAnchorIdRef = useRef<string | null>(null);
   const overlayRef = useRef({
     paletteOpen: false,
     composeOpen: false,
     optInOpen: false,
     settingsOpen: false,
   });
+  inputModeRef.current = inputMode;
+  selectedIdRef.current = selectedId;
   overlayRef.current = { paletteOpen, composeOpen, optInOpen, settingsOpen };
+
+  useEffect(() => {
+    if (bulkSelection.size === 0) bulkAnchorIdRef.current = null;
+  }, [bulkSelection]);
 
   // Persist theme choice whenever it changes.
   useEffect(() => {
     persistTheme(settings.theme);
   }, [settings.theme]);
+
+  useEffect(() => {
+    persistSidebarCollapsed(sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   const hydrateRuntime = async (rt: GalMailRuntime) => {
     setRuntime(rt);
@@ -237,20 +286,54 @@ export function App() {
     setBulkSelection(new Set());
     setStatus(
       rt.providerMode === "live"
-        ? `Live hydrate complete · ${rt.threads.length} threads`
+        ? `Live hydrate complete · ${rt.threads.length} threads · syncing…`
         : `Local hydrate complete · ${rt.threads.length} threads · fixture`,
     );
     const c = await rt.remoteOptIn.getConsent(rt.gmailAccountId);
     setConsent(c);
-    await rt.sync.pullDeltas(rt.gmailAccountId);
-    if (rt.microsoftAccountId) {
-      await rt.sync.pullDeltas(rt.microsoftAccountId);
+    try {
+      await rt.sync.pullDeltas(rt.gmailAccountId);
+      if (rt.microsoftAccountId) {
+        await rt.sync.pullDeltas(rt.microsoftAccountId);
+      }
+      await rt.sync.flushOutbox();
+      // Prefer in-memory threads from the sync engine (avoids empty store races).
+      const syncWithLocal = rt.sync as typeof rt.sync & {
+        localThreads?: (accountId: (typeof rt.accounts)[number]["accountId"]) => MailThread[];
+      };
+      let nextThreads: MailThread[];
+      if (typeof syncWithLocal.localThreads === "function") {
+        nextThreads = rt.accounts
+          .flatMap((account) => syncWithLocal.localThreads!(account.accountId))
+          .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+      } else {
+        const locals = await Promise.all(
+          rt.accounts.map((account) => rt.sync.hydrateLocal(account.accountId)),
+        );
+        nextThreads = locals
+          .flatMap((local) => local.threads)
+          .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+      }
+      setThreads(nextThreads);
+      setSelectedId((current) => current ?? nextThreads[0]?.id ?? null);
+      const refreshedLabels = await Promise.all(
+        rt.accounts.map((account) =>
+          account.provider.listLabels(account.accountId),
+        ),
+      );
+      setLabels(refreshedLabels.flat());
+      setStatus(
+        rt.providerMode === "live"
+          ? `Live sync complete · ${nextThreads.length} threads`
+          : `Local hydrate complete · ${nextThreads.length} threads · fixture · deltas applied`,
+      );
+    } catch (error) {
+      setStatus(invokeErrorMessage(error, "Inbox sync failed"));
     }
-    await rt.sync.flushOutbox();
-    setStatus((s) => `${s} · deltas applied`);
   };
 
   useEffect(() => {
+    if (awaitingSignIn) return;
     let cancelled = false;
     (async () => {
       const rt = await createGalMailRuntime();
@@ -260,7 +343,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [awaitingSignIn]);
 
   useEffect(() => {
     if (!runtime) return;
@@ -316,12 +399,43 @@ export function App() {
     threadListRef.current?.focus();
   };
 
+  const enterInsertMode = () => {
+    setInputMode("insert");
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+
+  const enterNormalMode = () => {
+    setInputMode("normal");
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+    searchInputRef.current?.blur();
+    const overlays = overlayRef.current;
+    if (
+      overlays.composeOpen ||
+      overlays.paletteOpen ||
+      overlays.settingsOpen ||
+      overlays.optInOpen
+    ) {
+      return;
+    }
+    requestAnimationFrame(() => focusThreadList());
+  };
+
   useEffect(() => {
     if (!runtime) return;
     const reg = runtime.commands;
 
+    const selectedThread = () => {
+      const id = selectedIdRef.current;
+      if (!id) return undefined;
+      return (
+        filteredThreadsRef.current.find((thread) => thread.id === id) ??
+        threads.find((thread) => thread.id === id)
+      );
+    };
+
     const archiveSelected = () => {
-      const thread = threads[selectedIndex];
+      const thread = selectedThread();
       if (!thread?.messageIds[0]) return;
       startTransition(() => {
         setThreads((prev) =>
@@ -335,7 +449,9 @@ export function App() {
           ),
         );
         setSelectedId((id) => {
-          const next = threads[selectedIndex + 1] ?? threads[selectedIndex - 1];
+          const list = filteredThreadsRef.current;
+          const idx = list.findIndex((item) => item.id === thread.id);
+          const next = list[idx + 1] ?? list[idx - 1];
           return id === thread.id ? (next?.id ?? null) : id;
         });
         setOpenedId((id) => (id === thread.id ? null : id));
@@ -365,7 +481,7 @@ export function App() {
     };
 
     const toggleReadSelected = () => {
-      const thread = threads[selectedIndex];
+      const thread = selectedThread();
       if (!thread?.messageIds[0]) return;
       const markingUnread = thread.unreadCount === 0;
       startTransition(() => {
@@ -409,6 +525,7 @@ export function App() {
       }
       if (overlays.composeOpen) {
         setComposeOpen(false);
+        setInputMode("normal");
         requestAnimationFrame(() => focusThreadList());
         return;
       }
@@ -432,31 +549,36 @@ export function App() {
     };
 
     reg.on("navigate_down", () => {
-      const next = threads[Math.min(threads.length - 1, selectedIndex + 1)];
+      const list = filteredThreadsRef.current;
+      const idx = list.findIndex((thread) => thread.id === selectedIdRef.current);
+      const next = list[Math.min(list.length - 1, Math.max(0, idx) + 1)];
       if (next) {
         setSelectedId(next.id);
         if (openedId) setOpenedId(next.id);
       }
     });
     reg.on("navigate_up", () => {
-      const prev = threads[Math.max(0, selectedIndex - 1)];
+      const list = filteredThreadsRef.current;
+      const idx = list.findIndex((thread) => thread.id === selectedIdRef.current);
+      const prev = list[Math.max(0, (idx < 0 ? 0 : idx) - 1)];
       if (prev) {
         setSelectedId(prev.id);
         if (openedId) setOpenedId(prev.id);
       }
     });
     reg.on("open_thread", () => {
-      const thread = threads[selectedIndex];
+      const thread = selectedThread();
       if (!thread) return;
       setOpenedId(thread.id);
       setStatus(`Opened ${thread.subject}`);
     });
     reg.on("archive", archiveSelected);
     reg.on("trash", () => {
+      const current = selectedThread();
       const targets = bulkSelection.size
         ? threads.filter((thread) => bulkSelection.has(thread.id))
-        : threads[selectedIndex]
-          ? [threads[selectedIndex]!]
+        : current
+          ? [current]
           : [];
       if (!targets.length) return;
       setThreads((items) =>
@@ -500,6 +622,7 @@ export function App() {
     reg.on("compose", () => {
       setComposeInitial(undefined);
       setComposeOpen(true);
+      setInputMode("insert");
     });
     reg.on("reply", () => {
       if (!message) return;
@@ -512,9 +635,12 @@ export function App() {
         inReplyTo: message.id,
         references: [...(message.references ?? []), message.id],
       });
+      setInputMode("insert");
     });
     reg.on("command_palette", () => setPaletteOpen(true));
-    reg.on("search", () => setPaletteOpen(true));
+    reg.on("search", () => enterInsertMode());
+    reg.on("enter_insert", () => enterInsertMode());
+    reg.on("enter_normal", () => enterNormalMode());
     reg.on("undo", () => {
       const undo = undoRef.current;
       if (!undo) return setStatus("Nothing to undo");
@@ -522,15 +648,27 @@ export function App() {
       void undo();
     });
     reg.on("go_to_inbox", goToInbox);
+    reg.on("toggle_sidebar", () => {
+      setSidebarCollapsed((value) => !value);
+    });
     reg.on("back", handleBack);
 
     const onKey = (e: KeyboardEvent) => {
       const editable = isEditableTarget(e.target);
+      const overlays = overlayRef.current;
 
-      // Escape always dismisses layered UI, including inside composer/palette inputs.
+      // Escape: Insert → Normal first; only Normal dismisses overlays / back.
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        const action = resolveEscapeAction({
+          mode: inputModeRef.current,
+          editableFocused: editable,
+        });
+        if (action === "enter_normal") {
+          enterNormalMode();
+          return;
+        }
         handleBack();
         return;
       }
@@ -538,16 +676,45 @@ export function App() {
       // Don't steal typing in compose/search fields for other shortcuts.
       if (editable) return;
 
-      const id = reg.match({
-        key: e.key,
-        metaKey: e.metaKey,
-        ctrlKey: e.ctrlKey,
-        altKey: e.altKey,
-        shiftKey: e.shiftKey,
-      });
+      // Insert mode: only meta/ctrl chords (e.g. ⌘K) still run until Esc.
+      if (
+        inputModeRef.current === "insert" &&
+        !e.metaKey &&
+        !e.ctrlKey
+      ) {
+        return;
+      }
+
+      // Compose owns Normal-mode j/k/i/Enter field navigation.
+      if (overlays.composeOpen && !e.metaKey && !e.ctrlKey) {
+        return;
+      }
+
+      // Other overlays: don't run inbox list shortcuts underneath.
+      if (
+        (overlays.paletteOpen ||
+          overlays.settingsOpen ||
+          overlays.optInOpen) &&
+        !e.metaKey &&
+        !e.ctrlKey
+      ) {
+        return;
+      }
+
+      // Enter opens a thread from the list; when already reading, it replies.
+      const id = reg.match(
+        {
+          key: e.key,
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
+        },
+        { activeScope: openedId ? "thread" : "list" },
+      );
       if (!id || id === "back") return;
       if (
-        id === "open_thread" &&
+        (id === "open_thread" || id === "reply") &&
         e.target instanceof Element &&
         e.target.closest("button, a, [role='button']")
       ) {
@@ -573,9 +740,23 @@ export function App() {
 
   const layout = settings.layout;
   const fullscreenList = layout === "fullscreen" && !openedId;
+  const unsubscribeCapability = useMemo(
+    () => (message ? capabilityForMessage(message) : null),
+    [message],
+  );
 
   const updateSettings = (next: Partial<SettingsState>) =>
     setSettings((cur) => ({ ...cur, ...next }));
+
+  const customLabels = useMemo(
+    () =>
+      labels
+        .filter(
+          (label) => label.kind === "label" || label.kind === "category",
+        )
+        .slice(0, 12),
+    [labels],
+  );
 
   const filteredThreads = useMemo(() => {
     const scoped =
@@ -618,6 +799,26 @@ export function App() {
       return matchesMailSearch(synthetic, thread, query);
     });
   }, [threads, searchQuery, searchMessageIds, activeLabel]);
+  filteredThreadsRef.current = filteredThreads;
+  const bulkSelecting = bulkSelection.size > 0;
+
+  const applyBulkRangeSelect = (threadId: string) => {
+    const list = filteredThreads;
+    const toIdx = list.findIndex((thread) => thread.id === threadId);
+    if (toIdx < 0) return;
+    const anchorId = bulkAnchorIdRef.current ?? selectedId ?? threadId;
+    let fromIdx = list.findIndex((thread) => thread.id === anchorId);
+    if (fromIdx < 0) fromIdx = toIdx;
+    if (!bulkAnchorIdRef.current) {
+      bulkAnchorIdRef.current = list[fromIdx]?.id ?? threadId;
+    }
+    const start = Math.min(fromIdx, toIdx);
+    const end = Math.max(fromIdx, toIdx);
+    setBulkSelection(
+      new Set(list.slice(start, end + 1).map((thread) => thread.id)),
+    );
+  };
+
   const virtualStart = Math.max(0, Math.floor(listScrollTop / 92) - 8);
   const virtualThreads = filteredThreads.slice(virtualStart, virtualStart + 60);
 
@@ -647,27 +848,59 @@ export function App() {
   const openCompose = (initial?: ComposeDraft) => {
     setComposeInitial(initial);
     setComposeOpen(true);
+    setInputMode("insert");
   };
 
   const minimizeCompose = (draft: ComposeDraft) => {
-    const id = `pip_${Date.now()}`;
-    setPipDrafts((d) => [...d, { id, ...draft }]);
+    const id = `draft_${Date.now()}`;
+    setDrafts((items) => [
+      ...items,
+      { id, to: draft.to, subject: draft.subject, body: draft.body },
+    ]);
     setComposeOpen(false);
     setComposeInitial(undefined);
+    setInputMode("normal");
     setStatus(
-      `Draft minimized to floating window (${pipDrafts.length + 1} PiP)`,
+      `Draft minimized (${drafts.length + 1} floating draft${drafts.length ? "s" : ""})`,
     );
   };
 
-  const expandPip = (id: string) => {
-    const d = pipDrafts.find((x) => x.id === id);
+  const expandDraft = (id: string) => {
+    const d = drafts.find((x) => x.id === id);
     if (!d) return;
     openCompose({ to: d.to, subject: d.subject, body: d.body });
-    setPipDrafts((d) => d.filter((x) => x.id !== id));
+    setDrafts((items) => items.filter((x) => x.id !== id));
   };
 
-  const closePip = (id: string) =>
-    setPipDrafts((d) => d.filter((x) => x.id !== id));
+  const closeDraft = (id: string) =>
+    setDrafts((items) => items.filter((x) => x.id !== id));
+
+  const connectGmail = async () => {
+    setGmailConnectError(null);
+    setGmailConnecting(true);
+    setStatus("Opening Google sign-in…");
+    try {
+      const connected = await connectGmailWithPkce();
+      setAwaitingSignIn(false);
+      setStatus(`Connected ${connected.email} · syncing…`);
+      const next = await createGalMailRuntime();
+      await hydrateRuntime(next);
+      setSettingsOpen(false);
+    } catch (error) {
+      const message = invokeErrorMessage(error, "Google sign-in failed");
+      setGmailConnectError(message);
+      setStatus(message);
+    } finally {
+      setGmailConnecting(false);
+    }
+  };
+
+  const useDemoMailbox = async () => {
+    persistDemoMailboxPreference();
+    setAwaitingSignIn(false);
+    setGmailConnectError(null);
+    setStatus("Loading demo mailbox…");
+  };
 
   const domainDraft = (draft: ComposeDraft): DomainComposeDraft => {
     const addresses = (value?: string) =>
@@ -676,6 +909,12 @@ export function App() {
         .map((email) => email.trim())
         .filter(Boolean)
         .map((email) => ({ email }));
+    const accountEmail =
+      runtime!.accounts.find(
+        (account) => account.accountId === runtime!.gmailAccountId,
+      )?.email ?? "me";
+    // Empty alias input is "" — must not win over the connected account via ??.
+    const fromEmail = draft.alias?.trim() || accountEmail;
     return {
       id: draft.id ?? `draft_${crypto.randomUUID()}`,
       accountId: runtime!.gmailAccountId,
@@ -685,14 +924,7 @@ export function App() {
       subject: draft.subject,
       bodyHtml: `<p>${draft.body.replace(/\n/g, "<br>")}</p>`,
       bodyText: draft.body,
-      alias: {
-        email:
-          draft.alias ??
-          runtime!.accounts.find(
-            (account) => account.accountId === runtime!.gmailAccountId,
-          )?.email ??
-          "me",
-      },
+      alias: { email: fromEmail },
       signature: draft.signature,
       attachments: draft.attachments,
       requestReadReceipt: draft.requestReadReceipt,
@@ -814,8 +1046,48 @@ export function App() {
     setBulkSelection(new Set());
   };
 
-  const sendPip = async (id: string) => {
-    const d = pipDrafts.find((x) => x.id === id);
+  const handleUnsubscribe = async () => {
+    if (!runtime || !message) return;
+    const result = await performUnsubscribe(message);
+    if (result.status === "cancelled") return;
+    if (result.status === "error") {
+      setStatus(result.detail);
+      return;
+    }
+    if (result.status === "mailto") {
+      const draft = {
+        ...domainDraft({
+          to: result.draft.to,
+          subject: result.draft.subject,
+          body: result.draft.body,
+        }),
+        accountId: message.accountId,
+      };
+      const undoUntil = new Date(Date.now() + 5_000).toISOString();
+      const mutation = await runtime.sync.enqueue({
+        accountId: message.accountId,
+        kind: "send",
+        targetIds: [],
+        payload: { draft } as unknown as Record<string, unknown>,
+        availableAt: undoUntil,
+        undoUntil,
+      });
+      undoRef.current = async () => {
+        await runtime.sync.cancelOutbox(mutation.id);
+        setStatus("Unsubscribe send cancelled");
+      };
+      setTimeout(
+        () => void runtime.sync.flushOutbox(message.accountId),
+        5_000,
+      );
+      setStatus(`${result.detail} · Undo available for 5 seconds`);
+      return;
+    }
+    setStatus(result.detail);
+  };
+
+  const sendDraft = async (id: string) => {
+    const d = drafts.find((x) => x.id === id);
     if (!d || !runtime) return;
     const draft = domainDraft(d);
     const undoUntil = new Date(Date.now() + 5_000).toISOString();
@@ -827,10 +1099,10 @@ export function App() {
       availableAt: undoUntil,
       undoUntil,
     });
-    setPipDrafts((x) => x.filter((p) => p.id !== id));
+    setDrafts((x) => x.filter((p) => p.id !== id));
     undoRef.current = async () => {
       await runtime.sync.cancelOutbox(mutation.id);
-      setPipDrafts((items) => [...items, d]);
+      setDrafts((items) => [...items, d]);
       setStatus("Send cancelled");
     };
     setTimeout(
@@ -840,9 +1112,24 @@ export function App() {
     setStatus("Send queued · Undo available for 5 seconds");
   };
 
+  if (awaitingSignIn) {
+    return (
+      <div className="app" data-theme={settings.theme}>
+        <SignInScreen
+          connecting={gmailConnecting}
+          error={gmailConnectError}
+          canConnectGmail={Boolean(googleDesktopClientId())}
+          showDemoOption
+          onConnectGmail={() => void connectGmail()}
+          onUseDemo={() => void useDemoMailbox()}
+        />
+      </div>
+    );
+  }
+
   if (!runtime) {
     return (
-      <div className="app">
+      <div className="app" data-theme={settings.theme}>
         <header className="topbar">
           <div className="brand">
             <div className="brand-name">GalMail</div>
@@ -858,6 +1145,7 @@ export function App() {
       className="app"
       data-theme={settings.theme}
       data-layout={settings.layout}
+      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
     >
       <header className="topbar">
         <div className="brand">
@@ -867,18 +1155,20 @@ export function App() {
         <div className="top-actions">
           <ActionButton
             label="Commands"
+            icon={<Icons.command />}
             command="command_palette"
             onClick={() => setPaletteOpen(true)}
           />
           <ActionButton
             label="Compose"
+            icon={<Icons.compose />}
             command="compose"
             onClick={() => openCompose()}
           />
           <ActionButton
             className="settings-top-trigger"
             label="Settings and account"
-            icon="⚙"
+            icon={<Icons.settings />}
             iconOnly
             onClick={() => setSettingsOpen(true)}
           />
@@ -892,7 +1182,7 @@ export function App() {
               className={`nav-item ${activeLabel === "INBOX" ? "active" : ""}`}
               variant="quiet"
               label="Unified inbox"
-              icon="📥"
+              icon={<Icons.inbox />}
               command="go_to_inbox"
               onClick={() => runtime.commands.dispatch("go_to_inbox")}
             />
@@ -900,51 +1190,73 @@ export function App() {
               className={`nav-item ${activeLabel === "ARCHIVE" ? "active" : ""}`}
               variant="quiet"
               label="Archive"
-              icon="📦"
+              icon={<Icons.archive />}
               onClick={() => setActiveLabel("ARCHIVE")}
             />
             <ActionButton
               className={`nav-item ${activeLabel === "STARRED" ? "active" : ""}`}
               variant="quiet"
               label="Starred"
-              icon="★"
+              icon={<Icons.star />}
               onClick={() => setActiveLabel("STARRED")}
             />
             <ActionButton
               className={`nav-item ${activeLabel === "TRASH" ? "active" : ""}`}
               variant="quiet"
               label="Trash"
-              icon="🗑"
+              icon={<Icons.trash />}
               onClick={() => setActiveLabel("TRASH")}
             />
             <ActionButton
               className={`nav-item ${activeLabel === "SPAM" ? "active" : ""}`}
               variant="quiet"
               label="Spam"
-              icon="⚠"
+              icon={<Icons.warning />}
               onClick={() => setActiveLabel("SPAM")}
             />
-            {labels
-              .filter(
-                (label) => label.kind === "label" || label.kind === "category",
-              )
-              .slice(0, 12)
-              .map((label) => (
-                <ActionButton
-                  key={`${label.providerNativeId}:${label.id}`}
-                  className={`nav-item ${activeLabel === label.id ? "active" : ""}`}
-                  variant="quiet"
-                  label={label.name}
-                  icon="🏷"
-                  onClick={() => setActiveLabel(label.id)}
-                />
-              ))}
-            <ActionButton
-              className="nav-item"
-              variant="quiet"
-              label={`PiP drafts · ${pipDrafts.length}`}
-              icon="🪟"
-            />
+            {customLabels.length > 0 && (
+              <div className="sidebar-labels">
+                <button
+                  type="button"
+                  className="sidebar-labels-toggle"
+                  aria-expanded={customLabelsOpen}
+                  onClick={() => setCustomLabelsOpen((value) => !value)}
+                >
+                  <span className="sidebar-labels-toggle-icon" aria-hidden>
+                    <Icons.chevronDown />
+                  </span>
+                  <span className="sidebar-labels-toggle-label">Labels</span>
+                  <span className="sidebar-labels-toggle-count">
+                    {customLabels.length}
+                  </span>
+                </button>
+                {customLabelsOpen ? (
+                  <div className="sidebar-labels-list">
+                    {customLabels.map((label) => (
+                      <ActionButton
+                        key={`${label.providerNativeId}:${label.id}`}
+                        className={`nav-item ${activeLabel === label.id ? "active" : ""}`}
+                        variant="quiet"
+                        label={label.name}
+                        icon={<Icons.tag />}
+                        showShortcut={false}
+                        onClick={() => setActiveLabel(label.id)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {drafts.length > 0 && (
+              <ActionButton
+                className="nav-item"
+                variant="quiet"
+                label={`Drafts · ${drafts.length}`}
+                icon={<Icons.drafts />}
+                tooltip="Floating drafts from minimized compose windows"
+                showShortcut={false}
+              />
+            )}
             {outbox
               .filter(
                 (item) => item.status === "pending" || item.status === "failed",
@@ -955,6 +1267,7 @@ export function App() {
                   <span>
                     {item.kind.replace("_", " ")} · {item.status}
                     {item.attempts ? ` · attempt ${item.attempts}` : ""}
+                    {item.lastError ? ` · ${item.lastError}` : ""}
                   </span>
                   {item.status === "failed" ? (
                     <ActionButton
@@ -977,9 +1290,26 @@ export function App() {
             <ActionButton
               className="nav-item settings-entry"
               variant="quiet"
-              label="Settings and account"
-              icon="⚙"
+              label="Settings"
+              icon={<Icons.settings />}
+              showShortcut={false}
               onClick={() => setSettingsOpen(true)}
+            />
+            <ActionButton
+              className="sidebar-collapse-toggle"
+              variant="quiet"
+              label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              icon={
+                sidebarCollapsed ? (
+                  <Icons.chevronRight />
+                ) : (
+                  <Icons.chevronLeft />
+                )
+              }
+              iconOnly
+              command="toggle_sidebar"
+              aria-expanded={!sidebarCollapsed}
+              onClick={() => setSidebarCollapsed((value) => !value)}
             />
           </div>
         </aside>
@@ -996,34 +1326,56 @@ export function App() {
             <div className="thread-list-head">
               <label className="thread-search">
                 <span className="sr-only">Search mail</span>
+                <span className="thread-search-icon" aria-hidden="true">
+                  <Icons.search />
+                </span>
                 <input
+                  ref={searchInputRef}
+                  className="field-input"
                   type="search"
-                  placeholder="Search · from: subject: label: has:attachment is:unread"
+                  placeholder="Search · from: subject: label:"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
+                  onFocus={() => setInputMode("insert")}
                 />
               </label>
-              <span className="thread-list-title">{activeLabel}</span>
-              <span className="thread-list-count">
-                {filteredThreads.filter((t) => t.unreadCount > 0).length} unread
-                · {filteredThreads.length}
-              </span>
+              <div className="thread-list-meta">
+                <span className="thread-list-title">{activeLabel}</span>
+                <span className="thread-list-count">
+                  {filteredThreads.filter((t) => t.unreadCount > 0).length}{" "}
+                  unread · {filteredThreads.length}
+                </span>
+              </div>
             </div>
           )}
-          {bulkSelection.size > 0 && (
-            <div className="bulk-toolbar" aria-label="Bulk actions">
-              <span>{bulkSelection.size} selected</span>
+          <div
+            className={`bulk-toolbar ${bulkSelection.size > 0 ? "is-active" : ""}`}
+            aria-label="Bulk actions"
+            aria-hidden={bulkSelection.size === 0}
+          >
+            <span className="bulk-toolbar-count">
+              {bulkSelection.size > 0
+                ? `${bulkSelection.size} selected`
+                : "Select threads"}
+            </span>
+            <div className="bulk-toolbar-actions">
               <ActionButton
                 label="Archive selected"
+                icon={<Icons.archive />}
+                disabled={bulkSelection.size === 0}
                 onClick={() => void bulkMutate("archive")}
               />
               <ActionButton
                 label="Mark selected read"
+                icon={<Icons.mailOpen />}
+                disabled={bulkSelection.size === 0}
                 onClick={() => void bulkMutate("mark_read")}
               />
               {labels.find((label) => label.kind === "label") && (
                 <ActionButton
                   label={`Apply ${labels.find((label) => label.kind === "label")!.name}`}
+                  icon={<Icons.tag />}
+                  disabled={bulkSelection.size === 0}
                   onClick={() =>
                     void bulkMutate("apply_label", {
                       labelId: labels.find((label) => label.kind === "label")!
@@ -1033,24 +1385,32 @@ export function App() {
                 />
               )}
             </div>
-          )}
+          </div>
           <div aria-hidden style={{ height: virtualStart * 92 }} />
           {virtualThreads.map((t) => {
             const name =
               t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown";
-            const initials = name.slice(0, 2).toUpperCase();
             return (
-              <div className="thread-shell" key={`${t.accountId}:${t.id}`}>
-                <label className="bulk-select">
+              <div
+                className={`thread-shell${bulkSelecting ? " is-selecting" : ""}`}
+                key={`${t.accountId}:${t.id}`}
+              >
+                <label className="bulk-select" aria-hidden={!bulkSelecting}>
                   <input
                     type="checkbox"
                     aria-label={`Select ${t.subject}`}
                     checked={bulkSelection.has(t.id)}
+                    tabIndex={bulkSelecting ? 0 : -1}
+                    disabled={!bulkSelecting}
                     onChange={(event) =>
                       setBulkSelection((current) => {
                         const next = new Set(current);
-                        if (event.target.checked) next.add(t.id);
-                        else next.delete(t.id);
+                        if (event.target.checked) {
+                          next.add(t.id);
+                          bulkAnchorIdRef.current = t.id;
+                        } else {
+                          next.delete(t.id);
+                        }
                         return next;
                       })
                     }
@@ -1063,15 +1423,18 @@ export function App() {
                   }`}
                   aria-current={selectedId === t.id ? "true" : undefined}
                   title={`Open ${t.subject} · Enter`}
-                  onClick={() => {
+                  onClick={(event) => {
+                    if (event.shiftKey) {
+                      event.preventDefault();
+                      applyBulkRangeSelect(t.id);
+                      setSelectedId(t.id);
+                      return;
+                    }
                     setSelectedId(t.id);
                     setOpenedId(t.id);
                   }}
                 >
                   <div className="thread-row">
-                    <span className="avatar" aria-hidden>
-                      {initials}
-                    </span>
                     <div className="thread-main">
                       <div className="thread-top">
                         <span className="thread-from">
@@ -1121,7 +1484,7 @@ export function App() {
                 <ActionButton
                   className="back-btn"
                   label="Back to inbox"
-                  icon="←"
+                  icon={<Icons.back />}
                   command="back"
                   onClick={() => setOpenedId(null)}
                 />
@@ -1129,21 +1492,27 @@ export function App() {
               <div className="reading-toolbar">
                 <ActionButton
                   label="Archive"
+                  icon={<Icons.archive />}
                   command="archive"
                   onClick={() => runtime.commands.dispatch("archive")}
                 />
                 <ActionButton
                   label={message.unread ? "Mark read" : "Mark unread"}
+                  icon={
+                    message.unread ? <Icons.mailOpen /> : <Icons.mail />
+                  }
                   command="mark_read_toggle"
                   onClick={() => runtime.commands.dispatch("mark_read_toggle")}
                 />
                 <ActionButton
                   label="Reply"
+                  icon={<Icons.reply />}
                   command="reply"
                   onClick={() => runtime.commands.dispatch("reply")}
                 />
                 <ActionButton
                   label="Reply all"
+                  icon={<Icons.replyAll />}
                   onClick={() =>
                     openCompose({
                       to: [
@@ -1164,6 +1533,7 @@ export function App() {
                 />
                 <ActionButton
                   label="Forward"
+                  icon={<Icons.forward />}
                   onClick={() =>
                     openCompose({
                       to: "",
@@ -1176,12 +1546,15 @@ export function App() {
                 />
                 <ActionButton
                   label={message.starred ? "Unstar" : "Star"}
+                  icon={<Icons.star />}
                   onClick={() =>
                     void mutateOpened(message.starred ? "unstar" : "star")
                   }
                 />
                 <ActionButton
                   label="Snooze until tomorrow"
+                  icon={<Icons.snooze />}
+                  command="snooze"
                   onClick={() =>
                     void mutateOpened("snooze", {
                       until: new Date(Date.now() + 86_400_000).toISOString(),
@@ -1190,8 +1563,18 @@ export function App() {
                 />
                 <ActionButton
                   label="Report spam"
+                  icon={<Icons.warning />}
                   onClick={() => void mutateOpened("spam")}
                 />
+                {unsubscribeCapability &&
+                  unsubscribeButtonVisible(unsubscribeCapability) && (
+                    <ActionButton
+                      label="Unsubscribe"
+                      icon={<Icons.unsubscribe />}
+                      tooltip={unsubscribeTooltip(unsubscribeCapability)}
+                      onClick={() => void handleUnsubscribe()}
+                    />
+                  )}
               </div>
               <h1>{message.subject}</h1>
               <div className="conversation-heading">
@@ -1208,6 +1591,7 @@ export function App() {
                     message={item}
                     defaultExpanded={index === threadMessages.length - 1}
                     developerMode={settings.developerMode}
+                    theme={settings.theme}
                     onDownloadAttachment={async (source, attachment) => {
                       const account = runtime.accounts.find(
                         (item) => item.accountId === source.accountId,
@@ -1244,39 +1628,44 @@ export function App() {
             <div className="reading-empty">
               <p className="meta">No thread selected.</p>
               <p className="meta meta-hint">
-                Keys: <span className="kbd">J</span>{" "}
-                <span className="kbd">K</span> navigate ·{" "}
-                <span className="kbd">Enter</span> open ·{" "}
-                <span className="kbd">E</span> archive ·{" "}
-                <span className="kbd">I</span> inbox ·{" "}
-                <span className="kbd">U</span> read ·{" "}
-                <span className="kbd">R</span> reply ·{" "}
-                <span className="kbd">C</span> compose ·{" "}
-                <span className="kbd">⌘K</span> commands ·{" "}
-                <span className="kbd">Esc</span> back
+                <span className="kbd">J</span> <span className="kbd">K</span>{" "}
+                navigate in Normal · <span className="kbd">I</span> or{" "}
+                <span className="kbd">/</span> Insert ·{" "}
+                <span className="kbd">Esc</span> Normal ·{" "}
+                <span className="kbd">G</span> <span className="kbd">I</span>{" "}
+                inbox · <span className="kbd">⌘K</span> commands
               </p>
             </div>
           )}
         </section>
       </div>
 
-      {paletteOpen && (
-        <CommandPalette
-          commands={runtime.commands.list()}
-          onClose={() => setPaletteOpen(false)}
-          onRun={(id) => {
-            runtime.commands.dispatch(id);
-            setPaletteOpen(false);
-          }}
-        />
-      )}
+      <StatusBar
+        mode={inputMode}
+        status={status}
+        detail={`${filteredThreads.length} threads`}
+      />
+
+      <CommandPalette
+        open={paletteOpen}
+        commands={runtime.commands.list()}
+        onClose={() => setPaletteOpen(false)}
+        onRun={(id) => {
+          runtime.commands.dispatch(id);
+          setPaletteOpen(false);
+        }}
+      />
 
       {composeOpen && (
         <ComposeModal
+          mode={inputMode}
+          onModeChange={setInputMode}
           initialDraft={composeInitial}
+          requestReadReceipt={settings.requestReadReceipt}
           onClose={() => {
             setComposeOpen(false);
             setComposeInitial(undefined);
+            setInputMode("normal");
           }}
           onMinimize={minimizeCompose}
           onSaveDraft={async (draft) => {
@@ -1290,6 +1679,18 @@ export function App() {
                 unknown
               >,
             });
+            await runtime.sync.flushOutbox(runtime.gmailAccountId);
+            const failed = (
+              await runtime.sync.listOutbox(runtime.gmailAccountId)
+            ).find(
+              (item) =>
+                item.kind === "save_draft" &&
+                item.status === "failed" &&
+                item.targetIds[0] === normalized.id,
+            );
+            if (failed) {
+              throw new Error(failed.lastError ?? "Draft save failed");
+            }
           }}
           onSend={async (draft) => {
             const normalized = domainDraft(draft);
@@ -1307,6 +1708,7 @@ export function App() {
             });
             setComposeOpen(false);
             setComposeInitial(undefined);
+            setInputMode("normal");
             undoRef.current = async () => {
               await runtime.sync.cancelOutbox(mutation.id);
               openCompose(draft);
@@ -1321,11 +1723,11 @@ export function App() {
         />
       )}
 
-      <ComposePiP
-        drafts={pipDrafts}
-        onExpand={expandPip}
-        onClose={closePip}
-        onSend={sendPip}
+      <FloatingDrafts
+        drafts={drafts}
+        onExpand={expandDraft}
+        onClose={closeDraft}
+        onSend={(id) => void sendDraft(id)}
       />
 
       {settingsOpen && (
@@ -1368,27 +1770,7 @@ export function App() {
             setInviteCode(invite.inviteCode);
             setStatus(`Device invite created: ${invite.inviteCode}`);
           }}
-          onConnectGmail={async () => {
-            setGmailConnectError(null);
-            setGmailConnecting(true);
-            setStatus("Opening Google sign-in…");
-            try {
-              const connected = await connectGmailWithPkce();
-              setStatus(`Connected ${connected.email} · syncing…`);
-              const next = await createGalMailRuntime();
-              await hydrateRuntime(next);
-              setSettingsOpen(false);
-            } catch (error) {
-              const message =
-                error instanceof Error
-                  ? error.message
-                  : "Google sign-in failed";
-              setGmailConnectError(message);
-              setStatus(message);
-            } finally {
-              setGmailConnecting(false);
-            }
-          }}
+          onConnectGmail={() => void connectGmail()}
           onDisconnectGmail={
             runtime.providerMode === "live" &&
             runtime.gmailAccountId.startsWith("gmail:")
@@ -1400,9 +1782,12 @@ export function App() {
                     // Local session still clears even if remote revoke fails.
                   }
                   clearLiveGmailAccount();
-                  const next = await createGalMailRuntime();
-                  await hydrateRuntime(next);
-                  setStatus("Disconnected Gmail · back to fixture inbox");
+                  setSettingsOpen(false);
+                  setAwaitingSignIn(
+                    shouldPromptGmailSignIn(Boolean(googleDesktopClientId())),
+                  );
+                  setRuntime(null);
+                  setStatus("Disconnected Gmail");
                 }
               : undefined
           }

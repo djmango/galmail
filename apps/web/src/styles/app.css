@@ -11,7 +11,8 @@ body,
 
 .safe-mail-body {
   display: grid;
-  gap: 10px;
+  gap: 6px;
+  color: var(--ink);
 }
 
 .mail-security-controls {
@@ -27,8 +28,14 @@ body,
   width: 100%;
   min-height: 240px;
   border: 0;
-  background: #fff;
-  border-radius: 8px;
+  border-radius: 0;
+  background: var(--bg1);
+  color-scheme: dark;
+}
+
+[data-theme="light"] .mail-html-frame,
+.safe-mail-body[data-mail-scheme="light"] .mail-html-frame {
+  color-scheme: light;
 }
 
 .mail-plain-text,
@@ -36,7 +43,29 @@ body,
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-word;
   font: inherit;
+}
+
+.mail-plain-text {
+  font-family: var(--content-font);
+  line-height: 1.65;
+  color: var(--ink);
+}
+
+.quoted-history {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.quoted-history summary {
+  cursor: pointer;
+  color: var(--muted-strong);
+}
+
+.quoted-history .mail-plain-text {
+  margin-top: 0.5rem;
+  color: var(--muted);
 }
 
 .message-attachments,
@@ -47,8 +76,7 @@ body,
   list-style: none;
 }
 
-.message-attachments li,
-.compose-attachments li {
+.message-attachments li {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -63,42 +91,134 @@ body,
 }
 
 .thread-search {
-  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
+.thread-search-icon {
+  position: absolute;
+  left: 0.7rem;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.thread-search .field-input,
 .thread-search input {
   width: 100%;
+  min-width: 0;
+  min-height: 2.125rem;
+  padding: 0 0.8rem 0 2.1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg2);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.thread-search .field-input::placeholder,
+.thread-search input::placeholder {
+  color: var(--muted);
+}
+
+.thread-search .field-input:hover,
+.thread-search input:hover {
+  border-color: var(--line-strong);
+  background: var(--bg2);
+}
+
+.thread-search .field-input:focus,
+.thread-search .field-input:focus-visible,
+.thread-search input:focus,
+.thread-search input:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--focus) 75%, var(--line-strong));
+  background: var(--bg1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 32%, transparent);
 }
 
 .thread-shell {
-  position: relative;
-  min-height: 92px;
+  display: grid;
+  /* Reserve checkbox gutter always so revealing selection UI does not shift rows. */
+  grid-template-columns: 1.2rem minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 84px;
+  margin-bottom: 0.1rem;
 }
 
 .thread-shell .thread {
   width: 100%;
-  min-height: 92px;
+  min-height: 84px;
+  margin-bottom: 0;
 }
 
 .bulk-select {
-  position: absolute;
-  z-index: 2;
-  left: 8px;
-  top: 8px;
-}
-
-.compose-recipient-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  place-items: start center;
+  padding-top: 0.7rem;
+  z-index: 1;
 }
 
-.compose-options {
-  display: grid;
-  gap: 6px;
+/* Hidden until a bulk selection exists (started via shift-click). */
+.thread-shell:not(.is-selecting) .bulk-select {
+  visibility: hidden;
+  pointer-events: none;
 }
 
-.bulk-toolbar,
+.bulk-select input {
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  min-height: 40px;
+  height: 40px;
+  padding: 0 0.1rem;
+  margin: 0.1rem 0 0.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.72rem;
+  /* Allow icon-reveal flyouts to paint outside the bar. */
+  overflow: visible;
+}
+
+.bulk-toolbar.is-active {
+  border-color: var(--line);
+  background: var(--bg1);
+  color: var(--ink);
+}
+
+.bulk-toolbar-count {
+  min-width: 5.5rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.bulk-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.bulk-toolbar:not(.is-active) .bulk-toolbar-actions {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .outbox-item {
   display: flex;
   align-items: center;
@@ -107,10 +227,6 @@ body,
   padding: 8px;
   border-bottom: 1px solid var(--line);
   font-size: 12px;
-}
-
-.attachment-picker input {
-  margin-left: 8px;
 }
 
 .sr-only {
@@ -134,25 +250,147 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
 
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]),
+textarea,
+select {
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background-clip: padding-box;
+}
+
+textarea {
+  resize: none;
+}
+
+input::-webkit-search-decoration,
+input::-webkit-search-cancel-button,
+input::-webkit-search-results-button,
+input::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  box-shadow: 0 0 0 1000px var(--bg1) inset;
+  transition: background-color 99999s ease-out 0s;
+}
+
 button:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
+/* Shared text-field chrome (boxed inputs outside compose rows). */
+.field {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.field-input,
+.field-textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.4;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.field-input {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.7rem;
+}
+
+.field-textarea {
+  min-height: 6.5rem;
+  padding: 0.65rem 0.75rem;
+  line-height: 1.55;
+  resize: none;
+}
+
+.field-input::placeholder,
+.field-textarea::placeholder {
+  color: var(--muted);
+}
+
+.field-input:hover,
+.field-textarea:hover {
+  border-color: var(--line-strong);
+}
+
+.field-input:focus,
+.field-textarea:focus,
+.field-input:focus-visible,
+.field-textarea:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--focus) 80%, var(--line-strong));
+  background: var(--bg1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 35%, transparent);
+}
+
+.field-input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.field-input:disabled,
+.field-textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--bg1);
+}
+
+.modal-card .field,
+.modal-card label:has(> .field-input) {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
 .app {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 100dvh;
   height: 100%;
   background: var(--bg0);
   color: var(--ink);
+}
+
+.app:has(> .sign-in) {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .topbar {
@@ -163,6 +401,7 @@ textarea:focus-visible {
   padding: 0.65rem 1rem;
   border-bottom: 1px solid var(--line);
   background: var(--topbar-bg);
+  overflow: visible;
 }
 
 .brand {
@@ -181,18 +420,21 @@ textarea:focus-visible {
 .top-actions,
 .reading-toolbar,
 .compose-head,
-.pip-actions {
+.draft-float-actions {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.35rem;
+  /* Compositor flyouts paint outside the control — don't clip them. */
+  overflow: visible;
 }
 
 .top-actions {
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .ui-button {
+  --ui-ease: cubic-bezier(0.32, 0.72, 0, 1);
   min-height: 34px;
   padding: 0 0.72rem;
   display: inline-flex;
@@ -205,10 +447,11 @@ textarea:focus-visible {
   color: var(--ink);
   white-space: nowrap;
   cursor: pointer;
+  /* Only paint properties — padding/gap animations force layout every frame. */
   transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    transform 120ms ease;
+    background-color 160ms var(--ui-ease),
+    border-color 160ms var(--ui-ease),
+    color 160ms var(--ui-ease);
 }
 
 .ui-button:hover {
@@ -216,11 +459,8 @@ textarea:focus-visible {
   border-color: var(--line-strong);
 }
 
-.ui-button:active {
-  transform: translateY(1px);
-}
 .ui-button:disabled {
-  opacity: 0.55;
+  opacity: 0.45;
   cursor: default;
 }
 
@@ -250,8 +490,114 @@ textarea:focus-visible {
 .ui-button-icon {
   display: grid;
   place-items: center;
+  flex: none;
   width: 1rem;
   line-height: 1;
+}
+
+.ui-button-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ui-button-copy-clip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ui-button-label {
+  font-size: 0.82rem;
+}
+
+/*
+ * Icon-first reveal (toolbar hot path): compositor-only flyout.
+ * Transform + opacity only — no max-width / grid / padding layout thrash.
+ * Host toolbars use overflow: visible so labels aren't clipped.
+ */
+.ui-button-reveal {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  gap: 0;
+  overflow: visible;
+  z-index: 0;
+}
+
+.ui-button-reveal:hover,
+.ui-button-reveal:focus-visible,
+.ui-button-reveal:focus-within {
+  z-index: 6;
+}
+
+.ui-button-reveal > .ui-button-copy {
+  position: absolute;
+  left: calc(100% + 0.3rem);
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 16%, transparent);
+  color: var(--ink);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(-6px, -50%, 0);
+  transition:
+    opacity 100ms var(--ui-ease),
+    transform 100ms var(--ui-ease);
+  will-change: opacity, transform;
+}
+
+.ui-button-reveal:hover > .ui-button-copy,
+.ui-button-reveal:focus-visible > .ui-button-copy,
+.ui-button-reveal:focus-within > .ui-button-copy {
+  opacity: 1;
+  transform: translate3d(0, -50%, 0);
+}
+
+/* Right-aligned toolbars: fly left so labels stay on-screen. */
+.top-actions .ui-button-reveal > .ui-button-copy,
+.bulk-toolbar-actions .ui-button-reveal > .ui-button-copy {
+  left: auto;
+  right: calc(100% + 0.3rem);
+  transform: translate3d(6px, -50%, 0);
+}
+
+.top-actions .ui-button-reveal:hover > .ui-button-copy,
+.top-actions .ui-button-reveal:focus-visible > .ui-button-copy,
+.top-actions .ui-button-reveal:focus-within > .ui-button-copy,
+.bulk-toolbar-actions .ui-button-reveal:hover > .ui-button-copy,
+.bulk-toolbar-actions .ui-button-reveal:focus-visible > .ui-button-copy,
+.bulk-toolbar-actions .ui-button-reveal:focus-within > .ui-button-copy {
+  transform: translate3d(0, -50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button,
+  .ui-button-reveal > .ui-button-copy {
+    transition: none;
+  }
+}
+
+.ui-button-icon svg,
+.message-chevron svg,
+.layout-option svg,
+.draft-float-icon svg {
+  display: block;
+  width: 1em;
+  height: 1em;
 }
 
 .kbd {
@@ -314,14 +660,33 @@ textarea:focus-visible {
   border-right: 1px solid var(--line);
 }
 
+/* Denser inbox list only — leave sidebar/reading pane pad alone. */
+.thread-list.panel {
+  padding: 0.4rem 0.1rem;
+}
+
 .reading-pane {
   border-right: 0;
+  /* Override .panel scrollport so toolbar flyouts aren't clipped. */
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.reading-pane .conversation {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Visible so collapsed-rail label flyouts can paint over the thread list. */
+  overflow: visible;
+  container-type: inline-size;
+  container-name: sidebar;
 }
 
 .sidebar-main {
@@ -331,15 +696,90 @@ textarea:focus-visible {
 }
 
 .sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--line);
 }
 
+.sidebar-collapse-toggle {
+  align-self: flex-start;
+  color: var(--muted);
+}
+
+.sidebar-collapse-toggle:hover,
+.sidebar-collapse-toggle:focus-visible {
+  color: var(--ink);
+  background: var(--selection-bg);
+}
+
 .settings-entry {
   margin: 0;
+  width: 100%;
 }
+
+.settings-entry .ui-button-icon {
+  font-size: 1.05rem;
+}
+
 .settings-top-trigger {
   display: none;
+}
+
+.sidebar-labels {
+  margin: 0.35rem 0 0.15rem;
+}
+
+.sidebar-labels-toggle {
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sidebar-labels-toggle:hover,
+.sidebar-labels-toggle:focus-visible {
+  color: var(--ink);
+  background: var(--selection-bg);
+}
+
+.sidebar-labels-toggle-icon {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  font-size: 0.85rem;
+  transition: transform 180ms var(--ui-ease, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+.sidebar-labels-toggle[aria-expanded="false"] .sidebar-labels-toggle-icon {
+  transform: rotate(-90deg);
+}
+
+.sidebar-labels-toggle-label {
+  flex: 1;
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-labels-toggle-count {
+  font: 0.68rem var(--mono);
+  color: var(--muted);
+}
+
+.sidebar-labels-list {
+  margin-top: 0.15rem;
+  padding-left: 0.15rem;
 }
 
 .nav-item {
@@ -349,13 +789,119 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+/* Expanded sidebar: labels always in-flow (no flyout / hover collapse). */
+.sidebar .nav-item.ui-button-reveal {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 0 0.7rem;
+  gap: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.sidebar .nav-item.ui-button-reveal > .ui-button-copy {
+  position: static;
+  left: auto;
+  right: auto;
+  top: auto;
+  transform: none;
+  opacity: 1;
+  margin-left: 0.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: auto;
+  transition: none;
+  will-change: auto;
+}
+
 .nav-item .kbd {
-  margin-left: auto;
+  margin-left: 0.15rem;
 }
 .nav-item.active,
-.nav-item:hover {
+.nav-item:hover,
+.nav-item:focus-visible {
   color: var(--ink);
   background: var(--selection-bg);
+}
+
+/* Collapsed rail: compositor flyout (same as toolbars). */
+@container sidebar (max-width: 5.5rem) {
+  .sidebar-main,
+  .sidebar-footer {
+    padding-inline: 0.2rem;
+    overflow: visible;
+    align-items: center;
+  }
+
+  .nav-item.ui-button-reveal,
+  .sidebar-collapse-toggle {
+    width: 34px;
+    min-width: 34px;
+    justify-content: center;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .nav-item.ui-button-reveal > .ui-button-copy {
+    position: absolute;
+    left: calc(100% + 0.3rem);
+    top: 50%;
+    margin-left: 0;
+    padding: 0.28rem 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--bg2);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 16%, transparent);
+    pointer-events: none;
+    opacity: 0;
+    transform: translate3d(-6px, -50%, 0);
+    transition:
+      opacity 100ms var(--ui-ease),
+      transform 100ms var(--ui-ease);
+    will-change: opacity, transform;
+  }
+
+  .nav-item.ui-button-reveal:hover,
+  .nav-item.ui-button-reveal:focus-visible,
+  .nav-item.ui-button-reveal:focus-within {
+    z-index: 6;
+  }
+
+  .nav-item.ui-button-reveal:hover > .ui-button-copy,
+  .nav-item.ui-button-reveal:focus-visible > .ui-button-copy,
+  .nav-item.ui-button-reveal:focus-within > .ui-button-copy {
+    opacity: 1;
+    transform: translate3d(0, -50%, 0);
+  }
+
+  .sidebar-labels-toggle {
+    width: 34px;
+    min-width: 34px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar-labels-toggle-label,
+  .sidebar-labels-toggle-count {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .outbox-item {
+    display: none;
+  }
 }
 
 .thread-list:focus {
@@ -366,12 +912,22 @@ textarea:focus-visible {
 }
 
 .thread-list-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.1rem 0.1rem 0.5rem;
+  margin-bottom: 0.2rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.thread-list-meta {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  padding: 0.1rem 0.4rem 0.6rem;
-  margin-bottom: 0.25rem;
-  border-bottom: 1px solid var(--line);
+  gap: 0.45rem;
+  flex-shrink: 0;
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 .thread-list-title {
@@ -390,47 +946,49 @@ textarea:focus-visible {
 
 .thread {
   width: 100%;
-  margin-bottom: 0.25rem;
-  padding: 0.62rem 0.7rem;
+  margin-bottom: 0;
+  padding: 0.5rem 0.28rem;
   text-align: left;
   border: 1px solid transparent;
   border-left: 3px solid transparent;
   border-radius: var(--radius);
   background: transparent;
+  color: var(--muted-strong);
   cursor: pointer;
+  box-sizing: border-box;
 }
 
-.thread:hover,
-.thread.selected {
+.thread:hover {
   border-color: var(--line);
   background: var(--selection-bg);
 }
 
 .thread.selected {
-  box-shadow: 0 0 0 1px var(--focus);
+  border-color: var(--line);
+  border-left-color: var(--focus);
+  background: var(--selection-bg);
+}
+
+/* Unread: accent bar + stronger ink/weight. Read stays muted above. */
+.thread.unread {
+  border-left-color: var(--accent);
+  color: var(--ink);
+}
+
+.thread.unread:hover {
+  border-left-color: var(--accent);
+}
+
+.thread.selected.unread {
+  border-left-color: var(--focus);
 }
 
 .thread-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-}
-.thread-main {
-  flex: 1;
+  display: block;
   min-width: 0;
 }
-
-.avatar {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 0.68rem;
-  font-weight: 700;
+.thread-main {
+  min-width: 0;
 }
 
 .thread-top {
@@ -443,11 +1001,22 @@ textarea:focus-visible {
 
 .thread-from {
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 500;
+  color: var(--muted-strong);
 }
 .thread-subject {
   margin-bottom: 0.18rem;
   font-size: 0.86rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.thread.unread .thread-from {
+  font-weight: 700;
+  color: var(--ink);
+}
+.thread.unread .thread-subject {
+  font-weight: 600;
+  color: var(--ink);
 }
 .thread-snippet {
   overflow: hidden;
@@ -459,8 +1028,8 @@ textarea:focus-visible {
 
 .provider-pill {
   display: inline-block;
-  margin-left: 0.35rem;
-  padding: 0.05rem 0.35rem;
+  margin-left: 0.22rem;
+  padding: 0.05rem 0.28rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
@@ -470,7 +1039,10 @@ textarea:focus-visible {
 
 .reading-toolbar {
   flex-wrap: wrap;
+  /* Keep visible so label flyouts aren't clipped by scrollport. */
+  overflow: visible;
   margin-bottom: 0.9rem;
+  padding-bottom: 0.15rem;
 }
 .reading h1 {
   margin: 0 0 0.5rem;
@@ -575,7 +1147,7 @@ textarea:focus-visible {
 }
 
 .message-content {
-  padding: 0 0.9rem 1rem 3.95rem;
+  padding: 0 0.55rem 0.55rem 0.7rem;
 }
 
 .participant-details {
@@ -612,6 +1184,10 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--bg0) 78%, transparent);
 }
 
+.compose {
+  animation: compose-scrim-in 160ms ease-out;
+}
+
 .compose-card,
 .modal-card {
   width: min(640px, 100%);
@@ -625,33 +1201,467 @@ textarea:focus-visible {
 }
 
 .compose-card {
+  position: relative;
+  width: min(720px, 100%);
   max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(
+      120% 80% at 0% 0%,
+      color-mix(in srgb, var(--accent) 8%, transparent),
+      transparent 55%
+    ),
+    var(--bg1);
+  animation: compose-card-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.compose-card-dragging {
+  outline: 1.5px dashed color-mix(in srgb, var(--accent) 70%, var(--line));
+  outline-offset: -6px;
+}
+
+.compose-drop-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: color-mix(in srgb, var(--bg1) 72%, var(--accent) 10%);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.compose-card-dragging .compose-drop-veil {
+  opacity: 1;
 }
 
 .compose-head {
   justify-content: space-between;
+  flex: none;
+  padding: 0.85rem 1rem 0.7rem;
+  border-bottom: 1px solid var(--line);
 }
-.compose-card input,
-.compose-card textarea,
-.palette input {
+
+.compose-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.compose-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.compose-fields {
+  flex: none;
+  display: grid;
+}
+
+.compose-field,
+.compose-signature-field {
+  display: grid;
+  grid-template-columns: 4.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.compose-field-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.compose-cc-toggle {
+  margin: 0;
+  padding: 0.2rem 0.45rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compose-cc-toggle:hover,
+.compose-cc-toggle:focus-visible {
+  color: var(--ink);
+  background: var(--bg2);
+  outline: none;
+}
+
+/* Compose rows: Linear/Superhuman understated fields (no OS chrome). */
+.compose-field .field-input,
+.compose-field input,
+.compose-signature-field .field-textarea,
+.compose-signature-field textarea,
+.compose-body.field-textarea,
+.compose-body {
   width: 100%;
-  padding: 0.65rem 0.7rem;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.35rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  resize: none;
+}
+
+.compose-field .field-input:hover,
+.compose-field input:hover,
+.compose-signature-field .field-textarea:hover,
+.compose-signature-field textarea:hover,
+.compose-body.field-textarea:hover,
+.compose-body:hover,
+.compose-field .field-input:focus,
+.compose-field input:focus,
+.compose-signature-field .field-textarea:focus,
+.compose-signature-field textarea:focus,
+.compose-body.field-textarea:focus,
+.compose-body:focus,
+.compose-field .field-input:focus-visible,
+.compose-field input:focus-visible,
+.compose-signature-field .field-textarea:focus-visible,
+.compose-signature-field textarea:focus-visible,
+.compose-body.field-textarea:focus-visible,
+.compose-body:focus-visible {
+  outline: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.compose-field:focus-within,
+.compose-signature-field:focus-within,
+.compose-field-active {
+  background: color-mix(in srgb, var(--selection-bg) 55%, transparent);
+}
+
+.compose-body.compose-field-active,
+.compose-body.compose-field-active:focus,
+.compose-body.compose-field-active:focus-visible {
+  box-shadow: inset 3px 0 0 var(--accent, #3dba7a);
+}
+
+.compose-body.field-textarea,
+.compose-body {
+  flex: 1 1 auto;
+  min-height: 200px;
+  max-height: min(42vh, 420px);
+  margin: 0;
+  padding: 1rem 1rem 0.75rem;
+  line-height: 1.55;
+}
+
+.compose-signature-field {
+  align-items: start;
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.compose-card .compose-signature.field-textarea,
+.compose-card .compose-signature {
+  min-height: 2.4rem;
+  max-height: 5.5rem;
+  padding: 0.1rem 0;
+  color: var(--muted-strong);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.compose-field .field-input::placeholder,
+.compose-field input::placeholder,
+.compose-body::placeholder,
+.compose-signature::placeholder {
+  color: var(--muted);
+}
+
+.compose-attachments {
+  flex: none;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.45rem;
+  padding: 0.65rem 1rem 0;
+}
+
+.compose-attachments li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--bg0);
+  background: var(--bg2);
+  font-size: 0.75rem;
 }
 
-.compose-card textarea {
-  min-height: 180px;
-  resize: vertical;
+.compose-attachment-name {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.compose-card .compose-signature {
-  min-height: 70px;
+.compose-attachment-size {
+  color: var(--muted);
+  font-size: 0.68rem;
 }
+
+.compose-attachment-remove {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.compose-attachment-remove:hover,
+.compose-attachment-remove:focus-visible {
+  color: var(--ink);
+  background: var(--bg3);
+  outline: none;
+}
+
+.compose-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem 0.85rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg2) 55%, var(--bg1));
+}
+
+.compose-toolbar-start {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.compose-draft-status {
+  color: var(--muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes compose-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes compose-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .palette {
   width: min(520px, 100%);
+}
+
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  /* Solid scrim — backdrop-filter blur is expensive in WKWebView. */
+  background: rgba(8, 10, 14, 0.62);
+}
+
+.cmdk-content {
+  position: fixed;
+  top: min(18vh, 8rem);
+  left: 50%;
+  z-index: 41;
+  width: min(560px, calc(100vw - 2rem));
+  max-height: min(70vh, 520px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg1);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+}
+
+.cmdk-content [cmdk-input],
+.cmdk-content .field-input {
+  width: 100%;
+  min-height: 2.85rem;
+  padding: 0.9rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.95rem;
+  box-shadow: none;
+}
+
+.cmdk-content [cmdk-input]::placeholder,
+.cmdk-content .field-input::placeholder {
+  color: var(--muted);
+}
+
+.cmdk-content [cmdk-input]:hover,
+.cmdk-content .field-input:hover,
+.cmdk-content [cmdk-input]:focus,
+.cmdk-content .field-input:focus,
+.cmdk-content [cmdk-input]:focus-visible,
+.cmdk-content .field-input:focus-visible {
+  outline: none;
+  border-color: var(--line);
+  background: transparent;
+  box-shadow: none;
+}
+
+.cmdk-content [cmdk-list] {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 0.35rem;
+}
+
+.cmdk-content [cmdk-group-heading] {
+  padding: 0.45rem 0.55rem 0.25rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cmdk-content [cmdk-item] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.cmdk-content [cmdk-item][data-selected="true"],
+.cmdk-content [cmdk-item]:hover {
+  background: var(--selection-bg);
+}
+
+.cmdk-content [cmdk-empty] {
+  padding: 1.2rem 0.75rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 28px;
+  padding: 0.28rem 0.85rem;
+  border-top: 1px solid var(--line);
+  background: var(--topbar-bg);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.status-bar-left,
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.status-bar-right {
+  justify-content: flex-end;
+}
+
+.mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.12rem 0.45rem 0.12rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg0);
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.64rem;
+}
+
+.mode-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mode-color) 22%, transparent);
+  background: var(--mode-color);
+}
+
+.mode-normal {
+  --mode-color: #3dba7a;
+}
+
+.mode-insert {
+  --mode-color: #e2a33a;
+}
+
+.status-detail {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.status-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(52vw, 36rem);
+  text-align: right;
 }
 
 .settings-modal {
@@ -745,6 +1755,62 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
+.settings-switch-row {
+  margin-top: 0.85rem;
+}
+
+.ios-switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 42px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.ios-switch input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ios-switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 45%, var(--bg3));
+  transition: background 160ms ease;
+}
+
+.ios-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ios-switch input:checked + .ios-switch-track {
+  background: var(--accent);
+}
+
+.ios-switch input:checked + .ios-switch-track::after {
+  transform: translateX(16px);
+}
+
+.ios-switch input:focus-visible + .ios-switch-track {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .diagnostics {
   margin-top: 0.8rem;
   padding: 0.7rem;
@@ -776,7 +1842,7 @@ textarea:focus-visible {
   background: var(--selection-bg);
 }
 
-.pip {
+.draft-float {
   position: fixed;
   z-index: 30;
   width: 320px;
@@ -787,7 +1853,7 @@ textarea:focus-visible {
   box-shadow: var(--shadow-pop);
 }
 
-.pip-header {
+.draft-float-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -798,7 +1864,12 @@ textarea:focus-visible {
   user-select: none;
 }
 
-.pip-title {
+.draft-float-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.draft-float-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -808,27 +1879,67 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
-.pip-actions .ui-button {
+.draft-float-actions .ui-button {
   min-height: 28px;
   width: 28px;
   min-width: 28px;
 }
-.pip-body {
+.draft-float-body {
   padding: 0.6rem;
   color: var(--muted);
   font-size: 0.78rem;
 }
-.pip-field {
+.draft-float-field {
   overflow: hidden;
   margin-bottom: 0.3rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pip-field strong {
+.draft-float-field strong {
   color: var(--ink);
 }
-.pip-dragging {
+.draft-float-dragging {
   opacity: 0.9;
+}
+
+.sign-in {
+  display: grid;
+  place-items: center;
+  min-height: calc(100vh - 4rem);
+  padding: 2rem;
+}
+
+.sign-in-card {
+  width: min(28rem, 100%);
+  padding: 2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg1);
+}
+
+.sign-in-card h1 {
+  margin: 0.35rem 0 0.75rem;
+  font-size: 1.7rem;
+  line-height: 1.2;
+}
+
+.sign-in-copy,
+.sign-in-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.sign-in-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin: 1.4rem 0 1rem;
+}
+
+.sign-in-hint {
+  font-size: 0.82rem;
 }
 
 @media (max-width: 1120px) {
@@ -848,10 +1959,10 @@ textarea:focus-visible {
     justify-content: flex-start;
   }
   .reading {
-    padding: 1rem !important;
+    padding: 0.55rem !important;
   }
   .message-content {
-    padding-left: 1rem;
+    padding-left: 0.55rem;
   }
   .message-summary time {
     display: none;
@@ -859,6 +1970,19 @@ textarea:focus-visible {
   .settings-control {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .compose-field,
+  .compose-signature-field {
+    grid-template-columns: 3.4rem minmax(0, 1fr) auto;
+    padding-inline: 0.85rem;
+  }
+  .compose-body,
+  .compose-toolbar,
+  .compose-attachments {
+    padding-inline: 0.85rem;
+  }
+  .compose-body {
+    min-height: 160px;
   }
 }
 
