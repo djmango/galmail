@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Toaster, toast } from "sonner";
 import type {
   ComposeDraft as DomainComposeDraft,
   MailLabel,
@@ -27,17 +28,53 @@ import {
   invokeErrorMessage,
 } from "./lib/gmail-connect";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
+import type { NativeGmailSyncEngine } from "./lib/native-sync";
 import {
   DEFAULT_LAYOUT,
+  getSystemTheme,
+  loadPersistedLoadRemoteImages,
   loadPersistedSidebarCollapsed,
   loadPersistedTheme,
+  loadPersistedTrashAfterUnsubscribe,
+  persistLoadRemoteImages,
   persistSidebarCollapsed,
   persistTheme,
+  persistTrashAfterUnsubscribe,
+  subscribeSystemTheme,
+  type ResolvedTheme,
 } from "./lib/themes";
+
+function labelStatusName(labelId: string, labels: MailLabel[]): string {
+  switch (labelId) {
+    case "SPAM":
+      return "Spam";
+    case "TRASH":
+      return "Trash";
+    case "ARCHIVE":
+      return "Archive";
+    case "STARRED":
+      return "Starred";
+    default:
+      return labels.find((label) => label.id === labelId)?.name ?? labelId;
+  }
+}
+
+function threadsFromSync(rt: GalMailRuntime): MailThread[] {
+  const sync = rt.sync as NativeGmailSyncEngine;
+  if (typeof sync.localThreads === "function") {
+    return rt.accounts
+      .flatMap((account) => sync.localThreads(account.accountId))
+      .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+  }
+  return [];
+}
 import {
   capabilityForMessage,
   performUnsubscribe,
   unsubscribeButtonVisible,
+  unsubscribeFailureStatus,
+  unsubscribeSenderLabel,
+  unsubscribeSuccessStatus,
   unsubscribeTooltip,
 } from "./lib/unsubscribe";
 import { CommandPalette } from "./components/CommandPalette";
@@ -54,6 +91,18 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SafeMailBody } from "./components/SafeMailBody";
 import { SignInScreen } from "./components/SignInScreen";
 import { StatusBar, type EditorMode } from "./components/StatusBar";
+
+function formatScheduleToast(raw: string): string {
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
 function formatMessageDate(raw: string): string {
   const d = new Date(raw);
@@ -74,7 +123,8 @@ function MessageCard(props: {
   message: MailMessage;
   defaultExpanded: boolean;
   developerMode: boolean;
-  theme: SettingsState["theme"];
+  theme: ResolvedTheme;
+  loadRemoteImages: boolean;
   onDownloadAttachment: (
     message: MailMessage,
     attachment: NonNullable<MailMessage["attachments"]>[number],
@@ -141,6 +191,7 @@ function MessageCard(props: {
             text={props.message.bodyText ?? props.message.snippet}
             sender={props.message.from.email}
             theme={props.theme}
+            loadRemoteImages={props.loadRemoteImages}
           />
           {props.message.attachments &&
             props.message.attachments.length > 0 && (
@@ -149,22 +200,42 @@ function MessageCard(props: {
                   const quarantine =
                     attachment.quarantineReason ??
                     attachmentQuarantineReason(attachment);
+                  const name = attachment.filename || "Unnamed attachment";
+                  const sizeLabel =
+                    attachment.size < 1024
+                      ? `${attachment.size} B`
+                      : attachment.size < 1024 * 1024
+                        ? `${(attachment.size / 1024).toFixed(1)} KB`
+                        : `${(attachment.size / (1024 * 1024)).toFixed(1)} MB`;
                   return (
-                    <li key={attachment.id}>
-                      <strong>
-                        {attachment.filename || "Unnamed attachment"}
-                      </strong>
-                      <span>
-                        {attachment.mimeType} ·{" "}
-                        {attachment.size.toLocaleString()} bytes
+                    <li
+                      key={attachment.id}
+                      className={
+                        quarantine
+                          ? "message-attachment-chip is-quarantined"
+                          : "message-attachment-chip"
+                      }
+                      title={
+                        quarantine
+                          ? `${name} · Quarantined: ${quarantine}`
+                          : `${name} · ${attachment.mimeType} · ${sizeLabel}`
+                      }
+                    >
+                      <span className="message-attachment-meta">
+                        <span className="message-attachment-name">{name}</span>
+                        <span className="message-attachment-size">
+                          {sizeLabel}
+                        </span>
                       </span>
                       {quarantine ? (
-                        <span className="quarantine">
-                          Quarantined: {quarantine}
+                        <span className="quarantine" aria-label="Quarantined">
+                          Quarantined
                         </span>
                       ) : (
                         <ActionButton
-                          label="Download to encrypted quarantine"
+                          label="Download"
+                          variant="quiet"
+                          tooltip="Download to encrypted quarantine"
                           onClick={() =>
                             void props.onDownloadAttachment(
                               props.message,
@@ -237,7 +308,12 @@ export function App() {
     layout: DEFAULT_LAYOUT,
     developerMode: false,
     requestReadReceipt: false,
+    loadRemoteImages: loadPersistedLoadRemoteImages(),
+    trashAfterUnsubscribe: loadPersistedTrashAfterUnsubscribe(),
   }));
+  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() =>
+    getSystemTheme(),
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     loadPersistedSidebarCollapsed(),
   );
@@ -259,18 +335,36 @@ export function App() {
   selectedIdRef.current = selectedId;
   overlayRef.current = { paletteOpen, composeOpen, optInOpen, settingsOpen };
 
+  const resolvedTheme: ResolvedTheme =
+    settings.theme === "system" ? systemTheme : settings.theme;
+
   useEffect(() => {
     if (bulkSelection.size === 0) bulkAnchorIdRef.current = null;
   }, [bulkSelection]);
 
-  // Persist theme choice whenever it changes.
+  // Persist theme preference whenever it changes.
   useEffect(() => {
     persistTheme(settings.theme);
+  }, [settings.theme]);
+
+  // When preference is Auto, follow OS theme live.
+  useEffect(() => {
+    if (settings.theme !== "system") return;
+    setSystemTheme(getSystemTheme());
+    return subscribeSystemTheme(setSystemTheme);
   }, [settings.theme]);
 
   useEffect(() => {
     persistSidebarCollapsed(sidebarCollapsed);
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    persistLoadRemoteImages(settings.loadRemoteImages);
+  }, [settings.loadRemoteImages]);
+
+  useEffect(() => {
+    persistTrashAfterUnsubscribe(settings.trashAfterUnsubscribe);
+  }, [settings.trashAfterUnsubscribe]);
 
   const hydrateRuntime = async (rt: GalMailRuntime) => {
     setRuntime(rt);
@@ -298,14 +392,10 @@ export function App() {
       }
       await rt.sync.flushOutbox();
       // Prefer in-memory threads from the sync engine (avoids empty store races).
-      const syncWithLocal = rt.sync as typeof rt.sync & {
-        localThreads?: (accountId: (typeof rt.accounts)[number]["accountId"]) => MailThread[];
-      };
+      const syncWithLocal = rt.sync as NativeGmailSyncEngine;
       let nextThreads: MailThread[];
       if (typeof syncWithLocal.localThreads === "function") {
-        nextThreads = rt.accounts
-          .flatMap((account) => syncWithLocal.localThreads!(account.accountId))
-          .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
+        nextThreads = threadsFromSync(rt);
       } else {
         const locals = await Promise.all(
           rt.accounts.map((account) => rt.sync.hydrateLocal(account.accountId)),
@@ -328,7 +418,9 @@ export function App() {
           : `Local hydrate complete · ${nextThreads.length} threads · fixture · deltas applied`,
       );
     } catch (error) {
-      setStatus(invokeErrorMessage(error, "Inbox sync failed"));
+      const message = invokeErrorMessage(error, "Inbox sync failed");
+      setStatus(message);
+      toast.error(message);
     }
   };
 
@@ -365,6 +457,49 @@ export function App() {
       if (event.type === "outbox") refresh();
     });
   }, [runtime]);
+
+  const syncedLabelsRef = useRef(new Set<string>());
+  const syncedLabelsRuntimeRef = useRef<GalMailRuntime | null>(null);
+
+  useEffect(() => {
+    if (!runtime || runtime.providerMode !== "live") return;
+    if (activeLabel === "INBOX" || activeLabel === "ALL") return;
+    const sync = runtime.sync as NativeGmailSyncEngine;
+    if (typeof sync.syncLabel !== "function") return;
+
+    if (syncedLabelsRuntimeRef.current !== runtime) {
+      syncedLabelsRuntimeRef.current = runtime;
+      syncedLabelsRef.current = new Set();
+    }
+
+    const cacheKey = `${runtime.gmailAccountId}:${activeLabel}`;
+    if (syncedLabelsRef.current.has(cacheKey)) return;
+
+    let cancelled = false;
+    const labelName = labelStatusName(activeLabel, labels);
+    (async () => {
+      setStatus(`Loading ${labelName}…`);
+      try {
+        for (const account of runtime.accounts) {
+          if (cancelled) return;
+          await sync.syncLabel(account.accountId, activeLabel);
+        }
+        if (cancelled) return;
+        syncedLabelsRef.current.add(cacheKey);
+        const nextThreads = threadsFromSync(runtime);
+        setThreads(nextThreads);
+        setStatus(`${labelName} · synced`);
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(invokeErrorMessage(error, `Failed to load ${labelName}`));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runtime, activeLabel, labels]);
 
   useEffect(() => {
     if (!runtime || !openedId) {
@@ -470,13 +605,15 @@ export function App() {
             setThreads((items) =>
               items.map((item) => (item.id === thread.id ? thread : item)),
             );
-            setStatus("Archive undone");
+            toast.success("Archive undone");
           };
           setTimeout(
             () => void runtime.sync.flushOutbox(thread.accountId),
             5_000,
           );
-          setStatus("Archived · Undo available for 5 seconds");
+          toast.success("Archived", {
+            description: "Undo available for 5 seconds",
+          });
         });
     };
 
@@ -501,7 +638,9 @@ export function App() {
           targetIds: [thread.messageIds[0]],
         })
         .then(() => runtime.sync.flushOutbox(thread.accountId))
-        .then(() => setStatus(markingUnread ? "Marked unread" : "Marked read"));
+        .then(() =>
+          toast.success(markingUnread ? "Marked unread" : "Marked read"),
+        );
     };
 
     const goToInbox = () => {
@@ -609,12 +748,13 @@ export function App() {
               return original ?? item;
             }),
           );
-          setStatus("Trash undone");
+          toast.success("Trash undone");
         };
         setTimeout(() => void runtime.sync.flushOutbox(), 5_000);
         setBulkSelection(new Set());
-        setStatus(
-          `Moved ${targets.length} thread(s) to Trash · Undo available`,
+        toast.success(
+          `Moved ${targets.length} thread(s) to Trash`,
+          { description: "Undo available for 5 seconds" },
         );
       });
     });
@@ -638,12 +778,16 @@ export function App() {
       setInputMode("insert");
     });
     reg.on("command_palette", () => setPaletteOpen(true));
+    reg.on("open_settings", () => setSettingsOpen(true));
     reg.on("search", () => enterInsertMode());
     reg.on("enter_insert", () => enterInsertMode());
     reg.on("enter_normal", () => enterNormalMode());
     reg.on("undo", () => {
       const undo = undoRef.current;
-      if (!undo) return setStatus("Nothing to undo");
+      if (!undo) {
+        toast.message("Nothing to undo");
+        return;
+      }
       undoRef.current = null;
       void undo();
     });
@@ -673,10 +817,10 @@ export function App() {
         return;
       }
 
-      // Don't steal typing in compose/search fields for other shortcuts.
-      if (editable) return;
+      // Don't steal typing in compose/search fields; macOS-style ⌘,/⌘K still work.
+      if (editable && !e.metaKey && !e.ctrlKey) return;
 
-      // Insert mode: only meta/ctrl chords (e.g. ⌘K) still run until Esc.
+      // Insert mode: only meta/ctrl chords (e.g. ⌘K, ⌘,) still run until Esc.
       if (
         inputModeRef.current === "insert" &&
         !e.metaKey &&
@@ -995,10 +1139,12 @@ export function App() {
           ),
         );
       }
-      setStatus("Action undone");
+      toast.success("Action undone");
     };
     setTimeout(() => void runtime.sync.flushOutbox(message.accountId), 5_000);
-    setStatus(`${kind.replace("_", " ")} queued · Undo available`);
+    toast.success(`${kind.replace("_", " ")} queued`, {
+      description: "Undo available for 5 seconds",
+    });
   };
 
   const bulkMutate = async (
@@ -1040,18 +1186,52 @@ export function App() {
       }),
     );
     await runtime.sync.flushOutbox();
-    setStatus(
+    toast.success(
       `${kind.replace("_", " ")} applied to ${targets.length} thread(s)`,
     );
     setBulkSelection(new Set());
   };
 
+  const trashThread = (thread: MailThread, statusMessage: string) => {
+    if (!runtime) return;
+    const snapshot = thread;
+    setThreads((items) =>
+      items.map((item) =>
+        item.id === thread.id
+          ? { ...item, labelIds: ["TRASH" as never] }
+          : item,
+      ),
+    );
+    void runtime.sync
+      .enqueue({
+        accountId: thread.accountId,
+        kind: "trash",
+        targetIds: thread.messageIds,
+        availableAt: new Date(Date.now() + 5_000).toISOString(),
+        undoUntil: new Date(Date.now() + 5_000).toISOString(),
+      })
+      .then((mutation) => {
+        undoRef.current = async () => {
+          await runtime.sync.cancelOutbox(mutation.id);
+          setThreads((items) =>
+            items.map((item) => (item.id === thread.id ? snapshot : item)),
+          );
+          toast.success("Trash undone");
+        };
+        setTimeout(() => void runtime.sync.flushOutbox(), 5_000);
+        toast.success(statusMessage);
+      });
+  };
+
   const handleUnsubscribe = async () => {
     if (!runtime || !message) return;
-    const result = await performUnsubscribe(message);
+    const sender = unsubscribeSenderLabel(message);
+    const result = await performUnsubscribe(message, {
+      trashAfterUnsubscribe: settings.trashAfterUnsubscribe,
+    });
     if (result.status === "cancelled") return;
     if (result.status === "error") {
-      setStatus(result.detail);
+      toast.error(unsubscribeFailureStatus(result.detail));
       return;
     }
     if (result.status === "mailto") {
@@ -1074,16 +1254,34 @@ export function App() {
       });
       undoRef.current = async () => {
         await runtime.sync.cancelOutbox(mutation.id);
-        setStatus("Unsubscribe send cancelled");
+        toast.message("Unsubscribe send cancelled");
       };
       setTimeout(
         () => void runtime.sync.flushOutbox(message.accountId),
         5_000,
       );
-      setStatus(`${result.detail} · Undo available for 5 seconds`);
+    }
+
+    const success = unsubscribeSuccessStatus(sender);
+    if (settings.trashAfterUnsubscribe) {
+      const thread =
+        (openedId
+          ? threads.find((item) => item.id === openedId)
+          : undefined) ??
+        threads.find((item) => item.messageIds.includes(message.id));
+      if (thread) {
+        trashThread(thread, `${success} · Moved to Trash`);
+        return;
+      }
+    }
+
+    if (result.status === "mailto") {
+      toast.success(success, {
+        description: "Undo available for 5 seconds",
+      });
       return;
     }
-    setStatus(result.detail);
+    toast.success(success);
   };
 
   const sendDraft = async (id: string) => {
@@ -1103,18 +1301,20 @@ export function App() {
     undoRef.current = async () => {
       await runtime.sync.cancelOutbox(mutation.id);
       setDrafts((items) => [...items, d]);
-      setStatus("Send cancelled");
+      toast.message("Send cancelled");
     };
     setTimeout(
       () => void runtime.sync.flushOutbox(runtime.gmailAccountId),
       5_000,
     );
-    setStatus("Send queued · Undo available for 5 seconds");
+    toast.success("Send queued", {
+      description: "Undo available for 5 seconds",
+    });
   };
 
   if (awaitingSignIn) {
     return (
-      <div className="app" data-theme={settings.theme}>
+      <div className="app" data-theme={resolvedTheme}>
         <SignInScreen
           connecting={gmailConnecting}
           error={gmailConnectError}
@@ -1129,13 +1329,8 @@ export function App() {
 
   if (!runtime) {
     return (
-      <div className="app" data-theme={settings.theme}>
-        <header className="topbar">
-          <div className="brand">
-            <div className="brand-name">GalMail</div>
-            <div className="brand-tag">Loading encrypted local graph…</div>
-          </div>
-        </header>
+      <div className="app" data-theme={resolvedTheme}>
+        <p className="meta meta-hint">Loading encrypted local graph…</p>
       </div>
     );
   }
@@ -1143,40 +1338,24 @@ export function App() {
   return (
     <div
       className="app"
-      data-theme={settings.theme}
+      data-theme={resolvedTheme}
       data-layout={settings.layout}
       data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
     >
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-name">GalMail</div>
-          <div className="brand-tag">Unified inbox</div>
-        </div>
-        <div className="top-actions">
-          <ActionButton
-            label="Commands"
-            icon={<Icons.command />}
-            command="command_palette"
-            onClick={() => setPaletteOpen(true)}
-          />
-          <ActionButton
-            label="Compose"
-            icon={<Icons.compose />}
-            command="compose"
-            onClick={() => openCompose()}
-          />
-          <ActionButton
-            className="settings-top-trigger"
-            label="Settings and account"
-            icon={<Icons.settings />}
-            iconOnly
-            onClick={() => setSettingsOpen(true)}
-          />
-        </div>
-      </header>
-
       <div className="shell">
         <aside className="sidebar panel" aria-label="Folders">
+          <div className="sidebar-header">
+            <ActionButton
+              className="sidebar-collapse-toggle"
+              variant="quiet"
+              label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              icon={<Icons.menu />}
+              iconOnly
+              command="toggle_sidebar"
+              aria-expanded={!sidebarCollapsed}
+              onClick={() => setSidebarCollapsed((value) => !value)}
+            />
+          </div>
           <div className="sidebar-main">
             <ActionButton
               className={`nav-item ${activeLabel === "INBOX" ? "active" : ""}`}
@@ -1265,7 +1444,11 @@ export function App() {
               .map((item) => (
                 <div className="outbox-item" key={item.id}>
                   <span>
-                    {item.kind.replace("_", " ")} · {item.status}
+                    {item.kind.replace("_", " ")} ·{" "}
+                    {item.availableAt &&
+                    new Date(item.availableAt).getTime() > Date.now()
+                      ? `scheduled ${formatScheduleToast(item.availableAt)}`
+                      : item.status}
                     {item.attempts ? ` · attempt ${item.attempts}` : ""}
                     {item.lastError ? ` · ${item.lastError}` : ""}
                   </span>
@@ -1292,24 +1475,8 @@ export function App() {
               variant="quiet"
               label="Settings"
               icon={<Icons.settings />}
-              showShortcut={false}
+              command="open_settings"
               onClick={() => setSettingsOpen(true)}
-            />
-            <ActionButton
-              className="sidebar-collapse-toggle"
-              variant="quiet"
-              label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              icon={
-                sidebarCollapsed ? (
-                  <Icons.chevronRight />
-                ) : (
-                  <Icons.chevronLeft />
-                )
-              }
-              iconOnly
-              command="toggle_sidebar"
-              aria-expanded={!sidebarCollapsed}
-              onClick={() => setSidebarCollapsed((value) => !value)}
             />
           </div>
         </aside>
@@ -1339,53 +1506,39 @@ export function App() {
                   onFocus={() => setInputMode("insert")}
                 />
               </label>
-              <div className="thread-list-meta">
-                <span className="thread-list-title">{activeLabel}</span>
-                <span className="thread-list-count">
-                  {filteredThreads.filter((t) => t.unreadCount > 0).length}{" "}
-                  unread · {filteredThreads.length}
-                </span>
+            </div>
+          )}
+          {bulkSelection.size > 0 && (
+            <div className="bulk-toolbar" aria-label="Bulk actions">
+              <span className="bulk-toolbar-count">
+                {bulkSelection.size} selected
+              </span>
+              <div className="bulk-toolbar-actions">
+                <ActionButton
+                  label="Archive selected"
+                  icon={<Icons.archive />}
+                  onClick={() => void bulkMutate("archive")}
+                />
+                <ActionButton
+                  label="Mark selected read"
+                  icon={<Icons.mailOpen />}
+                  onClick={() => void bulkMutate("mark_read")}
+                />
+                {labels.find((label) => label.kind === "label") && (
+                  <ActionButton
+                    label={`Apply ${labels.find((label) => label.kind === "label")!.name}`}
+                    icon={<Icons.tag />}
+                    onClick={() =>
+                      void bulkMutate("apply_label", {
+                        labelId: labels.find((label) => label.kind === "label")!
+                          .id,
+                      })
+                    }
+                  />
+                )}
               </div>
             </div>
           )}
-          <div
-            className={`bulk-toolbar ${bulkSelection.size > 0 ? "is-active" : ""}`}
-            aria-label="Bulk actions"
-            aria-hidden={bulkSelection.size === 0}
-          >
-            <span className="bulk-toolbar-count">
-              {bulkSelection.size > 0
-                ? `${bulkSelection.size} selected`
-                : "Select threads"}
-            </span>
-            <div className="bulk-toolbar-actions">
-              <ActionButton
-                label="Archive selected"
-                icon={<Icons.archive />}
-                disabled={bulkSelection.size === 0}
-                onClick={() => void bulkMutate("archive")}
-              />
-              <ActionButton
-                label="Mark selected read"
-                icon={<Icons.mailOpen />}
-                disabled={bulkSelection.size === 0}
-                onClick={() => void bulkMutate("mark_read")}
-              />
-              {labels.find((label) => label.kind === "label") && (
-                <ActionButton
-                  label={`Apply ${labels.find((label) => label.kind === "label")!.name}`}
-                  icon={<Icons.tag />}
-                  disabled={bulkSelection.size === 0}
-                  onClick={() =>
-                    void bulkMutate("apply_label", {
-                      labelId: labels.find((label) => label.kind === "label")!
-                        .id,
-                    })
-                  }
-                />
-              )}
-            </div>
-          </div>
           <div aria-hidden style={{ height: virtualStart * 92 }} />
           {virtualThreads.map((t) => {
             const name =
@@ -1591,7 +1744,8 @@ export function App() {
                     message={item}
                     defaultExpanded={index === threadMessages.length - 1}
                     developerMode={settings.developerMode}
-                    theme={settings.theme}
+                    theme={resolvedTheme}
+                    loadRemoteImages={settings.loadRemoteImages}
                     onDownloadAttachment={async (source, attachment) => {
                       const account = runtime.accounts.find(
                         (item) => item.accountId === source.accountId,
@@ -1608,16 +1762,16 @@ export function App() {
                             attachment.id,
                             stream,
                           );
-                        setStatus(
-                          `Stored ${attachment.filename} (${size.toLocaleString()} bytes) in encrypted quarantine`,
-                        );
+                        toast.success(`Stored ${attachment.filename}`, {
+                          description: `${size.toLocaleString()} bytes in encrypted quarantine`,
+                        });
                       } else {
                         let size = 0;
                         for await (const chunk of stream)
                           size += chunk.byteLength;
-                        setStatus(
-                          `Fixture attachment streamed (${size.toLocaleString()} bytes)`,
-                        );
+                        toast.success("Attachment streamed", {
+                          description: `${size.toLocaleString()} bytes`,
+                        });
                       }
                     }}
                   />
@@ -1643,7 +1797,20 @@ export function App() {
       <StatusBar
         mode={inputMode}
         status={status}
-        detail={`${filteredThreads.length} threads`}
+        counts={{
+          label: labelStatusName(activeLabel, labels),
+          unread: filteredThreads.filter((t) => t.unreadCount > 0).length,
+          total: filteredThreads.length,
+        }}
+      />
+
+      <Toaster
+        theme={resolvedTheme}
+        position="bottom-right"
+        closeButton
+        richColors={false}
+        className="galmail-toaster"
+        toastOptions={{ className: "galmail-toast" }}
       />
 
       <CommandPalette
@@ -1670,7 +1837,7 @@ export function App() {
           onMinimize={minimizeCompose}
           onSaveDraft={async (draft) => {
             const normalized = domainDraft(draft);
-            await runtime.sync.enqueue({
+            const mutation = await runtime.sync.enqueue({
               accountId: runtime.gmailAccountId,
               kind: "save_draft",
               targetIds: [normalized.id],
@@ -1679,6 +1846,10 @@ export function App() {
                 unknown
               >,
             });
+            // Failed rows stay failed until Retry — do not flush/retry on autosave.
+            if (mutation.status === "failed") {
+              throw new Error(mutation.lastError ?? "Draft save failed");
+            }
             await runtime.sync.flushOutbox(runtime.gmailAccountId);
             const failed = (
               await runtime.sync.listOutbox(runtime.gmailAccountId)
@@ -1692,9 +1863,16 @@ export function App() {
               throw new Error(failed.lastError ?? "Draft save failed");
             }
           }}
-          onSend={async (draft) => {
+          onSend={async (draft, options) => {
             const normalized = domainDraft(draft);
-            const undoUntil = new Date(Date.now() + 5_000).toISOString();
+            const sendAt = options?.sendAt ? new Date(options.sendAt) : null;
+            const scheduled =
+              sendAt &&
+              !Number.isNaN(sendAt.getTime()) &&
+              sendAt.getTime() > Date.now() + 1_000;
+            const availableAt = scheduled
+              ? sendAt.toISOString()
+              : new Date(Date.now() + 5_000).toISOString();
             const mutation = await runtime.sync.enqueue({
               accountId: runtime.gmailAccountId,
               kind: "send",
@@ -1703,22 +1881,30 @@ export function App() {
                 string,
                 unknown
               >,
-              availableAt: undoUntil,
-              undoUntil,
+              availableAt,
+              undoUntil: scheduled ? undefined : availableAt,
             });
             setComposeOpen(false);
             setComposeInitial(undefined);
             setInputMode("normal");
+            if (scheduled) {
+              toast.success(`Scheduled for ${formatScheduleToast(availableAt)}`, {
+                description: "Sends when GalMail is open",
+              });
+              return;
+            }
             undoRef.current = async () => {
               await runtime.sync.cancelOutbox(mutation.id);
               openCompose(draft);
-              setStatus("Send cancelled");
+              toast.message("Send cancelled");
             };
             setTimeout(
               () => void runtime.sync.flushOutbox(runtime.gmailAccountId),
               5_000,
             );
-            setStatus("Send queued · Undo available for 5 seconds");
+            toast.success("Send queued", {
+              description: "Undo available for 5 seconds",
+            });
           }}
         />
       )}
@@ -1768,7 +1954,9 @@ export function App() {
           onLinkDevice={async () => {
             const invite = await runtime.devices.createInvite();
             setInviteCode(invite.inviteCode);
-            setStatus(`Device invite created: ${invite.inviteCode}`);
+            toast.success("Device invite created", {
+              description: invite.inviteCode,
+            });
           }}
           onConnectGmail={() => void connectGmail()}
           onDisconnectGmail={
@@ -1787,7 +1975,7 @@ export function App() {
                     shouldPromptGmailSignIn(Boolean(googleDesktopClientId())),
                   );
                   setRuntime(null);
-                  setStatus("Disconnected Gmail");
+                  toast.success("Disconnected Gmail");
                 }
               : undefined
           }
@@ -1809,7 +1997,7 @@ export function App() {
               await runtime.remoteOptIn.getConsent(runtime.gmailAccountId),
             );
             setOptInOpen(false);
-            setStatus(
+            toast.success(
               updated.enabled
                 ? "Remote processing enabled for Gmail demo account"
                 : "Returned to zero-access for Gmail demo account",
