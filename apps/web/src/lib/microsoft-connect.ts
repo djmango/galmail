@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { persistLiveMicrosoftAccount } from "./account-session";
+import { addLiveAccount } from "./account-session";
 import { invokeErrorMessage } from "./gmail-connect";
 
 export type ConnectedMicrosoftAccount = {
@@ -37,7 +37,7 @@ export async function connectMicrosoftWithPkce(
         attemptId: began.attemptId,
       },
     );
-    persistLiveMicrosoftAccount(connected.accountId);
+    addLiveAccount(connected.accountId);
     return connected;
   } catch (error) {
     throw new Error(invokeErrorMessage(error, "Microsoft sign-in failed"));

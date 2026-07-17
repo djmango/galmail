@@ -56,7 +56,7 @@ describe("security policy guards", () => {
     });
     const inspected = [
       ...frontend,
-      resolve(root, "secrets/dev.example.json"),
+      resolve(root, "secrets/dev.example.yaml"),
       resolve(root, "apps/web/src-tauri/tauri.conf.json"),
     ];
     const offenders = inspected
@@ -71,11 +71,13 @@ describe("security policy guards", () => {
 
   it("documents local secrets via sops instead of dotenv", () => {
     const example = readFileSync(
-      resolve(root, "secrets/dev.example.json"),
+      resolve(root, "secrets/dev.example.yaml"),
       "utf8",
     );
     expect(example).toContain("VITE_GOOGLE_DESKTOP_CLIENT_ID");
+    expect(example).toContain("VITE_GOOGLE_IOS_CLIENT_ID");
     expect(example).toContain("GOOGLE_DESKTOP_OAUTH_JSON");
+    expect(existsSync(resolve(root, "secrets/dev.example.json"))).toBe(false);
     expect(existsSync(resolve(root, ".env.example"))).toBe(false);
   });
 });

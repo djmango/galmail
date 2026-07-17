@@ -5,8 +5,9 @@
  *
  * Usage: bun scripts/with-sops.ts -- <command> [args...]
  *
- * Loads secrets/dev.json, then optional overlays such as
- * secrets/google-desktop-oauth.json (later files win on key conflicts).
+ * Loads secrets/dev.yaml (preferred) or legacy secrets/dev.json, then
+ * optional overlays such as secrets/google-desktop-oauth.json (later
+ * files win on key conflicts).
  *
  * Note: `sops exec-env` cannot pass command arguments (e.g. `--filter`) on
  * sops 3.13, so we decrypt explicitly and spawn the command ourselves.
@@ -26,6 +27,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { restoreTerminal } from "./restore-tty";
+import { parseSecretsDocument } from "./secrets-yaml";
 
 const PRINT_SSH_IDENTITY = "--print-ssh-identity";
 const SSH_IDENTITY_ENV = "GALMAIL_SOPS_SSH_IDENTITY";
@@ -38,7 +40,9 @@ if (process.argv.includes(PRINT_SSH_IDENTITY)) {
 
 const root = resolve(import.meta.dir, "..");
 const secretsDir = resolve(root, "secrets");
-const primarySecrets = resolve(secretsDir, "dev.json");
+const primaryYaml = resolve(secretsDir, "dev.yaml");
+const primaryJson = resolve(secretsDir, "dev.json");
+const primarySecrets = existsSync(primaryYaml) ? primaryYaml : primaryJson;
 const args = process.argv.slice(2).filter((arg) => arg !== "--");
 
 if (args.length === 0) {
@@ -75,15 +79,34 @@ async function run(
   process.exit(code ?? 1);
 }
 
+function isExampleSecretsName(name: string): boolean {
+  return (
+    name.endsWith(".example.yaml") ||
+    name.endsWith(".example.yml") ||
+    name.endsWith(".example.json") ||
+    name === "dev.example.yaml" ||
+    name === "dev.example.yml" ||
+    name === "dev.example.json"
+  );
+}
+
+function isSecretsOverlayName(name: string): boolean {
+  if (isExampleSecretsName(name)) return false;
+  if (name.includes(".plain.")) return false;
+  const isYaml = name.endsWith(".yaml") || name.endsWith(".yml");
+  const isJson = name.endsWith(".json");
+  if (!isYaml && !isJson) return false;
+  // Prefer YAML primary: do not also load legacy secrets/dev.json.
+  if (existsSync(primaryYaml) && name === "dev.json") return false;
+  return true;
+}
+
 function secretFiles(): string[] {
   const files = new Set<string>();
   if (existsSync(primarySecrets)) files.add(primarySecrets);
   if (!existsSync(secretsDir)) return [...files];
   for (const name of readdirSync(secretsDir)) {
-    if (!name.endsWith(".json")) continue;
-    if (name.endsWith(".example.json")) continue;
-    if (name === "dev.example.json") continue;
-    if (name.includes(".plain.")) continue;
+    if (!isSecretsOverlayName(name)) continue;
     files.add(resolve(secretsDir, name));
   }
   // Primary first, then overlays alphabetically for stable overrides.
@@ -214,9 +237,10 @@ function decryptSecretsFile(path: string): Record<string, unknown> {
     process.exit(decrypted.exitCode ?? 1);
   }
   try {
-    return JSON.parse(decrypted.stdout.toString()) as Record<string, unknown>;
-  } catch {
-    console.error(`${path} did not decrypt to valid JSON`);
+    return parseSecretsDocument(decrypted.stdout.toString(), path);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(detail || `${path} did not decrypt to a valid secrets map`);
     process.exit(1);
   }
 }
@@ -227,14 +251,22 @@ if (files.length === 0) {
     await run(args, env);
   }
   console.error(
-    `missing ${primarySecrets}\n` +
-      "create it from secrets/dev.example.json:\n" +
-      "  cp secrets/dev.example.json secrets/dev.json\n" +
-      "  # fill values, then: sops -e -i secrets/dev.json\n" +
+    `missing ${primaryYaml}\n` +
+      "create it from secrets/dev.example.yaml:\n" +
+      "  cp secrets/dev.example.yaml secrets/dev.yaml\n" +
+      "  # fill values, then: sops -e -i secrets/dev.yaml\n" +
       "  # or: bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_….json\n" +
-      "or set GALMAIL_ALLOW_MISSING_SOPS=1 for fixture-only local runs",
+      "or set GALMAIL_ALLOW_MISSING_SOPS=1 for demo/fixture-only local runs",
   );
   process.exit(1);
+}
+
+if (!existsSync(primaryYaml) && existsSync(primaryJson)) {
+  console.warn(
+    "deprecated: secrets/dev.json — migrate with:\n" +
+      "  bun scripts/migrate-dev-secrets-to-yaml.ts\n" +
+      "then remove secrets/dev.json after verifying.",
+  );
 }
 
 prepareAgeSshIdentity(env);

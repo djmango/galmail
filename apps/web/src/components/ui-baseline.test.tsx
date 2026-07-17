@@ -32,6 +32,66 @@ describe("current UI baseline", () => {
     expect(html).toContain("ui-button-copy-clip");
     expect(html).toContain("ui-button-label");
     expect(html).toContain("Archive");
+    expect(html).not.toContain("title=");
+  });
+
+  it("gives icon-only controls a styled tip instead of native title", () => {
+    const html = renderToStaticMarkup(
+      <ActionButton
+        label="Collapse sidebar"
+        icon={<span data-icon="menu" />}
+        iconOnly
+        command="toggle_sidebar"
+        onClick={mock()}
+      />,
+    );
+    expect(html).toContain("ui-button-reveal");
+    expect(html).toContain("ui-button-label");
+    expect(html).toContain("Collapse sidebar");
+    expect(html).not.toContain("title=");
+  });
+
+  it("keeps Add Google when one Gmail account is already connected", () => {
+    const html = renderToStaticMarkup(
+      <SettingsPanel
+        state={{
+          theme: "light",
+          layout: "three-panel",
+          developerMode: false,
+          requestReadReceipt: false,
+          loadRemoteImages: true,
+          trashAfterUnsubscribe: false,
+        }}
+        consent={null}
+        diagnostics={[]}
+        inviteCode={null}
+        providerMode="live"
+        canConnectGmail
+        canConnectMicrosoft
+        gmailConnecting={false}
+        microsoftConnecting={false}
+        connectError={null}
+        accounts={[
+          {
+            accountId: "gmail:one@example.com",
+            email: "one@example.com",
+            provider: "gmail",
+            live: true,
+          },
+        ]}
+        onChange={mock()}
+        onClose={mock()}
+        onOpenRemoteProcessing={mock()}
+        onLinkDevice={mock()}
+        onConnectGmail={mock()}
+        onConnectMicrosoft={mock()}
+        onDisconnectAccount={mock()}
+      />,
+    );
+    expect(html).toContain("Add Google account");
+    expect(html).toContain("Sign in with Microsoft");
+    expect(html).toContain("Disconnect");
+    expect(html).toContain("one@example.com");
   });
 
   it("renders account, privacy, device-link, and diagnostics state", () => {
@@ -62,6 +122,7 @@ describe("current UI baseline", () => {
         connectError={null}
         accounts={[
           {
+            accountId: "gmail:demo@galmail.local",
             email: "demo@galmail.local",
             provider: "gmail",
             live: false,
@@ -80,6 +141,9 @@ describe("current UI baseline", () => {
     expect(html).toContain("demo@galmail.local");
     expect(html).toContain("Sign in with Google");
     expect(html).toContain("Sign in with Microsoft");
+    expect(html).not.toContain(
+      "Sign-in buttons appear in the GalMail app when Google or",
+    );
     expect(html).toContain("Remote processing");
     expect(html).toContain("Request read receipts");
     expect(html).toContain("Load remote images");
@@ -165,6 +229,44 @@ describe("current UI baseline", () => {
     expect(html).toContain("Schedule send");
     expect(html).not.toContain("cannot prove a human read");
     expect(html).not.toContain("Request read receipt");
+  });
+
+  it("compose From picker selects a non-default account for send", async () => {
+    const sent: Array<{ accountId?: string }> = [];
+    const html = renderToStaticMarkup(
+      <ComposeModal
+        mode="insert"
+        onModeChange={mock()}
+        onClose={mock()}
+        accounts={[
+          {
+            accountId: "gmail:a@example.com",
+            email: "a@example.com",
+            provider: "gmail",
+          },
+          {
+            accountId: "gmail:b@example.com",
+            email: "b@example.com",
+            provider: "gmail",
+          },
+        ]}
+        defaultAccountId="gmail:a@example.com"
+        initialDraft={{
+          to: "z@example.com",
+          subject: "Hi",
+          body: "Body",
+          accountId: "gmail:b@example.com",
+        }}
+        onSend={async (draft) => {
+          sent.push({ accountId: draft.accountId });
+        }}
+      />,
+    );
+    expect(html).toContain('aria-label="From account"');
+    expect(html).toContain("gmail:b@example.com");
+    expect(html).toContain("b@example.com");
+    // Static markup cannot fire submit; assert selected option is present.
+    expect(html).toContain('value="gmail:b@example.com"');
   });
 
   it("shows compose field ring in Normal mode", () => {

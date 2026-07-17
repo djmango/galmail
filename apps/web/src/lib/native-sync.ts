@@ -206,6 +206,11 @@ export function labelSyncQuery(
   return { labelId };
 }
 
+export type NativeProviderBinding = {
+  accountId: AccountId;
+  provider: MailProvider;
+};
+
 export class NativeGmailSyncEngine implements SyncEngine {
   private listeners = new Set<(event: SyncEvent) => void>();
   private messages = new Map<string, MailMessage>();
@@ -214,25 +219,37 @@ export class NativeGmailSyncEngine implements SyncEngine {
   private outbox = new Map<string, OutboxMutation>();
   private attachments = new Map<string, AttachmentMetadata>();
 
+  /** Keyed by full accountId (not provider kind) so N Gmail/Microsoft work. */
   private readonly providers: Map<string, MailProvider>;
 
   constructor(
-    provider: MailProvider | MailProvider[],
+    provider:
+      | MailProvider
+      | MailProvider[]
+      | NativeProviderBinding
+      | NativeProviderBinding[],
     private readonly store: NativeMailStore,
   ) {
-    this.providers = new Map(
-      (Array.isArray(provider) ? provider : [provider]).map((item) => [
-        item.kind,
-        item,
-      ]),
-    );
+    const items = Array.isArray(provider) ? provider : [provider];
+    this.providers = new Map();
+    for (const item of items) {
+      if ("provider" in item && "accountId" in item) {
+        this.providers.set(String(item.accountId), item.provider);
+      } else {
+        // Legacy single-provider tests: register under kind for one account.
+        this.providers.set(item.kind, item);
+      }
+    }
   }
 
   private providerFor(accountId: AccountId): MailProvider {
-    const kind = accountId.split(":", 1)[0];
-    const provider = this.providers.get(kind);
-    if (!provider) throw new Error(`No native provider configured for ${kind}`);
-    return provider;
+    const exact = this.providers.get(String(accountId));
+    if (exact) return exact;
+    // Legacy fallback when constructor received a bare MailProvider keyed by kind.
+    const kind = String(accountId).split(":", 1)[0];
+    const byKind = kind ? this.providers.get(kind) : undefined;
+    if (byKind) return byKind;
+    throw new Error(`No native provider configured for ${accountId}`);
   }
 
   private emit(event: SyncEvent): void {

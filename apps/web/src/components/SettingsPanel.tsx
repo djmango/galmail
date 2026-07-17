@@ -5,6 +5,7 @@ import { Icons } from "./Icons";
 import { SettingsBar, type SettingsState } from "./SettingsBar";
 
 export type SettingsAccount = {
+  accountId: string;
   email: string;
   provider: "gmail" | "microsoft" | "fixture";
   live: boolean;
@@ -34,16 +35,15 @@ export function SettingsPanel(props: {
   onLinkDevice: () => void;
   onConnectGmail: () => void;
   onConnectMicrosoft: () => void;
+  /** Disconnect a single account by ID (preferred). */
+  onDisconnectAccount?: (accountId: string) => void;
+  /** @deprecated Prefer onDisconnectAccount */
   onDisconnectGmail?: () => void;
+  /** @deprecated Prefer onDisconnectAccount */
   onDisconnectMicrosoft?: () => void;
 }) {
-  const liveGmail = props.accounts.find(
-    (account) => account.provider === "gmail" && account.live,
-  );
-  const liveMicrosoft = props.accounts.find(
-    (account) => account.provider === "microsoft" && account.live,
-  );
   const connecting = props.gmailConnecting || props.microsoftConnecting;
+  const liveAccounts = props.accounts.filter((account) => account.live);
 
   return (
     <div
@@ -76,14 +76,14 @@ export function SettingsPanel(props: {
             <h3 className="settings-section-title">Accounts</h3>
             <p className="settings-copy">
               {props.providerMode === "live"
-                ? "Using live provider accounts on this device."
+                ? "Using live provider accounts on this device. Add as many Google or Microsoft accounts as you need."
                 : "Showing fixture mail until you connect a real account."}
             </p>
             <div className="settings-group">
               {props.accounts.map((account) => (
                 <div
                   className="settings-row account-row"
-                  key={`${account.provider}:${account.email}`}
+                  key={account.accountId || `${account.provider}:${account.email}`}
                 >
                   <div className="settings-row-text">
                     <strong>{account.email}</strong>
@@ -96,19 +96,30 @@ export function SettingsPanel(props: {
                       {account.live ? " · live" : " · demo"}
                     </span>
                   </div>
-                  <span className="account-state">
-                    {account.live ? "Connected" : "Demo"}
-                  </span>
+                  {account.live && props.onDisconnectAccount ? (
+                    <ActionButton
+                      label="Disconnect"
+                      onClick={() =>
+                        props.onDisconnectAccount?.(account.accountId)
+                      }
+                    />
+                  ) : (
+                    <span className="account-state">
+                      {account.live ? "Connected" : "Demo"}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
             <div className="settings-actions">
-              {props.canConnectGmail && !liveGmail && (
+              {props.canConnectGmail && (
                 <ActionButton
                   label={
                     props.gmailConnecting
                       ? "Waiting for Google…"
-                      : "Sign in with Google"
+                      : liveAccounts.some((a) => a.provider === "gmail")
+                        ? "Add Google account"
+                        : "Sign in with Google"
                   }
                   icon={<Icons.google />}
                   variant="primary"
@@ -118,38 +129,55 @@ export function SettingsPanel(props: {
                   onClick={props.onConnectGmail}
                 />
               )}
-              {props.canConnectMicrosoft && !liveMicrosoft && (
+              {props.canConnectMicrosoft && (
                 <ActionButton
                   label={
                     props.microsoftConnecting
                       ? "Waiting for Microsoft…"
-                      : "Sign in with Microsoft"
+                      : liveAccounts.some((a) => a.provider === "microsoft")
+                        ? "Add Microsoft account"
+                        : "Sign in with Microsoft"
                   }
                   icon={<Icons.microsoft />}
-                  variant={liveGmail || !props.canConnectGmail ? "primary" : "quiet"}
+                  variant={
+                    props.canConnectGmail &&
+                    !liveAccounts.some((a) => a.provider === "gmail")
+                      ? "quiet"
+                      : "primary"
+                  }
                   reveal={false}
                   showShortcut={false}
                   disabled={connecting}
                   onClick={props.onConnectMicrosoft}
                 />
               )}
-              {liveGmail && props.onDisconnectGmail && (
-                <ActionButton
-                  label="Disconnect Gmail"
-                  onClick={props.onDisconnectGmail}
-                />
-              )}
-              {liveMicrosoft && props.onDisconnectMicrosoft && (
-                <ActionButton
-                  label="Disconnect Microsoft"
-                  onClick={props.onDisconnectMicrosoft}
-                />
-              )}
+              {!props.onDisconnectAccount &&
+                liveAccounts.some((a) => a.provider === "gmail") &&
+                props.onDisconnectGmail && (
+                  <ActionButton
+                    label="Disconnect Gmail"
+                    onClick={props.onDisconnectGmail}
+                  />
+                )}
+              {!props.onDisconnectAccount &&
+                liveAccounts.some((a) => a.provider === "microsoft") &&
+                props.onDisconnectMicrosoft && (
+                  <ActionButton
+                    label="Disconnect Microsoft"
+                    onClick={props.onDisconnectMicrosoft}
+                  />
+                )}
               <ActionButton
                 label="Link another device"
                 onClick={props.onLinkDevice}
               />
             </div>
+            {!props.canConnectGmail && !props.canConnectMicrosoft && (
+              <p className="settings-note" role="status">
+                Sign-in buttons appear in the GalMail app when Google or
+                Microsoft client IDs are configured for this build.
+              </p>
+            )}
             {props.connectError && (
               <p className="settings-note settings-note-error" role="alert">
                 {props.connectError}
@@ -265,7 +293,7 @@ export function SettingsPanel(props: {
                 <div className="settings-row-text">
                   <strong>Remote processing</strong>
                   <span>
-                    {props.consent?.enabled ? "Enabled for Gmail" : "Off"}
+                    {props.consent?.enabled ? "Enabled for account" : "Off"}
                   </span>
                 </div>
                 <ActionButton

@@ -1,5 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "bun run build && bun ../../scripts/sync-ios-web-assets.ts"
+  },
   "app": {
     "windows": [
       {

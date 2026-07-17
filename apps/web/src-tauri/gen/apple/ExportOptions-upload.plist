@@ -5,12 +5,21 @@
 	<key>method</key>
 	<string>app-store-connect</string>
 	<key>destination</key>
-	<string>upload</string>
+	<string>export</string>
 	<key>uploadSymbols</key>
 	<true/>
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
 	<key>teamID</key>
 	<string>A95F4H2423</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.galateacorp.mail</key>
+		<string>GalMail App Store com.galateacorp.mail</string>
+		<key>com.galateacorp.mail.notification-service</key>
+		<string>GalMail App Store com.galateacorp.mail.notification-service</string>
+		<key>com.galateacorp.mail.share</key>
+		<string>GalMail App Store com.galateacorp.mail.share</string>
+	</dict>
 </dict>
 </plist>

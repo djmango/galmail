@@ -3,6 +3,7 @@ import {
   MemorySyncEngine,
   asAccountId,
   type AccountId,
+  type MailProvider,
 } from "@galmail/core-api";
 import {
   createBrowserAdapters,
@@ -16,6 +17,7 @@ import {
   createMicrosoftLiveProvider,
   demoAccounts,
   listUnifiedInbox,
+  type UnifiedAccount,
 } from "@galmail/providers";
 import { CommandRegistry } from "@galmail/keyboard";
 import {
@@ -30,12 +32,16 @@ import {
 import { LocalDeviceLinking } from "@galmail/sync";
 import {
   isNativeShell,
-  readStoredGmailAccountId,
-  readStoredMicrosoftAccountId,
+  readStoredAccountIds,
   readStoredProviderMode,
+  reconcileAccountIdsFromKeychain,
+  resolveDefaultComposeAccountId,
   type ProviderMode,
 } from "./account-session";
-import { googleDesktopClientId } from "./gmail-connect";
+import {
+  googleClientIdConfigured,
+  googleOAuthClientId,
+} from "./gmail-connect";
 import { microsoftClientId, microsoftTenant } from "./microsoft-connect";
 import { NativeGmailSyncEngine, NativeMailStore } from "./native-sync";
 
@@ -44,15 +50,16 @@ function providerMode(): ProviderMode {
   if (stored) return stored;
   const configured = import.meta.env.VITE_GALMAIL_PROVIDER_MODE;
   if (configured === "fixture" || configured === "live") return configured;
-  return import.meta.env.DEV ? "fixture" : "live";
+  // Never silent-default to fixture; App gates unauthenticated users on SignInScreen.
+  return "live";
 }
 
 function gmailConnectCapability() {
-  const clientId = googleDesktopClientId();
+  const clientId = googleOAuthClientId();
   const native = isNativeShell();
   return {
     available: native && Boolean(clientId),
-    clientIdConfigured: Boolean(clientId),
+    clientIdConfigured: googleClientIdConfigured(),
     nativeShell: native,
   };
 }
@@ -81,11 +88,145 @@ function baseServices() {
   };
 }
 
+function normalizeLiveAccountId(raw: string): AccountId {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("gmail:") || trimmed.startsWith("microsoft:")) {
+    const [prefix, ...rest] = trimmed.split(":");
+    return asAccountId(`${prefix}:${rest.join(":").toLowerCase()}`);
+  }
+  // Env overrides may omit the provider prefix; prefer gmail for bare emails.
+  return asAccountId(`gmail:${trimmed.toLowerCase()}`);
+}
+
+function collectLiveAccountIds(): AccountId[] {
+  const fromSession = readStoredAccountIds().map(normalizeLiveAccountId);
+  const fromEnv: AccountId[] = [];
+  const envGmail = import.meta.env.VITE_GMAIL_ACCOUNT_ID?.trim();
+  const envMs = import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim();
+  if (envGmail) {
+    fromEnv.push(
+      asAccountId(
+        envGmail.startsWith("gmail:")
+          ? envGmail.toLowerCase()
+          : `gmail:${envGmail.toLowerCase()}`,
+      ),
+    );
+  }
+  if (envMs) {
+    fromEnv.push(
+      asAccountId(
+        envMs.startsWith("microsoft:")
+          ? envMs.toLowerCase()
+          : `microsoft:${envMs.toLowerCase()}`,
+      ),
+    );
+  }
+  return [...new Set([...fromSession, ...fromEnv].map(String))].map(asAccountId);
+}
+
+async function reconcileKeychainAccountIds(): Promise<AccountId[]> {
+  try {
+    const listed = await invoke<string[]>("list_oauth_account_ids");
+    return reconcileAccountIdsFromKeychain(listed).map(asAccountId);
+  } catch {
+    return readStoredAccountIds().map(asAccountId);
+  }
+}
+
+function createGmailProviderForAccount(
+  accountId: AccountId,
+  googleClientId: string,
+): MailProvider {
+  const nativeTokens = {
+    async accessToken() {
+      return "native-vault";
+    },
+    async refreshAccessToken() {
+      return "native-vault";
+    },
+  };
+  return createGmailLiveProvider({
+    tokens: nativeTokens,
+    http: {
+      async request(input) {
+        const url = new URL(input.url);
+        const prefix = "/gmail/v1/users/me";
+        if (!url.pathname.startsWith(prefix)) {
+          throw new Error("Invalid Gmail API URL");
+        }
+        const result = await invoke<{ status: number; body: unknown }>(
+          "gmail_api_request",
+          {
+            request: {
+              accountId,
+              clientId: googleClientId,
+              method: input.method ?? "GET",
+              path: `${url.pathname.slice(prefix.length)}${url.search}`,
+              body: input.body ? JSON.parse(input.body) : undefined,
+            },
+          },
+        );
+        return {
+          status: result.status,
+          async json() {
+            return result.body;
+          },
+        };
+      },
+    },
+  });
+}
+
+function createMicrosoftProviderForAccount(
+  accountId: AccountId,
+  msClientId: string,
+): MailProvider {
+  return createMicrosoftLiveProvider({
+    authorization: "transport",
+    http: {
+      async request(input) {
+        const url = new URL(input.url);
+        if (
+          url.origin !== "https://graph.microsoft.com" ||
+          !url.pathname.startsWith("/v1.0/")
+        ) {
+          throw new Error("Invalid Microsoft Graph API URL");
+        }
+        const result = await invoke<{
+          status: number;
+          body: unknown;
+          retryAfter?: string;
+        }>("microsoft_graph_request", {
+          request: {
+            accountId,
+            clientId: msClientId,
+            method: input.method ?? "GET",
+            path: `${url.pathname}${url.search}`,
+            body: input.body ? JSON.parse(input.body) : undefined,
+          },
+        });
+        return {
+          status: result.status,
+          headers: { "retry-after": result.retryAfter },
+          async json() {
+            return result.body;
+          },
+        };
+      },
+    },
+  });
+}
+
 async function createFixtureRuntime() {
   const gmail = createGmailFixtureProvider();
   const microsoft = createMicrosoftFixtureProvider();
   const accounts = demoAccounts(gmail, microsoft);
-  const sync = new MemorySyncEngine([gmail, microsoft]);
+  const sync = new MemorySyncEngine(
+    accounts.map((account) => ({
+      accountId: account.accountId,
+      provider: account.provider,
+    })),
+  );
   const services = baseServices();
   const { store, crypto } = services;
   const vaultKey = await crypto.generateVaultKey();
@@ -96,6 +237,10 @@ async function createFixtureRuntime() {
     await sync.hydrateLocal(a.accountId);
   }
   const threads = await listUnifiedInbox(accounts);
+  const accountIds = accounts.map((account) => account.accountId);
+  const defaultAccountId = asAccountId(
+    resolveDefaultComposeAccountId(accountIds.map(String)) ?? accountIds[0]!,
+  );
 
   return {
     accounts,
@@ -105,7 +250,10 @@ async function createFixtureRuntime() {
     devices,
     threads,
     providerMode: "fixture" as const,
-    gmailAccountId: asAccountId("gmail:demo"),
+    accountIds,
+    defaultAccountId,
+    /** @deprecated Use defaultAccountId */
+    gmailAccountId: defaultAccountId,
     microsoftAccountId: asAccountId("microsoft:demo"),
     gmailOAuth: undefined,
     microsoftOAuth: undefined,
@@ -122,146 +270,76 @@ async function createLiveRuntime() {
       "Live provider mode requires the native GalMail application",
     );
   }
-  const googleClientId = googleDesktopClientId();
-  const gmailAccount =
-    import.meta.env.VITE_GMAIL_ACCOUNT_ID?.trim() ||
-    readStoredGmailAccountId() ||
-    undefined;
+  const googleClientId = googleOAuthClientId();
   const msClientId = microsoftClientId();
-  const microsoftAccount =
-    import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim() ||
-    readStoredMicrosoftAccountId() ||
-    undefined;
-  if (!gmailAccount && !microsoftAccount) {
+
+  // Prefer Keychain enumerate + session merge so orphans rehydrate.
+  let accountIds = await reconcileKeychainAccountIds();
+  if (accountIds.length === 0) {
+    accountIds = collectLiveAccountIds();
+  } else {
+    const envIds = collectLiveAccountIds();
+    accountIds = [...new Set([...accountIds, ...envIds].map(String))].map(
+      asAccountId,
+    );
+  }
+
+  if (accountIds.length === 0) {
     throw new Error(
       "Connect Gmail or Microsoft 365 before starting the live inbox",
     );
   }
-  if (gmailAccount && !googleClientId) {
+
+  const hasGmail = accountIds.some((id) => String(id).startsWith("gmail:"));
+  const hasMicrosoft = accountIds.some((id) =>
+    String(id).startsWith("microsoft:"),
+  );
+  if (hasGmail && !googleClientId) {
     throw new Error("VITE_GOOGLE_DESKTOP_CLIENT_ID is required for live Gmail");
   }
-  if (microsoftAccount && !msClientId) {
+  if (hasMicrosoft && !msClientId) {
     throw new Error(
       "VITE_MICROSOFT_CLIENT_ID is required for live Microsoft 365",
     );
   }
-  const gmailAccountId = gmailAccount
-    ? asAccountId(
-        gmailAccount.startsWith("gmail:")
-          ? gmailAccount
-          : `gmail:${gmailAccount.toLowerCase()}`,
-      )
-    : undefined;
-  const microsoftAccountId = microsoftAccount
-    ? asAccountId(
-        microsoftAccount.startsWith("microsoft:")
-          ? microsoftAccount
-          : `microsoft:${microsoftAccount.toLowerCase()}`,
-      )
-    : undefined;
-  const nativeTokens = {
-    async accessToken() {
-      return "native-vault";
-    },
-    async refreshAccessToken() {
-      return "native-vault";
-    },
-  };
-  const gmail = gmailAccountId
-    ? createGmailLiveProvider({
-        tokens: nativeTokens,
-        http: {
-          async request(input) {
-            const url = new URL(input.url);
-            const prefix = "/gmail/v1/users/me";
-            if (!url.pathname.startsWith(prefix)) {
-              throw new Error("Invalid Gmail API URL");
-            }
-            const result = await invoke<{ status: number; body: unknown }>(
-              "gmail_api_request",
-              {
-                request: {
-                  accountId: gmailAccountId,
-                  clientId: googleClientId!,
-                  method: input.method ?? "GET",
-                  path: `${url.pathname.slice(prefix.length)}${url.search}`,
-                  body: input.body ? JSON.parse(input.body) : undefined,
-                },
-              },
-            );
-            return {
-              status: result.status,
-              async json() {
-                return result.body;
-              },
-            };
-          },
-        },
-      })
-    : undefined;
-  const microsoft = microsoftAccountId
-    ? createMicrosoftLiveProvider({
-        authorization: "transport",
-        http: {
-          async request(input) {
-            const url = new URL(input.url);
-            if (
-              url.origin !== "https://graph.microsoft.com" ||
-              !url.pathname.startsWith("/v1.0/")
-            ) {
-              throw new Error("Invalid Microsoft Graph API URL");
-            }
-            const result = await invoke<{
-              status: number;
-              body: unknown;
-              retryAfter?: string;
-            }>("microsoft_graph_request", {
-              request: {
-                accountId: microsoftAccountId,
-                clientId: msClientId!,
-                method: input.method ?? "GET",
-                path: `${url.pathname}${url.search}`,
-                body: input.body ? JSON.parse(input.body) : undefined,
-              },
-            });
-            return {
-              status: result.status,
-              headers: { "retry-after": result.retryAfter },
-              async json() {
-                return result.body;
-              },
-            };
-          },
-        },
-      })
-    : undefined;
-  const providers = [gmail, microsoft].filter(
-    (provider): provider is NonNullable<typeof provider> => Boolean(provider),
-  );
-  const accounts = [
-    ...(gmail && gmailAccountId
-      ? [
-          {
-            accountId: gmailAccountId,
-            provider: gmail,
-            email: gmailAccountId.slice("gmail:".length),
-            displayName: "Gmail",
-          },
-        ]
-      : []),
-    ...(microsoft && microsoftAccountId
-      ? [
-          {
-            accountId: microsoftAccountId,
-            provider: microsoft,
-            email: microsoftAccountId.slice("microsoft:".length),
-            displayName: "Microsoft 365",
-          },
-        ]
-      : []),
-  ];
+
+  const accounts: UnifiedAccount[] = accountIds.map((accountId) => {
+    const id = String(accountId);
+    if (id.startsWith("gmail:")) {
+      const provider = createGmailProviderForAccount(
+        accountId,
+        googleClientId!,
+      );
+      return {
+        accountId,
+        provider,
+        email: id.slice("gmail:".length),
+        displayName: "Gmail",
+      };
+    }
+    if (id.startsWith("microsoft:")) {
+      const provider = createMicrosoftProviderForAccount(
+        accountId,
+        msClientId!,
+      );
+      return {
+        accountId,
+        provider,
+        email: id.slice("microsoft:".length),
+        displayName: "Microsoft 365",
+      };
+    }
+    throw new Error(`Unsupported account id ${id}`);
+  });
+
   const nativeStore = new NativeMailStore();
-  const sync = new NativeGmailSyncEngine(providers, nativeStore);
+  const sync = new NativeGmailSyncEngine(
+    accounts.map((account) => ({
+      accountId: account.accountId,
+      provider: account.provider,
+    })),
+    nativeStore,
+  );
   const locals = await Promise.all(
     accounts.map((account) => sync.hydrateLocal(account.accountId)),
   );
@@ -271,6 +349,14 @@ async function createLiveRuntime() {
     services.store,
     services.crypto,
     vaultKey,
+  );
+
+  const defaultAccountId = asAccountId(
+    resolveDefaultComposeAccountId(accountIds.map(String)) ??
+      String(accountIds[0]!),
+  );
+  const microsoftAccountId = accountIds.find((id) =>
+    String(id).startsWith("microsoft:"),
   );
 
   return {
@@ -283,10 +369,12 @@ async function createLiveRuntime() {
       .flatMap((local) => local.threads)
       .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
     providerMode: "live" as const,
-    // Legacy UI name: primary account for compose/consent when only one is live.
-    gmailAccountId: gmailAccountId ?? microsoftAccountId!,
+    accountIds,
+    defaultAccountId,
+    /** @deprecated Use defaultAccountId */
+    gmailAccountId: defaultAccountId,
     microsoftAccountId,
-    gmailOAuth: gmailAccountId
+    gmailOAuth: hasGmail
       ? {
           begin: () =>
             invoke<{ attemptId: string; authorizationUrl: string }>(
@@ -299,9 +387,9 @@ async function createLiveRuntime() {
               email: string;
               grantedScopes: string[];
             }>("gmail_oauth_complete", { attemptId }),
-          revoke: (targetAccountId: AccountId = gmailAccountId) =>
+          revoke: (targetAccountId: AccountId) =>
             invoke<boolean>("gmail_revoke", { accountId: targetAccountId }),
-          remove: (targetAccountId: AccountId = gmailAccountId) =>
+          remove: (targetAccountId: AccountId) =>
             invoke<{ localRecordsDeleted: number; remotelyRevoked: boolean }>(
               "gmail_remove_account",
               { accountId: targetAccountId },
@@ -337,20 +425,38 @@ async function createLiveRuntime() {
 }
 
 export async function createGalMailRuntime() {
-  if (providerMode() !== "live") {
+  // Fixture only when explicitly chosen (localStorage) or env-forced (e2e/CI).
+  if (providerMode() === "fixture") {
     return createFixtureRuntime();
   }
-  const hasLiveAccount = Boolean(
-    import.meta.env.VITE_GMAIL_ACCOUNT_ID?.trim() ||
-      readStoredGmailAccountId() ||
-      import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim() ||
-      readStoredMicrosoftAccountId(),
-  );
+  const hasLiveAccount =
+    readStoredAccountIds().length > 0 ||
+    Boolean(import.meta.env.VITE_GMAIL_ACCOUNT_ID?.trim()) ||
+    Boolean(import.meta.env.VITE_MICROSOFT_ACCOUNT_ID?.trim());
   const hasProviderClient =
-    Boolean(googleDesktopClientId()) || Boolean(microsoftClientId());
+    googleClientIdConfigured() || Boolean(microsoftClientId());
   // Allow Microsoft-only live without a Google client ID (and vice versa).
   if (!hasLiveAccount || !hasProviderClient) {
-    return createFixtureRuntime();
+    // Still try Keychain orphans when native + live mode.
+    if (isNativeShell() && hasProviderClient) {
+      try {
+        const listed = await invoke<string[]>("list_oauth_account_ids");
+        if (listed.length > 0) {
+          reconcileAccountIdsFromKeychain(listed);
+          return createLiveRuntime();
+        }
+      } catch {
+        // No keychain accounts; surface a clear error instead of silent fixture.
+      }
+    }
+    if (!hasLiveAccount) {
+      throw new Error(
+        "Connect Gmail or Microsoft 365 before starting the live inbox",
+      );
+    }
+    throw new Error(
+      "A provider client ID (Google or Microsoft) is required for live mode",
+    );
   }
   return createLiveRuntime();
 }

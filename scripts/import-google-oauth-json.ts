@@ -2,17 +2,24 @@
 /**
  * Encrypt a Google OAuth Desktop client JSON download into
  * secrets/google-desktop-oauth.json and sync the public client ID into
- * secrets/dev.json when decryptable.
+ * secrets/dev.yaml when decryptable.
  *
  * Usage: bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_….json
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  isYamlSecretsPath,
+  parseSecretsDocument,
+  stringifyFlatSecretsYaml,
+} from "./secrets-yaml";
 
 const root = resolve(import.meta.dir, "..");
-const secretsFile = resolve(root, "secrets/dev.json");
+const secretsYaml = resolve(root, "secrets/dev.yaml");
+const secretsJson = resolve(root, "secrets/dev.json");
+const secretsFile = existsSync(secretsYaml) ? secretsYaml : secretsJson;
 const oauthOverlay = resolve(root, "secrets/google-desktop-oauth.json");
-const exampleFile = resolve(root, "secrets/dev.example.json");
+const exampleFile = resolve(root, "secrets/dev.example.yaml");
 const jsonPath = process.argv[2];
 
 if (!jsonPath) {
@@ -48,11 +55,12 @@ if (!env.SOPS_AGE_SSH_PRIVATE_KEY_FILE && !env.SOPS_AGE_KEY_FILE) {
   if (existsSync(sshKey)) env.SOPS_AGE_SSH_PRIVATE_KEY_FILE = sshKey;
 }
 
-function encryptJson(path: string, data: Record<string, string>): void {
+function encryptSecretsFile(path: string, data: Record<string, string>): void {
   const plaintextPath = `${path}.plain.tmp`;
-  writeFileSync(plaintextPath, `${JSON.stringify(data, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  const body = isYamlSecretsPath(path)
+    ? stringifyFlatSecretsYaml(data)
+    : `${JSON.stringify(data, null, 2)}\n`;
+  writeFileSync(plaintextPath, body, { mode: 0o600 });
   try {
     const encrypted = Bun.spawnSync(
       ["sops", "-e", plaintextPath, "--filename-override", path],
@@ -73,10 +81,23 @@ function encryptJson(path: string, data: Record<string, string>): void {
   }
 }
 
-// Always write the overlay that the native app reads for token exchange.
-encryptJson(oauthOverlay, { GOOGLE_DESKTOP_OAUTH_JSON: rawText });
+function asStringMap(data: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (key === "sops") continue;
+    if (value === null || value === undefined) {
+      out[key] = "";
+      continue;
+    }
+    out[key] = typeof value === "string" ? value : JSON.stringify(value);
+  }
+  return out;
+}
 
-// Best-effort: keep the public client ID in secrets/dev.json too.
+// Always write the overlay that the native app reads for token exchange.
+encryptSecretsFile(oauthOverlay, { GOOGLE_DESKTOP_OAUTH_JSON: rawText });
+
+// Best-effort: keep the public client ID in secrets/dev.yaml (or legacy JSON).
 if (existsSync(secretsFile)) {
   const decrypted = Bun.spawnSync(["sops", "-d", secretsFile], {
     cwd: root,
@@ -85,26 +106,24 @@ if (existsSync(secretsFile)) {
     stderr: "pipe",
   });
   if (decrypted.exitCode === 0) {
-    const current = JSON.parse(decrypted.stdout.toString()) as Record<
-      string,
-      string
-    >;
+    const current = asStringMap(
+      parseSecretsDocument(decrypted.stdout.toString(), secretsFile),
+    );
     current.VITE_GOOGLE_DESKTOP_CLIENT_ID = clientId;
     // Prefer the overlay for the secret-bearing JSON; clear stale empty value.
     current.GOOGLE_DESKTOP_OAUTH_JSON = current.GOOGLE_DESKTOP_OAUTH_JSON || "";
-    encryptJson(secretsFile, current);
+    encryptSecretsFile(secretsFile, current);
   } else {
     console.warn(
-      "could not update secrets/dev.json (SSH passphrase needed); overlay was still written",
+      `could not update ${secretsFile} (SSH passphrase needed); overlay was still written`,
     );
   }
 } else if (existsSync(exampleFile)) {
-  const current = JSON.parse(readFileSync(exampleFile, "utf8")) as Record<
-    string,
-    string
-  >;
+  const current = asStringMap(
+    parseSecretsDocument(readFileSync(exampleFile, "utf8"), exampleFile),
+  );
   current.VITE_GOOGLE_DESKTOP_CLIENT_ID = clientId;
-  encryptJson(secretsFile, current);
+  encryptSecretsFile(secretsYaml, current);
 }
 
 console.log(`updated ${oauthOverlay}`);

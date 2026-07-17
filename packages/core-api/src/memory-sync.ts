@@ -24,6 +24,11 @@ function outboxErrorMessage(error: unknown): string {
   }
 }
 
+export type MemoryProviderBinding = {
+  accountId: AccountId;
+  provider: MailProvider;
+};
+
 /** Linear-style local-first sync engine used by the Gmail vertical slice. */
 export class MemorySyncEngine implements SyncEngine {
   private threads = new Map<string, MailThread>();
@@ -32,16 +37,26 @@ export class MemorySyncEngine implements SyncEngine {
   private outbox: OutboxMutation[] = [];
   private listeners = new Set<(e: SyncEvent) => void>();
 
+  private readonly byAccount = new Map<string, MailProvider>();
+  private readonly byKind: MailProvider[] = [];
   private readonly now: () => Date;
   private readonly createId: () => string;
 
   constructor(
-    private readonly providers: MailProvider[],
+    providers: MailProvider[] | MemoryProviderBinding[],
     options: {
       now?: () => Date;
       createId?: () => string;
     } = {},
   ) {
+    for (const item of providers) {
+      if ("provider" in item && "accountId" in item) {
+        this.byAccount.set(String(item.accountId), item.provider);
+        this.byKind.push(item.provider);
+      } else {
+        this.byKind.push(item);
+      }
+    }
     this.now = options.now ?? (() => new Date());
     this.createId =
       options.createId ??
@@ -53,12 +68,17 @@ export class MemorySyncEngine implements SyncEngine {
   }
 
   private providerFor(accountId: AccountId, hint?: string): MailProvider {
-    const provider =
-      this.providers.find((p) => hint?.startsWith(p.kind)) ?? this.providers[0];
-    if (!provider) throw new Error("No mail provider configured");
-    // Prefer provider matching account prefix "gmail:" / "microsoft:"
-    const byPrefix = this.providers.find((p) => accountId.startsWith(p.kind));
-    return byPrefix ?? provider;
+    const exact = this.byAccount.get(String(accountId));
+    if (exact) return exact;
+    const byHint = hint
+      ? this.byKind.find((p) => hint.startsWith(p.kind))
+      : undefined;
+    const byPrefix = this.byKind.find((p) =>
+      String(accountId).startsWith(p.kind),
+    );
+    const provider = byHint ?? byPrefix ?? this.byKind[0];
+    if (!provider) throw new Error(`No mail provider configured for ${accountId}`);
+    return provider;
   }
 
   async hydrateLocal(accountId: AccountId): Promise<{

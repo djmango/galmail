@@ -55,8 +55,9 @@ confirmed.
 
 Register GalMail as a Mobile and desktop **public client** (no secret) supporting
 the intended account audiences. For the macOS system-browser flow, register a
-loopback redirect. The native client binds an ephemeral port and uses
-`http://127.0.0.1:{port}/oauth/microsoft/callback` (also allow
+loopback redirect under **Mobile and desktop applications** (not SPA/Web) and
+enable **Allow public client flows**. The native client binds an ephemeral port
+and uses `http://127.0.0.1:{port}/oauth/microsoft/callback` (also allow
 `http://localhost` in Entra if you prefer Microsoft's default guidance).
 
 Set `VITE_MICROSOFT_CLIENT_ID` (and optionally `VITE_MICROSOFT_TENANT`, default
@@ -82,12 +83,47 @@ use an allowlisted `galmail://` route set and must never contain OAuth codes,
 tokens, or PKCE material. On macOS, provider callbacks use loopback listeners,
 not the general deep-link handler.
 
-iOS receives separate provider registrations. Google uses its iOS SDK/client
-callback convention; Microsoft uses
-`msauth.com.galateacorp.mail://auth`. Associated-domain links may open ordinary
-product routes but do not replace provider-required redirect registration.
-Every incoming route is parsed natively against a fixed path/parameter schema
-before any event reaches the webview.
+### iOS (ASWebAuthenticationSession)
+
+iOS does **not** use localhost TCP. Rust builds a custom-scheme `redirect_uri`,
+Swift presents `ASWebAuthenticationSession`, and the callback URL is delivered
+back to Rust for PKCE token exchange (same `gmail_oauth_*` /
+`microsoft_oauth_*` commands as desktop).
+
+| Provider | Redirect URI | Callback scheme (Info.plist / session) |
+| --- | --- | --- |
+| Google | `com.googleusercontent.apps.{CLIENT_ID_PREFIX}:/oauthredirect` | `com.googleusercontent.apps.{CLIENT_ID_PREFIX}` |
+| Microsoft | `msauth.com.galateacorp.mail://auth` | `msauth.com.galateacorp.mail` |
+
+Current Google iOS client (`VITE_GOOGLE_IOS_CLIENT_ID`):
+
+- Client ID:
+  `966863975017-9jr34jv83g260dgs0nckqr4h2pm7q10c.apps.googleusercontent.com`
+- Exact redirect URI (must match auth + token exchange):
+  `com.googleusercontent.apps.966863975017-9jr34jv83g260dgs0nckqr4h2pm7q10c:/oauthredirect`
+- Info.plist / ASWebAuthenticationSession scheme:
+  `com.googleusercontent.apps.966863975017-9jr34jv83g260dgs0nckqr4h2pm7q10c`
+
+Note the single slash after the colon (`:/oauthredirect`), not `://`. Do not
+use the Desktop client ID on iOS; that produces Google’s generic post-consent
+failure. ASWebAuthenticationSession must use a non-ephemeral session so Google
+can complete the custom-scheme redirect.
+
+Portal setup:
+
+- **Google Cloud:** create an **iOS** OAuth client with bundle ID
+  `com.galateacorp.mail`. Put that client ID in `VITE_GOOGLE_IOS_CLIENT_ID`
+  (desktop keeps `VITE_GOOGLE_DESKTOP_CLIENT_ID` + `GOOGLE_DESKTOP_OAUTH_JSON`).
+  Register the reverse-client-ID URL scheme in the iOS target
+  (`com.googleusercontent.apps.<prefix>` from the Console client). Do not enable
+  App Check enforcement unless the app ships App Attest tokens.
+- **Entra (Azure):** on the same Mobile and desktop public client, add
+  `msauth.com.galateacorp.mail://auth` in addition to the desktop loopback
+  redirect (`http://127.0.0.1` / path `/oauth/microsoft/callback`). Keep
+  “Allow public client flows” = Yes.
+
+Associated-domain links may open ordinary product routes but do not replace
+provider-required redirect registration.
 
 ## Environments and verification
 

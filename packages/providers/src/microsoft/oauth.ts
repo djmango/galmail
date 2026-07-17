@@ -2,16 +2,17 @@ const DEFAULT_TENANT = "common";
 /**
  * Delegated Graph scopes for the public desktop client.
  * Azure (Entra) app: Mobile and desktop + loopback redirect `http://127.0.0.1`
- * (native binds an ephemeral port and path `/oauth/microsoft/callback`).
+ * (native binds an ephemeral port + `/oauth/microsoft/callback`).
  */
 const GRAPH_SCOPES = [
   "openid",
   "profile",
   "email",
   "offline_access",
-  "https://graph.microsoft.com/Mail.ReadWrite",
-  "https://graph.microsoft.com/Mail.Send",
-  "https://graph.microsoft.com/Calendars.ReadWrite",
+  "User.Read",
+  "Mail.ReadWrite",
+  "Mail.Send",
+  "Calendars.ReadWrite",
 ];
 
 export interface MicrosoftPkceAttempt {

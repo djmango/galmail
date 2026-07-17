@@ -83,9 +83,10 @@ date in the submission record. Do not use fixture behavior in the review video.
 Register separate development and production Mobile and desktop public clients.
 The planned delegated permissions are `openid`, `email`, `offline_access`,
 `User.Read`, `Mail.ReadWrite`, and `Mail.Send`. The macOS system-browser
-redirect is `http://localhost`; iOS uses
-`msauth.com.galateacorp.mail://auth`. No application permission or client secret
-belongs in a distributed client.
+redirect is `http://127.0.0.1` (path `/oauth/microsoft/callback`; Mobile and
+desktop; public client flows on). iOS uses ASWebAuthenticationSession with
+`msauth.com.galateacorp.mail://auth`. No application permission or client
+secret belongs in a distributed client.
 
 External Microsoft actions:
 

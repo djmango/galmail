@@ -14,7 +14,8 @@
   "scripts": {
     "dev": "bun scripts/with-sops.ts -- bun scripts/run-web.ts dev",
     "dev:fixture": "bun scripts/run-web.ts dev",
-    "secrets:edit": "sops secrets/dev.json",
+    "secrets:edit": "bun scripts/edit-dev-secrets.ts",
+    "secrets:migrate-yaml": "bun scripts/migrate-dev-secrets-to-yaml.ts",
     "secrets:import-google": "bun scripts/import-google-oauth-json.ts",
     "build": "bun run --filter @galmail/core-api build && bun run --filter './packages/*' build && bun run --filter './services/*' build && bun run --filter @galmail/web build",
     "typecheck": "bun run --filter @galmail/core-api build && bun run --filter './packages/*' build && bun run --filter '*' typecheck",
@@ -27,6 +28,7 @@
     "security:rust": "cargo audit && cargo audit --file apps/web/src-tauri/Cargo.lock",
     "sbom": "bun scripts/dependency-policy.ts --sbom artifacts/galmail.cdx.json",
     "e2e": "bun run --cwd apps/web e2e",
+    "ios:sync-web-assets": "bun scripts/sync-ios-web-assets.ts",
     "ios:check": "xcodegen generate --spec apps/web/src-tauri/gen/apple/project.yml --project apps/web/src-tauri/gen/apple && xcodebuild -project apps/web/src-tauri/gen/apple/galmail-tauri.xcodeproj -scheme GalMailAppleTests -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build-for-testing && xcodebuild -project apps/web/src-tauri/gen/apple/galmail-tauri.xcodeproj -target GalMailNotificationService -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build && xcodebuild -project apps/web/src-tauri/gen/apple/galmail-tauri.xcodeproj -target GalMailShareExtension -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
     "ios:archive:testflight": "bun scripts/ios-archive-testflight.ts",
     "ios:rust:check": "cargo check --manifest-path apps/web/src-tauri/Cargo.toml --target aarch64-apple-ios-sim",

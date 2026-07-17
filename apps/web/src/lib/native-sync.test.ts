@@ -152,6 +152,36 @@ function provider(
 }
 
 describe("native Gmail sync restart contract", () => {
+  test("providerFor resolves by full accountId for two Gmail accounts", async () => {
+    const store = new MockNativeStore();
+    const firstId = asAccountId("gmail:one@example.com");
+    const secondId = asAccountId("gmail:two@example.com");
+    const firstMsg = { ...message("a1", ["INBOX"]), accountId: firstId };
+    const secondMsg = {
+      ...message("b1", ["INBOX"]),
+      accountId: secondId,
+      id: asMessageId("b1"),
+      threadId: asThreadId("thread-b1"),
+    };
+    const first = provider([[firstMsg]]);
+    const second = provider([[secondMsg]]);
+    const sync = new NativeGmailSyncEngine(
+      [
+        { accountId: firstId, provider: first },
+        { accountId: secondId, provider: second },
+      ],
+      store,
+    );
+    await sync.pullDeltas(firstId);
+    await sync.pullDeltas(secondId);
+    expect(sync.localThreads(firstId).map((item) => String(item.id))).toEqual([
+      "thread-a1",
+    ]);
+    expect(sync.localThreads(secondId).map((item) => String(item.id))).toEqual([
+      "thread-b1",
+    ]);
+  });
+
   test("labelSyncQuery maps archive to a Gmail search and skips inbox", () => {
     expect(labelSyncQuery("INBOX")).toBeNull();
     expect(labelSyncQuery("SPAM")).toEqual({ labelId: "SPAM" });

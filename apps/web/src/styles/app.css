@@ -7,6 +7,8 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 .safe-mail-body {
@@ -497,14 +499,16 @@ select:focus-visible {
 .app {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  min-height: 100dvh;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--bg0);
   color: var(--ink);
 }
 
 .app:has(> .sign-in) {
   grid-template-rows: minmax(0, 1fr);
+  overflow: auto;
 }
 
 .top-actions,
@@ -650,6 +654,25 @@ select:focus-visible {
     opacity 100ms var(--ui-ease),
     transform 100ms var(--ui-ease);
   will-change: opacity, transform;
+  z-index: 1000;
+}
+
+/* JS-placed tips escape overflow ancestors and flip when near edges. */
+.ui-button-reveal[data-tip-fixed="true"] > .ui-button-copy {
+  position: fixed;
+  top: var(--tip-top, 0);
+  left: var(--tip-left, 0);
+  right: auto;
+  bottom: auto;
+  transform: translate3d(0, 6px, 0);
+}
+
+.ui-button-reveal[data-tip-fixed="true"][data-tip-side="bottom"] > .ui-button-copy {
+  transform: translate3d(0, -6px, 0);
+}
+
+.ui-button-reveal[data-tip-fixed="true"][data-tip-side="right"] > .ui-button-copy {
+  transform: translate3d(-6px, 0, 0);
 }
 
 .ui-button-reveal:hover > .ui-button-copy,
@@ -657,6 +680,12 @@ select:focus-visible {
 .ui-button-reveal:focus-within > .ui-button-copy {
   opacity: 1;
   transform: translate3d(-50%, 0, 0);
+}
+
+.ui-button-reveal[data-tip-fixed="true"]:hover > .ui-button-copy,
+.ui-button-reveal[data-tip-fixed="true"]:focus-visible > .ui-button-copy,
+.ui-button-reveal[data-tip-fixed="true"]:focus-within > .ui-button-copy {
+  transform: translate3d(0, 0, 0);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -740,6 +769,7 @@ select:focus-visible {
   display: grid;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .panel {
@@ -785,19 +815,28 @@ select:focus-visible {
 .sidebar {
   display: flex;
   flex-direction: column;
-  /* Visible so collapsed-rail label flyouts can paint over the thread list. */
-  overflow: visible;
+  min-height: 0;
+  /* Flyouts use fixed positioning — contain shell scroll here. */
+  overflow: hidden;
   container-type: inline-size;
   container-name: sidebar;
+}
+
+.sidebar.panel {
+  padding-bottom: 0.4rem;
+}
+
+.sidebar-header,
+.thread-list-head {
+  flex-shrink: 0;
+  min-height: 2.125rem;
+  padding: 0.1rem 0.1rem 0.5rem;
+  margin-bottom: 0.2rem;
 }
 
 .sidebar-header {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
-  padding-bottom: 0.45rem;
-  margin-bottom: 0.2rem;
-  border-bottom: 1px solid var(--line);
 }
 
 .sidebar-main {
@@ -810,15 +849,16 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  padding-top: 0.55rem;
-  border-top: 1px solid var(--line);
+  margin-top: auto;
+  padding-top: 0.25rem;
 }
 
 .sidebar-collapse-toggle {
-  align-self: flex-start;
-  width: 34px;
-  min-width: 34px;
-  justify-content: center;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: 0 0.7rem;
   color: var(--muted);
 }
 
@@ -826,10 +866,6 @@ select:focus-visible {
 .sidebar-collapse-toggle:focus-visible {
   color: var(--ink);
   background: var(--selection-bg);
-}
-
-.sidebar-collapse-toggle .ui-button-icon {
-  font-size: 1.15rem;
 }
 
 .settings-entry {
@@ -903,6 +939,10 @@ select:focus-visible {
   color: var(--muted);
 }
 
+.nav-item.settings-entry {
+  margin-bottom: 0;
+}
+
 /* Expanded sidebar: labels always in-flow (no flyout / hover collapse). */
 .sidebar .nav-item.ui-button-reveal {
   position: relative;
@@ -968,7 +1008,7 @@ select:focus-visible {
 
   .sidebar-header {
     justify-content: center;
-    padding-bottom: 0.35rem;
+    padding: 0.1rem 0.1rem 0.5rem;
   }
 
   .nav-item.ui-button-reveal,
@@ -980,38 +1020,15 @@ select:focus-visible {
     overflow: visible;
   }
 
+  /* Collapsed rail: flyouts use the shared smart tip (prefer right via JS). */
   .nav-item.ui-button-reveal > .ui-button-copy {
-    position: absolute;
-    left: 50%;
-    bottom: calc(100% + 0.3rem);
-    top: auto;
-    right: auto;
     margin-left: 0;
-    padding: 0.28rem 0.5rem;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    background: var(--bg2);
-    box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 16%, transparent);
-    pointer-events: none;
-    opacity: 0;
-    transform: translate3d(-50%, 6px, 0);
-    transition:
-      opacity 100ms var(--ui-ease),
-      transform 100ms var(--ui-ease);
-    will-change: opacity, transform;
   }
 
   .nav-item.ui-button-reveal:hover,
   .nav-item.ui-button-reveal:focus-visible,
   .nav-item.ui-button-reveal:focus-within {
     z-index: 6;
-  }
-
-  .nav-item.ui-button-reveal:hover > .ui-button-copy,
-  .nav-item.ui-button-reveal:focus-visible > .ui-button-copy,
-  .nav-item.ui-button-reveal:focus-within > .ui-button-copy {
-    opacity: 1;
-    transform: translate3d(-50%, 0, 0);
   }
 
   /* Collapsed flyout always includes label + shortcut when present. */
@@ -1044,19 +1061,13 @@ select:focus-visible {
   }
 }
 
-.thread-list:focus {
-  outline: none;
-}
+/* Keyboard shortcut sink (tabIndex=-1); no visible ring on programmatic focus. */
+.thread-list:focus,
 .thread-list:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--focus);
+  outline: none;
+  box-shadow: none;
 }
 
-.thread-list-head {
-  display: block;
-  padding: 0.1rem 0.1rem 0.5rem;
-  margin-bottom: 0.2rem;
-  border-bottom: 1px solid var(--line);
-}
 
 .thread-meta {
   color: var(--muted);
@@ -2319,15 +2330,27 @@ select:focus-visible {
   background: var(--bg1);
 }
 
+.sign-in-logo {
+  display: block;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 0 0.85rem;
+  border-radius: 0.65rem;
+  object-fit: cover;
+}
+
+.sign-in-card .eyebrow {
+  margin: 0;
+}
+
 .sign-in-card h1 {
-  margin: 0.35rem 0 0.75rem;
+  margin: 0.35rem 0 0;
   font-size: 1.7rem;
   line-height: 1.2;
 }
 
-.sign-in-copy,
-.sign-in-hint {
-  margin: 0;
+.sign-in-copy {
+  margin: 0.75rem 0 0;
   color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.5;
@@ -2337,11 +2360,19 @@ select:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
-  margin: 1.4rem 0 1rem;
+  margin: 1.4rem 0 0;
 }
 
-.sign-in-hint {
-  font-size: 0.82rem;
+.sign-in-actions > .ui-button {
+  flex: 1 1 12rem;
+}
+
+.sign-in-actions > .ui-button-quiet {
+  flex: 1 1 100%;
+}
+
+.sign-in-card .settings-note {
+  margin-top: 1rem;
 }
 
 @media (max-width: 1120px) {
@@ -2416,8 +2447,6 @@ select:focus-visible {
   flex-direction: column;
   gap: 0.65rem;
   padding: 0 1.1rem 0.25rem;
-}
-  gap: 1rem;
 }
 
 .calendar-title {
@@ -2566,5 +2595,619 @@ select:focus-visible {
   * {
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+}
+
+/* ----- Branded loading screen (React state) -----
+   The pre-React cold-start fallback lives inline in index.html and shares
+   these class names so first paint and the React render stay in sync. */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: var(--bg0);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.loading-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.15rem;
+  text-align: center;
+}
+
+.loading-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 6px;
+  width: 54px;
+  height: 54px;
+}
+
+.loading-cell {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  opacity: 0.25;
+  transform: scale(0.7);
+  animation: loading-wave 1.6s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+}
+
+/* Diagonal wave: delay grows with (row + col) of the 3x3 grid. */
+.loading-cell:nth-child(1) { animation-delay: 0s; }
+.loading-cell:nth-child(2) { animation-delay: 0.1s; }
+.loading-cell:nth-child(3) { animation-delay: 0.2s; }
+.loading-cell:nth-child(4) { animation-delay: 0.1s; }
+.loading-cell:nth-child(5) { animation-delay: 0.2s; }
+.loading-cell:nth-child(6) { animation-delay: 0.3s; }
+.loading-cell:nth-child(7) { animation-delay: 0.2s; }
+.loading-cell:nth-child(8) { animation-delay: 0.3s; }
+.loading-cell:nth-child(9) { animation-delay: 0.4s; }
+
+@keyframes loading-wave {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.loading-eyebrow {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.loading-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-cell {
+    animation: none;
+    opacity: 0.55;
+    transform: none;
+  }
+}
+
+/* =============================================================================
+   Mobile shell (phone / ≤768px via data-mobile from JS matchMedia)
+   Desktop three-pane + keyboard UX is unchanged when data-mobile is absent/false.
+   ============================================================================= */
+
+.app[data-mobile="true"] {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --mobile-nav-h: 3.5rem;
+  --mobile-chrome: calc(var(--mobile-nav-h) + var(--safe-bottom));
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.app[data-mobile="true"] .shell {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) !important;
+  height: 100%;
+  min-height: 0;
+  padding-bottom: var(--mobile-chrome);
+  overflow: hidden;
+}
+
+.app[data-mobile="true"][data-layout="two-panel"] .sidebar,
+.app[data-mobile="true"][data-layout="fullscreen"] .sidebar,
+.app[data-mobile="true"] .sidebar {
+  display: flex !important;
+}
+
+.app[data-mobile="true"] .sidebar.panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 32;
+  width: min(19.5rem, 86vw);
+  max-width: 100%;
+  padding:
+    calc(0.65rem + var(--safe-top))
+    0.75rem
+    calc(0.75rem + var(--mobile-chrome))
+    calc(0.75rem + var(--safe-left));
+  border-right: 1px solid var(--line-strong);
+  background: var(--bg1);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, 0.35);
+  transform: translate3d(-105%, 0, 0);
+  transition: transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  overflow: hidden;
+}
+
+.app[data-mobile="true"][data-mobile-nav="open"] .sidebar.panel {
+  transform: translate3d(0, 0, 0);
+}
+
+.app[data-mobile="true"] .sidebar-collapse-toggle {
+  display: none;
+}
+
+.app[data-mobile="true"] .sidebar-header {
+  min-height: 0;
+  padding: 0 0 0.65rem;
+  margin: 0;
+}
+
+.app[data-mobile="true"] .sidebar-header::after {
+  content: "GalMail";
+  display: block;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.app[data-mobile="true"] .sidebar .nav-item {
+  min-height: 44px;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0 0.7rem;
+  gap: 0.55rem;
+}
+
+.app[data-mobile="true"] .sidebar .nav-item.ui-button-reveal {
+  width: 100%;
+  min-width: 0;
+}
+
+.app[data-mobile="true"] .sidebar .nav-item.ui-button-reveal > .ui-button-copy {
+  position: static;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app[data-mobile="true"] .sidebar .nav-item .kbd {
+  display: none;
+}
+
+.app[data-mobile="true"] .mobile-nav-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: color-mix(in srgb, var(--bg0) 72%, transparent);
+  cursor: pointer;
+}
+
+.app[data-mobile="true"][data-mobile-surface="list"] .reading-pane,
+.app[data-mobile="true"][data-mobile-surface="thread"] .thread-list,
+.app[data-mobile="true"][data-mobile-surface="calendar"] .thread-list,
+.app[data-mobile="true"][data-mobile-surface="calendar"] .reading-pane {
+  display: none;
+}
+
+.app[data-mobile="true"] .thread-list.panel,
+.app[data-mobile="true"] .reading-pane.panel {
+  border-right: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.app[data-mobile="true"] .thread-list.panel {
+  display: flex;
+  flex-direction: column;
+  padding:
+    calc(0.45rem + var(--safe-top))
+    calc(0.45rem + var(--safe-right))
+    0.35rem
+    calc(0.2rem + var(--safe-left));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.app[data-mobile="true"][data-mobile-surface="thread"] .thread-list.panel {
+  display: none;
+}
+
+.app[data-mobile="true"] .thread-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0 0 0.35rem;
+  padding: 0.15rem 0.45rem 0.55rem;
+  background: color-mix(in srgb, var(--bg0) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.app[data-mobile="true"] .mobile-list-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0 0.15rem;
+}
+
+.app[data-mobile="true"] .mobile-list-title strong {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.app[data-mobile="true"] .mobile-list-title span {
+  color: var(--muted);
+  font: 0.75rem var(--mono);
+}
+
+.app[data-mobile="true"] .thread-search {
+  min-height: 44px;
+}
+
+.app[data-mobile="true"] .thread-search .field-input {
+  min-height: 44px;
+  font-size: 1rem;
+}
+
+.app[data-mobile="true"] .thread {
+  min-height: 72px;
+  padding: 0.7rem 0.55rem 0.7rem 0.45rem;
+}
+
+.app[data-mobile="true"] .thread-from {
+  font-size: 0.95rem;
+}
+
+.app[data-mobile="true"] .thread-subject {
+  font-size: 0.9rem;
+}
+
+.app[data-mobile="true"] .thread-snippet {
+  font-size: 0.82rem;
+}
+
+.app[data-mobile="true"] .reading-pane {
+  padding:
+    calc(0.45rem + var(--safe-top))
+    calc(0.65rem + var(--safe-right))
+    0.5rem
+    calc(0.65rem + var(--safe-left));
+  overflow: hidden;
+}
+
+.app[data-mobile="true"] .reading-pane .conversation {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app[data-mobile="true"] .mobile-back-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.app[data-mobile="true"] .mobile-back-row .ui-button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.app[data-mobile="true"] .reading-toolbar {
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.35rem;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.app[data-mobile="true"] .reading-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.app[data-mobile="true"] .reading-toolbar .ui-button,
+.app[data-mobile="true"] .reading-toolbar .ui-button-reveal {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.6rem;
+  gap: 0.3rem;
+}
+
+.app[data-mobile="true"] .reading-toolbar .ui-button-reveal > .ui-button-copy {
+  position: static;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app[data-mobile="true"] .reading-toolbar .kbd {
+  display: none;
+}
+
+.app[data-mobile="true"] .reading-toolbar .ui-button-label {
+  font-size: 0.72rem;
+}
+
+.app[data-mobile="true"] .reading h1 {
+  font-size: 1.2rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.app[data-mobile="true"] .reading-empty .meta-hint {
+  display: none;
+}
+
+.app[data-mobile="true"] .calendar-view {
+  grid-column: 1 / -1;
+  border: 0;
+  border-radius: 0;
+  padding:
+    calc(0.65rem + var(--safe-top))
+    calc(0.75rem + var(--safe-right))
+    0.75rem
+    calc(0.75rem + var(--safe-left));
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.app[data-mobile="true"] .status-bar {
+  display: none;
+}
+
+.app[data-mobile="true"] .mobile-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 28;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch;
+  min-height: var(--mobile-nav-h);
+  padding:
+    0.2rem
+    calc(0.25rem + var(--safe-right))
+    calc(0.2rem + var(--safe-bottom))
+    calc(0.25rem + var(--safe-left));
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg1) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.app[data-mobile="true"] .mobile-bottom-nav button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 44px;
+  margin: 0;
+  padding: 0.2rem 0.15rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.app[data-mobile="true"] .mobile-bottom-nav button svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.app[data-mobile="true"] .mobile-bottom-nav button[aria-current="page"],
+.app[data-mobile="true"] .mobile-bottom-nav button.is-active {
+  color: var(--accent);
+}
+
+.app[data-mobile="true"] .mobile-bottom-nav .mobile-nav-compose {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.app[data-mobile="true"] .mobile-bottom-nav .mobile-nav-compose:hover,
+.app[data-mobile="true"] .mobile-bottom-nav .mobile-nav-compose:focus-visible {
+  background: var(--accent-hover);
+  color: var(--accent-ink);
+}
+
+.app[data-mobile="true"] .mobile-nav-badge {
+  position: relative;
+}
+
+.app[data-mobile="true"] .mobile-nav-badge[data-count]::after {
+  content: attr(data-count);
+  position: absolute;
+  top: -0.2rem;
+  right: calc(50% - 1.1rem);
+  min-width: 1rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 0.58rem/1.15 var(--mono);
+  text-align: center;
+}
+
+.app[data-mobile="true"] .compose,
+.app[data-mobile="true"] .modal {
+  padding: 0;
+  place-items: stretch;
+  align-items: stretch;
+  background: var(--bg0);
+}
+
+.app[data-mobile="true"] .compose-card,
+.app[data-mobile="true"] .modal-card,
+.app[data-mobile="true"] .settings-card {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app[data-mobile="true"] .compose-card {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.app[data-mobile="true"] .settings-modal {
+  padding: 0;
+  align-items: stretch;
+}
+
+.app[data-mobile="true"] .settings-card {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.app[data-mobile="true"] .settings-body {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app[data-mobile="true"] .cmdk-overlay {
+  background: var(--bg0);
+}
+
+.app[data-mobile="true"] .cmdk-content {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-height: min(88dvh, 100%);
+  transform: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding-bottom: var(--safe-bottom);
+}
+
+.app[data-mobile="true"] .cmdk-content [cmdk-input],
+.app[data-mobile="true"] .cmdk-content .field-input {
+  min-height: 48px;
+  font-size: 1rem;
+}
+
+.app[data-mobile="true"] .cmdk-content [cmdk-item] {
+  min-height: 48px;
+  font-size: 0.95rem;
+}
+
+.app[data-mobile="true"] .cmdk-content [cmdk-item] .kbd {
+  display: none;
+}
+
+.app[data-mobile="true"] .draft-float {
+  max-width: calc(100vw - 1rem - var(--safe-left) - var(--safe-right));
+}
+
+.app[data-mobile="true"] .galmail-toaster[data-sonner-toaster] {
+  bottom: calc(var(--mobile-chrome) + 0.5rem) !important;
+}
+
+.app[data-mobile="true"]:has(> .sign-in) {
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app[data-mobile="true"] .sign-in {
+  min-height: 100dvh;
+  padding:
+    calc(1.25rem + var(--safe-top))
+    calc(1.1rem + var(--safe-right))
+    calc(1.25rem + var(--safe-bottom))
+    calc(1.1rem + var(--safe-left));
+  align-content: center;
+}
+
+.app[data-mobile="true"] .sign-in-card {
+  width: 100%;
+  max-width: 28rem;
+}
+
+.app[data-mobile="true"] .sign-in-actions > .ui-button {
+  flex: 1 1 100%;
+  min-height: 48px;
+}
+
+.app[data-mobile="true"] .loading-screen {
+  padding:
+    calc(2rem + var(--safe-top))
+    calc(2rem + var(--safe-right))
+    calc(2rem + var(--safe-bottom))
+    calc(2rem + var(--safe-left));
+}
+
+/* Kill sticky hover flyouts on touch; keep focus-visible for keyboard a11y. */
+.app[data-mobile="true"] .ui-button-reveal:hover > .ui-button-copy {
+  opacity: 0;
+  transform: translate3d(-50%, 6px, 0);
+  pointer-events: none;
+}
+
+.app[data-mobile="true"] .sidebar .nav-item.ui-button-reveal:hover > .ui-button-copy,
+.app[data-mobile="true"] .reading-toolbar .ui-button-reveal:hover > .ui-button-copy {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app[data-mobile="true"] .sidebar.panel {
+    transition: none;
   }
 }

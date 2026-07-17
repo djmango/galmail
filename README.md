@@ -64,7 +64,7 @@ bun run build
 bun test
 bun run rust:test
 
-# Web UI (fixture Gmail mailbox — no OAuth registration required)
+# Web UI (live mode — SignInScreen until you connect or choose demo mailbox)
 bun run dev
 # Ctrl+C exit 130 is normal. Rare OSC junk in the prompt: run `reset`.
 
@@ -85,26 +85,36 @@ the resulting lockfile.
 
 ### Local secrets (sops, no `.env`)
 
-Dev config lives in `secrets/dev.json` (SSH-age encrypted). Never create a
+Dev config lives in `secrets/dev.yaml` (SSH-age encrypted). Never create a
 `.env`. `bun run dev` / `bun run tauri:dev` load secrets via
-`sops exec-env`.
+`scripts/with-sops.ts` (not a committed `.env`).
 
 ```bash
 # first time: encrypt from the example, then import Google Desktop client JSON
-cp secrets/dev.example.json secrets/dev.json
-sops -e -i secrets/dev.json
+cp secrets/dev.example.yaml secrets/dev.yaml
+sops -e -i secrets/dev.yaml
 bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_*.json
 
 # edit later
-bun run secrets:edit   # opens sops secrets/dev.json
+bun run secrets:edit   # opens sops secrets/dev.yaml (or legacy .json)
 
-# fixture UI without decrypting secrets
+# demo/fixture UI without decrypting secrets (or use Browse demo mailbox in dev)
 bun run dev:fixture
 ```
 
+If you still have a local `secrets/dev.json`, migrate once (keeps values):
+
+```bash
+bun run secrets:migrate-yaml
+# verify, then: rm secrets/dev.json
+```
+
+`with-sops` still reads legacy `secrets/dev.json` until YAML exists, and prints
+a deprecation warning.
+
 `VITE_GOOGLE_DESKTOP_CLIENT_ID` is the public client ID (safe for the webview).
 `GOOGLE_DESKTOP_OAUTH_JSON` (in `secrets/google-desktop-oauth.json` or
-`secrets/dev.json`) holds the Desktop client download, including Google’s
+`secrets/dev.yaml`) holds the Desktop client download, including Google’s
 desktop `client_secret`. Google still requires that secret on the token
 endpoint even with PKCE; only the native Tauri process reads it from sops.
 

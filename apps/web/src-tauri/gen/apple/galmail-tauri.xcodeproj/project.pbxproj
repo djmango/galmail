@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		08AB2FFDE13A24807790D8F6 /* GalMailNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CCF302CF907B2A8026E91509 /* GalMailNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0F937F862886C18607AE238D /* AuthenticationServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2E8CD98FB71048296BDA4FC0 /* AuthenticationServices.framework */; };
 		0FD2778FD38CADD64396A5B7 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9A1DB5127267A72A2FB39AD /* WebKit.framework */; };
 		15A5C6422FF06358E4F9CAEA /* GalMailApplePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBBBC73907BC909920E778A0 /* GalMailApplePlugin.swift */; };
 		17B92FE3202FD6690AB4823B /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E77526E2C03744A2E9FFF3B /* NotificationService.swift */; };
@@ -15,7 +16,6 @@
 		2ED34D226FAFE941AC77D4A7 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 96365DCBFCCA526D137B61D4 /* LaunchScreen.storyboard */; };
 		2FD290887638625674F2C938 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B544BB3E580A8184B13D9F27 /* libapp.a */; };
 		3552DCD744CA9D834E318349 /* NotificationBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0D2434676E3D92D5F8B25D0 /* NotificationBridge.swift */; };
-		3B3BDF0B05B4A6F767C68DE5 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = 27760AF9E0A8385CA2FC0EF7 /* libapp.a */; };
 		4134FBF922AA7A76367744BD /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 13DA12D8AF370D20BC685086 /* assets */; };
 		751C593DB5EF6069C1F2CD77 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5D9C4179495F4FB057646FC8 /* UIKit.framework */; };
 		75B688A240C0B0C546716DA0 /* GalMailShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5302AFD83CA1509A85AF03A4 /* GalMailShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -25,6 +25,7 @@
 		8A3DCB332F07DC0858818FD4 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DDE4E7714450F24DB2510596 /* Metal.framework */; };
 		976103E11E0EE496407E9C51 /* BlindNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F5CCA32CB9B2839A47B7B24 /* BlindNotificationTests.swift */; };
 		9828DA413C484E5478FA3790 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E305A1350A1FE75385F37333 /* ShareViewController.swift */; };
+		C42910016AFC907DDD2F9AB0 /* GalMailOAuthPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF43D5DDF6C71CA2021EB40D /* GalMailOAuthPresenter.swift */; };
 		D1973B94CF24B06CCF3A8D91 /* BlindNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8749B16C02FBF816B3D56A28 /* BlindNotification.swift */; };
 		D9AEE403E2E0376D2BAEBC71 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A7A7E38E3163AC72AADF796E /* Security.framework */; };
 		DB0D60D3861348DF65C110DB /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D246BB9546741E2BAE682A32 /* QuartzCore.framework */; };
@@ -70,8 +71,8 @@
 		1974488DE63CF2DC35F96849 /* secure_storage.rs */ = {isa = PBXFileReference; path = secure_storage.rs; sourceTree = "<group>"; };
 		1D11EDD77809EA504DCC453D /* gmail_oauth.rs */ = {isa = PBXFileReference; path = gmail_oauth.rs; sourceTree = "<group>"; };
 		20157DB38844335A13ECA793 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
-		27760AF9E0A8385CA2FC0EF7 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		284FE41070C9293F39109963 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		2E8CD98FB71048296BDA4FC0 /* AuthenticationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AuthenticationServices.framework; path = System/Library/Frameworks/AuthenticationServices.framework; sourceTree = SDKROOT; };
 		3F70E622D4C72D12B3DA10F4 /* microsoft_oauth.rs */ = {isa = PBXFileReference; path = microsoft_oauth.rs; sourceTree = "<group>"; };
 		40EE10072B7A486EE77A6F13 /* galmail-tauri_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "galmail-tauri_iOS.entitlements"; sourceTree = "<group>"; };
 		4E77526E2C03744A2E9FFF3B /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -81,6 +82,7 @@
 		69EC8B01986A67CD2F9272D8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		71119A0F3CC472BF1CAF4608 /* GalMailAppleTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GalMailAppleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7F5CCA32CB9B2839A47B7B24 /* BlindNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlindNotificationTests.swift; sourceTree = "<group>"; };
+		82FC86DC8AEE87BE572CACCE /* ios_oauth.rs */ = {isa = PBXFileReference; path = ios_oauth.rs; sourceTree = "<group>"; };
 		8749B16C02FBF816B3D56A28 /* BlindNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlindNotification.swift; sourceTree = "<group>"; };
 		89A26656A295000BF6639CB6 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		8F5FD934AB4D61F2B8FE1F98 /* release_support.rs */ = {isa = PBXFileReference; path = release_support.rs; sourceTree = "<group>"; };
@@ -91,6 +93,7 @@
 		AD14F17AA84684733F745A67 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		B0D2434676E3D92D5F8B25D0 /* NotificationBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationBridge.swift; sourceTree = "<group>"; };
 		B544BB3E580A8184B13D9F27 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		BF43D5DDF6C71CA2021EB40D /* GalMailOAuthPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalMailOAuthPresenter.swift; sourceTree = "<group>"; };
 		C9A1DB5127267A72A2FB39AD /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		CCF302CF907B2A8026E91509 /* GalMailNotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = GalMailNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D246BB9546741E2BAE682A32 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
@@ -111,6 +114,7 @@
 				8A3DCB332F07DC0858818FD4 /* Metal.framework in Frameworks */,
 				7CA00AC01B23B92D7549E1CB /* MetalKit.framework in Frameworks */,
 				DB0D60D3861348DF65C110DB /* QuartzCore.framework in Frameworks */,
+				0F937F862886C18607AE238D /* AuthenticationServices.framework in Frameworks */,
 				D9AEE403E2E0376D2BAEBC71 /* Security.framework in Frameworks */,
 				751C593DB5EF6069C1F2CD77 /* UIKit.framework in Frameworks */,
 				0FD2778FD38CADD64396A5B7 /* WebKit.framework in Frameworks */,
@@ -120,14 +124,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0C5782CD8BEFA38C3655B85D /* debug */ = {
-			isa = PBXGroup;
-			children = (
-				27760AF9E0A8385CA2FC0EF7 /* libapp.a */,
-			);
-			path = debug;
-			sourceTree = "<group>";
-		};
 		1CBF7555CBEE0E567242DDA6 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -158,6 +154,7 @@
 			isa = PBXGroup;
 			children = (
 				1D11EDD77809EA504DCC453D /* gmail_oauth.rs */,
+				82FC86DC8AEE87BE572CACCE /* ios_oauth.rs */,
 				F9BA79180B1155C6A53BF8F7 /* lib.rs */,
 				284FE41070C9293F39109963 /* main.rs */,
 				3F70E622D4C72D12B3DA10F4 /* microsoft_oauth.rs */,
@@ -170,14 +167,6 @@
 			path = ../../src;
 			sourceTree = "<group>";
 		};
-		38C8C7FA1271AD6DEB253628 /* arm64 */ = {
-			isa = PBXGroup;
-			children = (
-				0C5782CD8BEFA38C3655B85D /* debug */,
-			);
-			path = arm64;
-			sourceTree = "<group>";
-		};
 		43E724C013434D4E90301AFA /* galmail-tauri */ = {
 			isa = PBXGroup;
 			children = (
@@ -187,18 +176,11 @@
 			path = "galmail-tauri";
 			sourceTree = "<group>";
 		};
-		59012BD2BC3C8E31DCCE94DC /* Externals */ = {
-			isa = PBXGroup;
-			children = (
-				38C8C7FA1271AD6DEB253628 /* arm64 */,
-			);
-			path = Externals;
-			sourceTree = "<group>";
-		};
 		8380F2B4768C6AC461B674C5 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
 				DBBBC73907BC909920E778A0 /* GalMailApplePlugin.swift */,
+				BF43D5DDF6C71CA2021EB40D /* GalMailOAuthPresenter.swift */,
 				B0D2434676E3D92D5F8B25D0 /* NotificationBridge.swift */,
 			);
 			name = Sources;
@@ -245,6 +227,7 @@
 		CE9FFF7EC167F14C9455326F /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				2E8CD98FB71048296BDA4FC0 /* AuthenticationServices.framework */,
 				89A26656A295000BF6639CB6 /* CoreGraphics.framework */,
 				B544BB3E580A8184B13D9F27 /* libapp.a */,
 				DDE4E7714450F24DB2510596 /* Metal.framework */,
@@ -263,7 +246,6 @@
 				13DA12D8AF370D20BC685086 /* assets */,
 				5D495F6B494A622A446D4569 /* Assets.xcassets */,
 				96365DCBFCCA526D137B61D4 /* LaunchScreen.storyboard */,
-				59012BD2BC3C8E31DCCE94DC /* Externals */,
 				F375DDBE11F489725A5F84A1 /* galmail-tauri_iOS */,
 				C3C0CA9752FFC5C0100950AC /* NotificationService */,
 				1CBF7555CBEE0E567242DDA6 /* Shared */,
@@ -284,13 +266,6 @@
 				69EC8B01986A67CD2F9272D8 /* Info.plist */,
 			);
 			path = "galmail-tauri_iOS";
-			sourceTree = "<group>";
-		};
-		"TEMP_825B9974-4B47-4EAB-A897-78143DA1CE89" /* x86_64 */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = x86_64;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -351,6 +326,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 32E7B6BBBFBEA2EB846115F4 /* Build configuration list for PBXNativeTarget "galmail-tauri_iOS" */;
 			buildPhases = (
+				51A42836534F155B38FA6DC2 /* Sync Web Assets */,
 				EB8DB10D2D33BCEEE73598A9 /* Build Rust Code */,
 				E73ECFE53731A13DE4253ABD /* Sources */,
 				EE84E81C494F2B7E7F23379B /* Resources */,
@@ -423,13 +399,31 @@
 				8838B9AFF0DF595FEF9A2A31 /* Assets.xcassets in Resources */,
 				2ED34D226FAFE941AC77D4A7 /* LaunchScreen.storyboard in Resources */,
 				4134FBF922AA7A76367744BD /* assets in Resources */,
-				3B3BDF0B05B4A6F767C68DE5 /* libapp.a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		51A42836534F155B38FA6DC2 /* Sync Web Assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Web Assets";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "bun run --cwd ../../.. ../../scripts/sync-ios-web-assets.ts";
+		};
 		EB8DB10D2D33BCEEE73598A9 /* Build Rust Code */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -449,7 +443,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "bun run --cwd ../../.. tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} 0 ${ARCHS:?}";
+			shellScript = "bun run --cwd ../../.. tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} arm64";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -486,6 +480,7 @@
 			files = (
 				D1973B94CF24B06CCF3A8D91 /* BlindNotification.swift in Sources */,
 				15A5C6422FF06358E4F9CAEA /* GalMailApplePlugin.swift in Sources */,
+				C42910016AFC907DDD2F9AB0 /* GalMailOAuthPresenter.swift in Sources */,
 				3552DCD744CA9D834E318349 /* NotificationBridge.swift in Sources */,
 				27AAE0CAD79D2966BC498A71 /* main.mm in Sources */,
 			);

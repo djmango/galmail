@@ -1,7 +1,9 @@
 #![cfg_attr(test, allow(dead_code))]
 
 mod gmail_oauth;
+mod ios_oauth;
 mod microsoft_oauth;
+#[cfg(not(target_os = "ios"))]
 mod oauth_callback_page;
 mod release_support;
 mod secure_storage;
@@ -13,7 +15,7 @@ use microsoft_oauth::{
     GraphApiResponse, MicrosoftBeginOAuth, MicrosoftConnectedAccount, MicrosoftOAuthState,
 };
 use release_support::{classify_startup_error, release_channel, RecoveryStatus, ReleaseSupport};
-use secure_storage::{open_or_create, MacOsKeychain};
+use secure_storage::{open_or_create, MacOsKeychain, SecureTokenStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
@@ -25,6 +27,7 @@ struct AppState {
     database: Option<EncryptedDatabase>,
     gmail_oauth: GmailOAuthState,
     microsoft_oauth: MicrosoftOAuthState,
+    token_store: Arc<dyn SecureTokenStore>,
     release_support: ReleaseSupport,
     safe_mode: bool,
     startup_issue: Option<&'static str>,
@@ -436,6 +439,14 @@ fn microsoft_remove_account(
     })
 }
 
+/// Account IDs present in the OAuth Keychain service (migrates legacy service).
+/// Never returns token material — only accountId strings.
+#[tauri::command]
+fn list_oauth_account_ids(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    state.require_normal_mode()?;
+    state.token_store.list_account_ids()
+}
+
 #[tauri::command]
 fn delete_account(state: State<'_, AppState>, account_id: String) -> Result<u64, String> {
     state
@@ -645,15 +656,80 @@ fn initialize_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
             Err(error) => (None, Some(classify_startup_error(&error))),
         }
     };
-    let token_store = Arc::new(MacOsKeychain);
+    let token_store: Arc<dyn SecureTokenStore> = Arc::new(MacOsKeychain);
     app.manage(AppState {
         database,
         gmail_oauth: GmailOAuthState::new(token_store.clone()),
-        microsoft_oauth: MicrosoftOAuthState::new(token_store),
+        microsoft_oauth: MicrosoftOAuthState::new(token_store.clone()),
+        token_store,
         release_support,
         safe_mode: safe_mode || startup_issue.is_some(),
         startup_issue,
     });
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Emitter;
+        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        // Default Tauri menu has no Settings item, so ⌘, never reaches the webview.
+        // Install a Settings… item with CmdOrCtrl+, and emit into the UI.
+        let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+        let app_submenu = Submenu::with_items(
+            app,
+            "GalMail",
+            true,
+            &[
+                &PredefinedMenuItem::about(app, None, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &settings,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::services(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::hide(app, None)?,
+                &PredefinedMenuItem::hide_others(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::quit(app, None)?,
+            ],
+        )?;
+        let menu = Menu::with_items(
+            app,
+            &[
+                &app_submenu,
+                &Submenu::with_items(
+                    app,
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(app, None)?,
+                        &PredefinedMenuItem::redo(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::cut(app, None)?,
+                        &PredefinedMenuItem::copy(app, None)?,
+                        &PredefinedMenuItem::paste(app, None)?,
+                        &PredefinedMenuItem::select_all(app, None)?,
+                    ],
+                )?,
+                &Submenu::with_items(
+                    app,
+                    "Window",
+                    true,
+                    &[
+                        &PredefinedMenuItem::minimize(app, None)?,
+                        &PredefinedMenuItem::maximize(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::close_window(app, None)?,
+                    ],
+                )?,
+            ],
+        )?;
+        app.set_menu(menu)?;
+        app.on_menu_event(|handle, event| {
+            if event.id() == "settings" {
+                let _ = handle.emit("galmail://open-settings", ());
+            }
+        });
+    }
+
     Ok(())
 }
 
@@ -687,6 +763,7 @@ pub fn run() {
             microsoft_oauth_complete,
             microsoft_graph_request,
             microsoft_remove_account,
+            list_oauth_account_ids,
             recovery_status,
             request_safe_mode,
             exit_safe_mode,

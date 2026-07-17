@@ -11,7 +11,8 @@
     "test": "bun test src",
     "e2e": "playwright test",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "ios:sync-web-assets": "bun ../../scripts/sync-ios-web-assets.ts"
   },
   "dependencies": {
     "@galmail/browser-adapters": "workspace:*",

@@ -42,6 +42,8 @@ test-results/
 # Plaintext secret material — encrypted sops files are committed intentionally
 secrets/**/*.plain.tmp
 secrets/**/*.plain.json
+secrets/**/*.plain.yaml
+secrets/**/*.plain.yml
 secrets/**/client_secret*.json
 secrets/**/*.key
 
@@ -87,3 +89,6 @@ apps/web/src-tauri/gen/apple/assets/
 *.xcuserstate
 *.xccheckout
 *.xcscmblueprint
+
+# Local Apple/APNs keys (never commit)
+private_keys/

@@ -17,6 +17,9 @@ describe("platform expansion repository gates", () => {
     ]);
     expect(project).toContain("GalMailNotificationService");
     expect(project).toContain("GalMailShareExtension");
+    expect(project).toContain("sync-ios-web-assets.ts");
+    expect(project).toContain("msauth.com.galateacorp.mail");
+    expect(project).toContain("galmail");
     expect(project).toContain("schemes:\n  GalMailAppleTests:");
     expect(project).toContain("GalMailAppleTests: [test]");
     expect(project).toContain('DEVELOPMENT_TEAM: ""');
@@ -44,11 +47,11 @@ describe("platform expansion repository gates", () => {
 
   it("does not introduce provider or Apple credentials", async () => {
     const [environment, config, project] = await Promise.all([
-      file("secrets/dev.example.json"),
+      file("secrets/dev.example.yaml"),
       file("apps/web/src-tauri/tauri.conf.json"),
       file("apps/web/src-tauri/gen/apple/project.yml"),
     ]);
-    expect(environment).toMatch(/"VITE_MICROSOFT_CLIENT_ID":\s*""/);
+    expect(environment).toMatch(/VITE_MICROSOFT_CLIENT_ID:\s*""/);
     expect(config).toContain('"developmentTeam": ""');
     expect(project).not.toMatch(/DEVELOPMENT_TEAM: [A-Z0-9]{10}/);
   });

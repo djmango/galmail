@@ -7,7 +7,7 @@ import {
   type CalendarEvent,
   type CalendarEventWrite,
 } from "@galmail/providers";
-import { googleDesktopClientId } from "./gmail-connect";
+import { googleOAuthClientId } from "./gmail-connect";
 
 export type { CalendarEvent, CalendarEventWrite };
 
@@ -49,9 +49,9 @@ function googleCalendarHttp(accountId: string, clientId: string) {
 }
 
 function requireClientId(): string {
-  const clientId = googleDesktopClientId();
+  const clientId = googleOAuthClientId();
   if (!clientId) {
-    throw new Error("VITE_GOOGLE_DESKTOP_CLIENT_ID is not configured in sops");
+    throw new Error("Google OAuth client ID is not configured in sops");
   }
   return clientId;
 }

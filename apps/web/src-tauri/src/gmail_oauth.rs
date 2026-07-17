@@ -1,3 +1,6 @@
+#[cfg(target_os = "ios")]
+use crate::ios_oauth;
+#[cfg(not(target_os = "ios"))]
 use crate::oauth_callback_page::{self, accept_oauth_callback, PageKind};
 use crate::secure_storage::SecureTokenStore;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -5,11 +8,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::{io::AsyncWriteExt, net::TcpListener, sync::Mutex};
+#[cfg(not(target_os = "ios"))]
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
+#[cfg(not(target_os = "ios"))]
+use tokio::{io::AsyncWriteExt, net::TcpListener};
+use tokio::sync::Mutex;
+#[cfg(target_os = "ios")]
+use tokio::sync::oneshot;
 use url::Url;
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -66,8 +74,11 @@ struct PendingAttempt {
     verifier: String,
     state: String,
     redirect_uri: String,
-    listener: StdTcpListener,
     created_at: Instant,
+    #[cfg(not(target_os = "ios"))]
+    listener: StdTcpListener,
+    #[cfg(target_os = "ios")]
+    ios_callback: oneshot::Receiver<Result<String, String>>,
 }
 
 pub struct GmailOAuthState {
@@ -87,53 +98,77 @@ impl GmailOAuthState {
 
     pub async fn begin(&self, client_id: String) -> Result<BeginOAuth, String> {
         if client_id.trim().is_empty() || client_id.len() > 512 {
-            return Err("a Google desktop client ID is required".into());
+            return Err("a Google OAuth client ID is required".into());
         }
-        let listener = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-            .map_err(|_| "cannot bind the OAuth callback listener".to_string())?;
-        listener
-            .set_nonblocking(true)
-            .map_err(|_| "cannot configure the OAuth callback listener".to_string())?;
-        let port = listener
-            .local_addr()
-            .map_err(|_| "cannot inspect the OAuth callback listener".to_string())?
-            .port();
-        let redirect_uri = format!("http://127.0.0.1:{port}/oauth/callback");
         let verifier = random_base64url()?;
         let state = random_base64url()?;
         let attempt_id = random_base64url()?;
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        let mut url = Url::parse(AUTH_ENDPOINT).map_err(|_| "invalid OAuth endpoint")?;
-        url.query_pairs_mut()
-            .append_pair("client_id", &client_id)
-            .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("response_type", "code")
-            .append_pair(
-                "scope",
-                "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar",
-            )
-            .append_pair("access_type", "offline")
-            .append_pair("prompt", "consent")
-            .append_pair("code_challenge", &challenge)
-            .append_pair("code_challenge_method", "S256")
-            .append_pair("state", &state);
-        self.pending.lock().await.insert(
-            attempt_id.clone(),
-            PendingAttempt {
-                client_id,
-                verifier,
-                state,
-                redirect_uri,
-                listener,
-                created_at: Instant::now(),
-            },
-        );
-        let authorization_url = url.to_string();
-        open_system_browser(&authorization_url)?;
-        Ok(BeginOAuth {
-            attempt_id,
-            authorization_url,
-        })
+
+        #[cfg(target_os = "ios")]
+        {
+            let redirect_uri = ios_oauth::google_redirect_uri(&client_id)?;
+            let callback_scheme = ios_oauth::google_callback_scheme(&client_id)?;
+            let authorization_url =
+                build_google_auth_url(&client_id, &redirect_uri, &challenge, &state)?;
+            let ios_callback = ios_oauth::register_waiter(attempt_id.clone());
+            // Store pending before presenting so complete() can await the callback.
+            self.pending.lock().await.insert(
+                attempt_id.clone(),
+                PendingAttempt {
+                    client_id,
+                    verifier,
+                    state,
+                    redirect_uri,
+                    created_at: Instant::now(),
+                    ios_callback,
+                },
+            );
+            if let Err(error) =
+                ios_oauth::present(&authorization_url, &callback_scheme, &attempt_id)
+            {
+                self.pending.lock().await.remove(&attempt_id);
+                return Err(error);
+            }
+            return Ok(BeginOAuth {
+                attempt_id,
+                authorization_url,
+            });
+        }
+
+        #[cfg(not(target_os = "ios"))]
+        {
+            let listener = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+                .map_err(|_| "cannot bind the OAuth callback listener".to_string())?;
+            listener
+                .set_nonblocking(true)
+                .map_err(|_| "cannot configure the OAuth callback listener".to_string())?;
+            let port = listener
+                .local_addr()
+                .map_err(|_| "cannot inspect the OAuth callback listener".to_string())?
+                .port();
+            let redirect_uri = format!("http://127.0.0.1:{port}/oauth/callback");
+            let authorization_url =
+                build_google_auth_url(&client_id, &redirect_uri, &challenge, &state)?;
+            // Store pending before opening the browser so complete() can listen even
+            // when SSO redirects immediately.
+            self.pending.lock().await.insert(
+                attempt_id.clone(),
+                PendingAttempt {
+                    client_id,
+                    verifier,
+                    state,
+                    redirect_uri,
+                    created_at: Instant::now(),
+                    listener,
+                },
+            );
+            open_system_browser(&authorization_url)?;
+            Ok(BeginOAuth {
+                attempt_id,
+                authorization_url,
+            })
+        }
     }
 
     pub async fn complete(&self, attempt_id: &str) -> Result<ConnectedAccount, String> {
@@ -146,44 +181,134 @@ impl GmailOAuthState {
         if pending.created_at.elapsed() > ATTEMPT_TTL {
             return Err("OAuth attempt expired".into());
         }
-        let listener = TcpListener::from_std(pending.listener)
-            .map_err(|_| "cannot activate the OAuth callback listener".to_string())?;
-        let (mut stream, query) =
-            accept_oauth_callback(&listener, "/oauth/callback", ATTEMPT_TTL).await?;
 
-        async fn reply(
-            stream: &mut tokio::net::TcpStream,
-            status: &str,
-            kind: PageKind,
-            detail: Option<&str>,
-        ) {
-            let response = oauth_callback_page::http_response(status, kind, detail);
-            let _ = stream.write_all(response.as_bytes()).await;
+        #[cfg(target_os = "ios")]
+        {
+            let callback_url =
+                ios_oauth::await_callback(pending.ios_callback, ATTEMPT_TTL).await?;
+            let query = ios_oauth::parse_callback_query(&callback_url)?;
+            if query.get("state").map(String::as_str) != Some(pending.state.as_str()) {
+                return Err("OAuth callback state validation failed".into());
+            }
+            // Prefer a code when present — empty `error=` must not look like cancel.
+            let code = query
+                .get("code")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            if let Some(code) = code {
+                return self
+                    .finish_authorization(
+                        &pending.client_id,
+                        &pending.redirect_uri,
+                        &pending.verifier,
+                        &code,
+                    )
+                    .await;
+            }
+            let error = query
+                .get("error")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("access_denied");
+            if error.eq_ignore_ascii_case("access_denied") {
+                return Err("Google sign-in was cancelled".into());
+            }
+            let description = query
+                .get("error_description")
+                .map(String::as_str)
+                .unwrap_or_default()
+                .trim();
+            if description.is_empty() {
+                return Err(format!("Google authorization failed ({error})"));
+            }
+            return Err(format!("Google authorization failed ({error}: {description})"));
         }
 
-        if query.get("state") != Some(&pending.state) {
-            let message = "OAuth callback state validation failed";
-            reply(
-                &mut stream,
-                "400 Bad Request",
-                PageKind::Failed,
-                Some(message),
+        #[cfg(not(target_os = "ios"))]
+        {
+            let listener = TcpListener::from_std(pending.listener)
+                .map_err(|_| "cannot activate the OAuth callback listener".to_string())?;
+            let (mut stream, query) = accept_oauth_callback(
+                &listener,
+                "/oauth/callback",
+                &pending.state,
+                ATTEMPT_TTL,
             )
-            .await;
-            return Err(message.into());
-        }
-        if query.contains_key("error") {
-            let message = "Google authorization was denied";
-            reply(
-                &mut stream,
-                "400 Bad Request",
-                PageKind::Denied,
-                Some(message),
-            )
-            .await;
-            return Err(message.into());
-        }
-        let Some(code) = query.get("code").cloned() else {
+            .await?;
+
+            async fn reply(
+                stream: &mut tokio::net::TcpStream,
+                status: &str,
+                kind: PageKind,
+                detail: Option<&str>,
+            ) {
+                let response = oauth_callback_page::http_response(status, kind, detail);
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+
+            // Prefer a code when present — empty `error=` must not look like cancel.
+            let code = query
+                .get("code")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let error = query
+                .get("error")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            if let Some(code) = code {
+                // Finish token exchange before answering the browser so the page matches app state.
+                return match self
+                    .finish_authorization(
+                        &pending.client_id,
+                        &pending.redirect_uri,
+                        &pending.verifier,
+                        &code,
+                    )
+                    .await
+                {
+                    Ok(connected) => {
+                        reply(&mut stream, "200 OK", PageKind::Success, None).await;
+                        Ok(connected)
+                    }
+                    Err(error) => {
+                        reply(
+                            &mut stream,
+                            "500 Internal Server Error",
+                            PageKind::Failed,
+                            Some(&error),
+                        )
+                        .await;
+                        Err(error)
+                    }
+                };
+            }
+            if let Some(error) = error {
+                let description = query
+                    .get("error_description")
+                    .map(String::as_str)
+                    .unwrap_or_default()
+                    .trim();
+                let message = if error.eq_ignore_ascii_case("access_denied") {
+                    "Google sign-in was cancelled".to_string()
+                } else if description.is_empty() {
+                    format!("Google authorization failed ({error})")
+                } else {
+                    format!("Google authorization failed ({error}: {description})")
+                };
+                let kind = if error.eq_ignore_ascii_case("access_denied") {
+                    PageKind::Denied
+                } else {
+                    PageKind::Failed
+                };
+                reply(&mut stream, "400 Bad Request", kind, Some(&message)).await;
+                return Err(message);
+            }
             let message = "OAuth callback omitted the authorization code";
             reply(
                 &mut stream,
@@ -192,33 +317,7 @@ impl GmailOAuthState {
                 Some(message),
             )
             .await;
-            return Err(message.into());
-        };
-
-        // Finish token exchange before answering the browser so the page matches app state.
-        match self
-            .finish_authorization(
-                &pending.client_id,
-                &pending.redirect_uri,
-                &pending.verifier,
-                &code,
-            )
-            .await
-        {
-            Ok(connected) => {
-                reply(&mut stream, "200 OK", PageKind::Success, None).await;
-                Ok(connected)
-            }
-            Err(error) => {
-                reply(
-                    &mut stream,
-                    "500 Internal Server Error",
-                    PageKind::Failed,
-                    Some(&error),
-                )
-                .await;
-                Err(error)
-            }
+            Err(message.into())
         }
     }
 
@@ -294,17 +393,24 @@ impl GmailOAuthState {
         verifier: &str,
         code: &str,
     ) -> Result<TokenResponse, String> {
-        // Google Desktop clients still require the Console-issued secret at the
-        // token endpoint even when PKCE is used. Keep it native-only via sops.
-        let client_secret = google_desktop_client_secret()?;
-        let body: String = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("client_id", client_id)
-            .append_pair("client_secret", &client_secret)
-            .append_pair("redirect_uri", redirect_uri)
-            .append_pair("code_verifier", verifier)
-            .append_pair("code", code)
-            .append_pair("grant_type", "authorization_code")
-            .finish();
+        // Build the body fully before any `.await` so the future stays `Send`
+        // (urlencoded Serializer is not Send).
+        let body = {
+            let mut form = url::form_urlencoded::Serializer::new(String::new());
+            form.append_pair("client_id", client_id)
+                .append_pair("redirect_uri", redirect_uri)
+                .append_pair("code_verifier", verifier)
+                .append_pair("code", code)
+                .append_pair("grant_type", "authorization_code");
+            // Desktop Google clients still require the Console-issued secret even
+            // with PKCE. iOS clients are public (no secret).
+            #[cfg(not(target_os = "ios"))]
+            {
+                let client_secret = google_desktop_client_secret()?;
+                form.append_pair("client_secret", &client_secret);
+            }
+            form.finish()
+        };
         let response = self
             .http
             .post(TOKEN_ENDPOINT)
@@ -318,7 +424,7 @@ impl GmailOAuthState {
                 .text()
                 .await
                 .unwrap_or_else(|_| "unknown token error".into());
-            return Err(format!("Google rejected the authorization code ({detail})"));
+            return Err(classify_google_token_error(&detail, redirect_uri));
         }
         response
             .json()
@@ -346,13 +452,18 @@ impl GmailOAuthState {
         client_id: &str,
         mut bundle: TokenBundle,
     ) -> Result<String, String> {
-        let client_secret = google_desktop_client_secret()?;
-        let body: String = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("client_id", client_id)
-            .append_pair("client_secret", &client_secret)
-            .append_pair("refresh_token", &bundle.refresh_token)
-            .append_pair("grant_type", "refresh_token")
-            .finish();
+        let body = {
+            let mut form = url::form_urlencoded::Serializer::new(String::new());
+            form.append_pair("client_id", client_id)
+                .append_pair("refresh_token", &bundle.refresh_token)
+                .append_pair("grant_type", "refresh_token");
+            #[cfg(not(target_os = "ios"))]
+            {
+                let client_secret = google_desktop_client_secret()?;
+                form.append_pair("client_secret", &client_secret);
+            }
+            form.finish()
+        };
         let response = self
             .http
             .post(TOKEN_ENDPOINT)
@@ -521,6 +632,7 @@ fn valid_calendar_path(path: &str) -> bool {
         && !path.contains('\\')
 }
 
+#[cfg(not(target_os = "ios"))]
 fn google_desktop_client_secret() -> Result<String, String> {
     let raw = std::env::var("GOOGLE_DESKTOP_OAUTH_JSON").map_err(|_| {
         "GOOGLE_DESKTOP_OAUTH_JSON is missing from sops. Run: bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_….json".to_string()
@@ -550,6 +662,58 @@ fn google_desktop_client_secret() -> Result<String, String> {
         })
 }
 
+/// Map Google token-endpoint errors to actionable messages (no secrets/codes).
+fn classify_google_token_error(detail: &str, redirect_uri: &str) -> String {
+    let lower = detail.to_ascii_lowercase();
+    if lower.contains("redirect_uri_mismatch") || lower.contains("redirect_uri") {
+        return format!(
+            "Google rejected the redirect_uri. For iOS use exactly `{redirect_uri}` with the iOS OAuth client (not Desktop)."
+        );
+    }
+    if lower.contains("invalid_client") {
+        return "Google rejected the OAuth client ID (use VITE_GOOGLE_IOS_CLIENT_ID on iOS)".into();
+    }
+    if lower.contains("invalid_grant") {
+        return "Google rejected the authorization code (expired or already used). Try signing in again."
+            .into();
+    }
+    if lower.contains("unauthorized_client") {
+        return "Google OAuth client is not allowed to use this grant type (check iOS vs Desktop client type)".into();
+    }
+    // Clip noisy HTML/"Something went wrong" bodies from Google.
+    let clipped: String = detail.chars().take(280).collect();
+    if lower.contains("something went wrong") || clipped.contains('<') {
+        return format!(
+            "Google rejected the authorization code (check iOS client + redirect_uri `{redirect_uri}`)"
+        );
+    }
+    format!("Google rejected the authorization code ({clipped})")
+}
+
+fn build_google_auth_url(
+    client_id: &str,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+) -> Result<String, String> {
+    let mut url = Url::parse(AUTH_ENDPOINT).map_err(|_| "invalid OAuth endpoint")?;
+    url.query_pairs_mut()
+        .append_pair("client_id", client_id)
+        .append_pair("redirect_uri", redirect_uri)
+        .append_pair("response_type", "code")
+        .append_pair(
+            "scope",
+            "openid email https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar",
+        )
+        .append_pair("access_type", "offline")
+        .append_pair("prompt", "consent")
+        .append_pair("code_challenge", challenge)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("state", state);
+    Ok(url.to_string())
+}
+
+#[cfg(not(target_os = "ios"))]
 fn open_system_browser(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -562,7 +726,7 @@ fn open_system_browser(url: &str) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = url;
-        Err("system browser handoff is only implemented on macOS".into())
+        Err("system browser handoff is only implemented on Apple platforms".into())
     }
 }
 
@@ -602,5 +766,21 @@ mod tests {
         assert!(!valid_calendar_path("/gmail/v1/users/me/messages"));
         assert!(!valid_calendar_path("https://evil.example/calendar/v3/x"));
         assert!(!valid_calendar_path("/calendar/v3/../secrets"));
+    }
+
+    #[test]
+    fn token_errors_surface_redirect_mismatch_clearly() {
+        let message = classify_google_token_error(
+            r#"{"error":"redirect_uri_mismatch"}"#,
+            "com.googleusercontent.apps.abc:/oauthredirect",
+        );
+        assert!(message.contains("redirect_uri"));
+        assert!(message.contains("oauthredirect"));
+        let generic = classify_google_token_error(
+            "<html>Something went wrong</html>",
+            "com.googleusercontent.apps.abc:/oauthredirect",
+        );
+        assert!(!generic.contains('<'), "{generic}");
+        assert!(generic.contains("iOS client"));
     }
 }

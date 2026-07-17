@@ -1,10 +1,12 @@
 # OAuth fixtures
 
-GalMail defaults to fixture provider mode so local UI work never needs live OAuth.
+Local dev defaults to live provider mode (SignInScreen on cold start). Use the
+**Browse demo mailbox** CTA, `bun run dev:fixture`, or `VITE_GALMAIL_PROVIDER_MODE=fixture`
+only for UI demos and Playwright e2e.
 
-When moving to live providers:
+When connecting live providers:
 
-1. Put config in `secrets/dev.json` via sops (never create a `.env`)
+1. Put config in `secrets/dev.yaml` via sops (never create a `.env`)
 2. Import the Google Desktop client JSON:
    `bun scripts/import-google-oauth-json.ts ~/Downloads/client_secret_*.json`
 3. Use PKCE; the app only needs `VITE_GOOGLE_DESKTOP_CLIENT_ID`

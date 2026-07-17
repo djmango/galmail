@@ -4,10 +4,16 @@ version = "0.1.0"
 description = "GalMail Tauri 2 shell (macOS / iOS)"
 authors = ["GalMail contributors"]
 edition = "2021"
+# Explicit bin name so `tauri:dev` Dock / menu bar show "GalMail" (not "galmail-tauri").
+autobins = false
 
 [lib]
 name = "galmail_tauri_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "GalMail"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -34,6 +40,8 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 security-framework = "3.7.0"
+security-framework-sys = "2"
+core-foundation = "0.10"
 
 [dev-dependencies]
 tempfile = "3.27.0"

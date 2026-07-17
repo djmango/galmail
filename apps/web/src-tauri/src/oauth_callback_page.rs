@@ -18,11 +18,16 @@ pub enum PageKind {
     Failed,
 }
 
-/// Accept loopback connections until the OAuth redirect hits `expected_path`.
-/// Ignores favicon / probe traffic on the same port.
+/// Accept loopback connections until a real OAuth redirect arrives.
+///
+/// Ignores favicon / probe traffic and any hit that lacks a matching `state`
+/// plus either a non-empty `code` or non-empty `error`. Those probes must not
+/// consume the authorization attempt — otherwise a later success redirect is
+/// refused and the UI looks like a cancel/deny.
 pub async fn accept_oauth_callback(
     listener: &TcpListener,
     expected_path: &str,
+    expected_state: &str,
     overall_timeout: Duration,
 ) -> Result<(tokio::net::TcpStream, HashMap<String, String>), String> {
     let deadline = Instant::now() + overall_timeout;
@@ -34,12 +39,7 @@ pub async fn accept_oauth_callback(
             .await
             .map_err(|_| "OAuth callback timed out".to_string())?
             .map_err(|_| "OAuth callback failed".to_string())?;
-        let mut buffer = [0_u8; 8192];
-        let count = match timeout(Duration::from_secs(10), stream.read(&mut buffer)).await {
-            Ok(Ok(count)) => count,
-            _ => continue,
-        };
-        let Ok(request) = std::str::from_utf8(&buffer[..count]) else {
+        let Some(request) = read_http_head(&mut stream).await else {
             continue;
         };
         let Some(target) = request
@@ -49,10 +49,10 @@ pub async fn accept_oauth_callback(
         else {
             continue;
         };
-        let Ok(callback) = Url::parse(&format!("http://127.0.0.1{target}")) else {
+        let Some(callback) = parse_callback_target(target) else {
             continue;
         };
-        if callback.path() != expected_path {
+        if !path_matches(callback.path(), expected_path) {
             let _ = stream
                 .write_all(
                     b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -60,9 +60,71 @@ pub async fn accept_oauth_callback(
                 .await;
             continue;
         }
-        let query = callback.query_pairs().into_owned().collect();
+        let query: HashMap<String, String> = callback.query_pairs().into_owned().collect();
+        if !is_terminal_oauth_query(&query, expected_state) {
+            // Keep listening — browsers and IdP pages sometimes hit the loopback
+            // path without the authorization response.
+            let _ = stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+            continue;
+        }
         return Ok((stream, query));
     }
+}
+
+fn parse_callback_target(target: &str) -> Option<Url> {
+    if target.starts_with("http://") || target.starts_with("https://") {
+        Url::parse(target).ok()
+    } else {
+        Url::parse(&format!("http://127.0.0.1{target}")).ok()
+    }
+}
+
+fn path_matches(path: &str, expected: &str) -> bool {
+    if path == expected {
+        return true;
+    }
+    // `http://localhost:port` and `http://localhost:port/` both normalize to `/`.
+    expected == "/" && (path.is_empty() || path == "/")
+}
+
+fn is_terminal_oauth_query(query: &HashMap<String, String>, expected_state: &str) -> bool {
+    if query.get("state").map(String::as_str) != Some(expected_state) {
+        return false;
+    }
+    let code = query.get("code").map(String::as_str).unwrap_or("").trim();
+    let error = query.get("error").map(String::as_str).unwrap_or("").trim();
+    !code.is_empty() || !error.is_empty()
+}
+
+async fn read_http_head(stream: &mut tokio::net::TcpStream) -> Option<String> {
+    let mut buffer = Vec::with_capacity(4096);
+    let mut chunk = [0_u8; 2048];
+    let read_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if buffer.len() > 64 * 1024 {
+            return None;
+        }
+        let remaining = read_deadline.checked_duration_since(Instant::now())?;
+        let count = match timeout(remaining, stream.read(&mut chunk)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(count)) => count,
+            _ => return None,
+        };
+        buffer.extend_from_slice(&chunk[..count]);
+        if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
+            break;
+        }
+        // Request-line-only probes may omit a full header block; stop once the
+        // first line is complete and the peer paused.
+        if buffer.windows(2).any(|window| window == b"\r\n") && count < chunk.len() {
+            break;
+        }
+    }
+    std::str::from_utf8(&buffer).ok().map(str::to_owned)
 }
 
 fn escape_html(value: &str) -> String {
@@ -215,4 +277,40 @@ pub fn http_response(status: &str, kind: PageKind, detail: Option<&str>) -> Stri
         "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_oauth_query_requires_state_and_code_or_error() {
+        let state = "abc";
+        let mut query = HashMap::new();
+        assert!(!is_terminal_oauth_query(&query, state));
+        query.insert("state".into(), state.into());
+        assert!(!is_terminal_oauth_query(&query, state));
+        query.insert("error".into(), "".into());
+        assert!(!is_terminal_oauth_query(&query, state));
+        query.insert("error".into(), "access_denied".into());
+        assert!(is_terminal_oauth_query(&query, state));
+        query.clear();
+        query.insert("state".into(), state.into());
+        query.insert("code".into(), "0.AXo".into());
+        assert!(is_terminal_oauth_query(&query, state));
+        query.insert("state".into(), "other".into());
+        assert!(!is_terminal_oauth_query(&query, state));
+    }
+
+    #[test]
+    fn parse_callback_supports_origin_and_absolute_form() {
+        let relative = parse_callback_target("/oauth/callback?code=1&state=s").unwrap();
+        assert_eq!(relative.path(), "/oauth/callback");
+        assert_eq!(relative.query_pairs().next().unwrap().0, "code");
+        let absolute =
+            parse_callback_target("http://127.0.0.1:9/oauth/callback?code=1&state=s").unwrap();
+        assert_eq!(absolute.path(), "/oauth/callback");
+        assert!(path_matches("/", "/"));
+        assert!(path_matches("", "/"));
+    }
 }

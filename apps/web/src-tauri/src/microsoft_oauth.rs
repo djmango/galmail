@@ -1,3 +1,6 @@
+#[cfg(target_os = "ios")]
+use crate::ios_oauth;
+#[cfg(not(target_os = "ios"))]
 use crate::oauth_callback_page::{self, accept_oauth_callback, PageKind};
 use crate::secure_storage::SecureTokenStore;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -5,20 +8,29 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
-    net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener},
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::{io::AsyncWriteExt, net::TcpListener, sync::Mutex};
+#[cfg(not(target_os = "ios"))]
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
+#[cfg(not(target_os = "ios"))]
+use tokio::{io::AsyncWriteExt, net::TcpListener};
+use tokio::sync::Mutex;
+#[cfg(target_os = "ios")]
+use tokio::sync::oneshot;
 use url::Url;
 
 const ATTEMPT_TTL: Duration = Duration::from_secs(180);
 /// Public-client delegated scopes. Azure app registration must allow:
-/// - platform: Mobile and desktop applications
-/// - redirect URI: `http://127.0.0.1` (loopback; ephemeral port + `/oauth/microsoft/callback`)
-/// - delegated: Mail.ReadWrite, Mail.Send, Calendars.ReadWrite, offline_access, openid, profile, email
-const SCOPES: &str =
-    "openid profile email offline_access https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/Calendars.ReadWrite";
+/// - platform: Mobile and desktop applications (not SPA / not Web)
+/// - redirect URI: `http://127.0.0.1` (or exact
+///   `http://127.0.0.1/oauth/microsoft/callback`) as Mobile and desktop — not SPA
+/// - Advanced: Allow public client flows = Yes
+/// - delegated: User.Read, Mail.ReadWrite, Mail.Send, Calendars.ReadWrite,
+///   offline_access, openid, profile, email
+const SCOPES: &str = "openid profile email offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite";
+#[cfg(not(target_os = "ios"))]
+const CALLBACK_PATH: &str = "/oauth/microsoft/callback";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,8 +86,11 @@ struct PendingAttempt {
     verifier: String,
     state: String,
     redirect_uri: String,
-    listener: StdTcpListener,
     created_at: Instant,
+    #[cfg(not(target_os = "ios"))]
+    listener: StdTcpListener,
+    #[cfg(target_os = "ios")]
+    ios_callback: oneshot::Receiver<Result<String, String>>,
 }
 
 pub struct MicrosoftOAuthState {
@@ -105,50 +120,91 @@ impl MicrosoftOAuthState {
         if !valid_tenant(&tenant) {
             return Err("invalid Microsoft tenant".into());
         }
-        let listener = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-            .map_err(|_| "cannot bind the Microsoft OAuth callback listener".to_string())?;
-        listener
-            .set_nonblocking(true)
-            .map_err(|_| "cannot configure the Microsoft OAuth callback listener".to_string())?;
-        let port = listener
-            .local_addr()
-            .map_err(|_| "cannot inspect the Microsoft OAuth callback listener".to_string())?
-            .port();
-        let redirect_uri = format!("http://127.0.0.1:{port}/oauth/microsoft/callback");
         let verifier = random_base64url()?;
         let state = random_base64url()?;
         let attempt_id = random_base64url()?;
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-        let endpoint = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize");
-        let mut url = Url::parse(&endpoint).map_err(|_| "invalid Microsoft OAuth endpoint")?;
-        url.query_pairs_mut()
-            .append_pair("client_id", &client_id)
-            .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("response_type", "code")
-            .append_pair("response_mode", "query")
-            .append_pair("scope", SCOPES)
-            .append_pair("prompt", "select_account")
-            .append_pair("code_challenge", &challenge)
-            .append_pair("code_challenge_method", "S256")
-            .append_pair("state", &state);
-        let authorization_url = url.to_string();
-        open_system_browser(&authorization_url)?;
-        self.pending.lock().await.insert(
-            attempt_id.clone(),
-            PendingAttempt {
-                client_id,
-                tenant,
-                verifier,
-                state,
-                redirect_uri,
-                listener,
-                created_at: Instant::now(),
-            },
-        );
-        Ok(MicrosoftBeginOAuth {
-            attempt_id,
-            authorization_url,
-        })
+
+        #[cfg(target_os = "ios")]
+        {
+            let redirect_uri = ios_oauth::MICROSOFT_REDIRECT_URI.to_string();
+            let authorization_url = build_microsoft_auth_url(
+                &client_id,
+                &tenant,
+                &redirect_uri,
+                &challenge,
+                &state,
+            )?;
+            let ios_callback = ios_oauth::register_waiter(attempt_id.clone());
+            // Store pending before presenting so complete() can await the callback.
+            self.pending.lock().await.insert(
+                attempt_id.clone(),
+                PendingAttempt {
+                    client_id,
+                    tenant,
+                    verifier,
+                    state,
+                    redirect_uri,
+                    created_at: Instant::now(),
+                    ios_callback,
+                },
+            );
+            if let Err(error) = ios_oauth::present(
+                &authorization_url,
+                ios_oauth::MICROSOFT_CALLBACK_SCHEME,
+                &attempt_id,
+            ) {
+                self.pending.lock().await.remove(&attempt_id);
+                return Err(error);
+            }
+            return Ok(MicrosoftBeginOAuth {
+                attempt_id,
+                authorization_url,
+            });
+        }
+
+        #[cfg(not(target_os = "ios"))]
+        {
+            let listener = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+                .map_err(|_| "cannot bind the Microsoft OAuth callback listener".to_string())?;
+            listener
+                .set_nonblocking(true)
+                .map_err(|_| "cannot configure the Microsoft OAuth callback listener".to_string())?;
+            let port = listener
+                .local_addr()
+                .map_err(|_| "cannot inspect the Microsoft OAuth callback listener".to_string())?
+                .port();
+            // IPv4 literal (not `localhost`) so macOS does not prefer IPv6 while we
+            // listen on 127.0.0.1. Register the loopback redirect as Mobile and
+            // desktop (manifest may be required for http://127.0.0.1).
+            let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
+            let authorization_url = build_microsoft_auth_url(
+                &client_id,
+                &tenant,
+                &redirect_uri,
+                &challenge,
+                &state,
+            )?;
+            // Store pending before opening the browser so complete() can listen even
+            // when SSO redirects immediately.
+            self.pending.lock().await.insert(
+                attempt_id.clone(),
+                PendingAttempt {
+                    client_id,
+                    tenant,
+                    verifier,
+                    state,
+                    redirect_uri,
+                    created_at: Instant::now(),
+                    listener,
+                },
+            );
+            open_system_browser(&authorization_url)?;
+            Ok(MicrosoftBeginOAuth {
+                attempt_id,
+                authorization_url,
+            })
+        }
     }
 
     pub async fn complete(&self, attempt_id: &str) -> Result<MicrosoftConnectedAccount, String> {
@@ -161,207 +217,220 @@ impl MicrosoftOAuthState {
         if pending.created_at.elapsed() > ATTEMPT_TTL {
             return Err("Microsoft OAuth attempt expired".into());
         }
-        let listener = TcpListener::from_std(
-            pending
-                .listener
-                .try_clone()
-                .map_err(|_| "cannot clone the Microsoft OAuth callback listener".to_string())?,
-        )
-        .map_err(|_| "cannot activate the Microsoft OAuth callback listener".to_string())?;
-        let (mut stream, query) =
-            accept_oauth_callback(&listener, "/oauth/microsoft/callback", ATTEMPT_TTL).await?;
 
-        async fn reply(
-            stream: &mut tokio::net::TcpStream,
-            status: &str,
-            kind: PageKind,
-            detail: Option<&str>,
-        ) {
-            let response = oauth_callback_page::http_response(status, kind, detail);
-            let _ = stream.write_all(response.as_bytes()).await;
-        }
-
-        if query.get("state") != Some(&pending.state) {
-            let message = "Microsoft OAuth callback state validation failed";
-            reply(
-                &mut stream,
-                "400 Bad Request",
-                PageKind::Failed,
-                Some(message),
-            )
-            .await;
-            return Err(message.into());
-        }
-        if let Some(error) = query.get("error") {
-            let message = classify_authorization_error(
-                error,
-                query.get("error_description").map(String::as_str),
-            );
-            reply(
-                &mut stream,
-                "400 Bad Request",
-                PageKind::Denied,
-                Some(&message),
-            )
-            .await;
-            return Err(message);
-        }
-        let Some(code) = query.get("code") else {
-            let message = "Microsoft OAuth callback omitted the authorization code";
-            reply(
-                &mut stream,
-                "400 Bad Request",
-                PageKind::Failed,
-                Some(message),
-            )
-            .await;
-            return Err(message.into());
-        };
-        let token = match self.exchange_code(&pending, code).await {
-            Ok(token) => token,
-            Err(error) => {
-                reply(
-                    &mut stream,
-                    "500 Internal Server Error",
-                    PageKind::Failed,
-                    Some(&error),
-                )
-                .await;
-                return Err(error);
-            }
-        };
-        let profile: GraphProfile = match async {
-            self.http
-                .get("https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName")
-                .bearer_auth(&token.access_token)
-                .send()
-                .await
-                .map_err(|_| "cannot retrieve the Microsoft profile".to_string())?
-                .error_for_status()
-                .map_err(|_| "Microsoft rejected the profile request".to_string())?
-                .json()
-                .await
-                .map_err(|_| "Microsoft profile response was invalid".to_string())
-        }
-        .await
+        #[cfg(target_os = "ios")]
         {
-            Ok(profile) => profile,
-            Err(error) => {
-                reply(
-                    &mut stream,
-                    "500 Internal Server Error",
-                    PageKind::Failed,
-                    Some(&error),
-                )
-                .await;
-                return Err(error);
+            let PendingAttempt {
+                client_id,
+                tenant,
+                verifier,
+                state,
+                redirect_uri,
+                ios_callback,
+                created_at: _,
+            } = pending;
+            let callback_url = ios_oauth::await_callback(ios_callback, ATTEMPT_TTL).await?;
+            let query = ios_oauth::parse_callback_query(&callback_url)?;
+            if query.get("state").map(String::as_str) != Some(state.as_str()) {
+                return Err("Microsoft OAuth callback state validation failed".into());
             }
-        };
-        let email = match profile.mail.or(profile.user_principal_name) {
-            Some(email) => email,
-            None => {
-                let message = "Microsoft profile did not include a mailbox address";
-                reply(
-                    &mut stream,
-                    "500 Internal Server Error",
-                    PageKind::Failed,
-                    Some(message),
-                )
+            // Prefer `code` when present so an empty/spurious `error` cannot cancel a grant.
+            let code = query
+                .get("code")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let Some(code) = code else {
+                let error = query
+                    .get("error")
+                    .map(String::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("access_denied");
+                let description = query.get("error_description").map(String::as_str);
+                let subcode = query.get("error_subcode").map(String::as_str);
+                return Err(classify_authorization_error(error, description, subcode));
+            };
+            return self
+                .finish_authorization(&client_id, &redirect_uri, &verifier, &tenant, &code)
                 .await;
-                return Err(message.into());
+        }
+
+        #[cfg(not(target_os = "ios"))]
+        {
+            let PendingAttempt {
+                client_id,
+                tenant,
+                verifier,
+                state,
+                redirect_uri,
+                listener,
+                created_at: _,
+            } = pending;
+            let listener = TcpListener::from_std(listener)
+                .map_err(|_| "cannot activate the Microsoft OAuth callback listener".to_string())?;
+            let (mut stream, query) =
+                accept_oauth_callback(&listener, CALLBACK_PATH, &state, ATTEMPT_TTL).await?;
+
+            async fn reply(
+                stream: &mut tokio::net::TcpStream,
+                status: &str,
+                kind: PageKind,
+                detail: Option<&str>,
+            ) {
+                let response = oauth_callback_page::http_response(status, kind, detail);
+                let _ = stream.write_all(response.as_bytes()).await;
             }
-        };
-        let scope = token.scope.unwrap_or_default();
-        for required in [
-            "https://graph.microsoft.com/Mail.ReadWrite",
-            "https://graph.microsoft.com/Mail.Send",
-        ] {
-            if !scope.split_whitespace().any(|granted| {
-                granted.eq_ignore_ascii_case(required)
-                    || granted.eq_ignore_ascii_case(
-                        required.trim_start_matches("https://graph.microsoft.com/"),
+
+            // Prefer `code` when present so an empty/spurious `error` cannot cancel a grant.
+            let code = query
+                .get("code")
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let Some(code) = code else {
+                let error = query
+                    .get("error")
+                    .map(String::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("access_denied");
+                let description = query.get("error_description").map(String::as_str);
+                let subcode = query.get("error_subcode").map(String::as_str);
+                let message = classify_authorization_error(error, description, subcode);
+                let kind = if is_user_cancel_error(error, subcode, description) {
+                    PageKind::Denied
+                } else {
+                    // Do not show "Sign-in cancelled" for config/policy failures.
+                    PageKind::Failed
+                };
+                reply(&mut stream, "400 Bad Request", kind, Some(&message)).await;
+                return Err(message);
+            };
+            match self
+                .finish_authorization(&client_id, &redirect_uri, &verifier, &tenant, &code)
+                .await
+            {
+                Ok(connected) => {
+                    reply(&mut stream, "200 OK", PageKind::Success, None).await;
+                    Ok(connected)
+                }
+                Err(error) => {
+                    reply(
+                        &mut stream,
+                        "500 Internal Server Error",
+                        PageKind::Failed,
+                        Some(&error),
                     )
-            }) {
-                let message = "Microsoft did not grant the required delegated mail scopes";
-                reply(
-                    &mut stream,
-                    "500 Internal Server Error",
-                    PageKind::Failed,
-                    Some(message),
-                )
-                .await;
-                return Err(message.into());
+                    .await;
+                    Err(error)
+                }
             }
         }
-        let Some(refresh_token) = token.refresh_token else {
-            let message = "Microsoft did not issue an offline refresh token";
-            reply(
-                &mut stream,
-                "500 Internal Server Error",
-                PageKind::Failed,
-                Some(message),
-            )
-            .await;
-            return Err(message.into());
-        };
+    }
+
+    async fn finish_authorization(
+        &self,
+        client_id: &str,
+        redirect_uri: &str,
+        verifier: &str,
+        tenant: &str,
+        code: &str,
+    ) -> Result<MicrosoftConnectedAccount, String> {
+        let token = self
+            .exchange_code(client_id, redirect_uri, verifier, tenant, code)
+            .await?;
+        let profile: GraphProfile = self
+            .http
+            .get("https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName")
+            .bearer_auth(&token.access_token)
+            .send()
+            .await
+            .map_err(|_| "cannot retrieve the Microsoft profile".to_string())?
+            .error_for_status()
+            .map_err(|_| "Microsoft rejected the profile request".to_string())?
+            .json()
+            .await
+            .map_err(|_| "Microsoft profile response was invalid".to_string())?;
+        let email = profile
+            .mail
+            .or(profile.user_principal_name)
+            .ok_or_else(|| "Microsoft profile did not include a mailbox address".to_string())?;
+        let scope = token.scope.unwrap_or_default();
+        for required in ["Mail.ReadWrite", "Mail.Send"] {
+            if !scope_granted(&scope, required) {
+                return Err("Microsoft did not grant the required delegated mail scopes".into());
+            }
+        }
+        let refresh_token = token
+            .refresh_token
+            .ok_or_else(|| "Microsoft did not issue an offline refresh token".to_string())?;
         let bundle = TokenBundle {
             access_token: token.access_token,
             refresh_token,
             expires_at: unix_time().saturating_add(token.expires_in.unwrap_or(3600)),
             scope: scope.clone(),
-            tenant: pending.tenant.clone(),
+            tenant: tenant.to_string(),
         };
         let account_id = format!("microsoft:{}", email.to_lowercase());
-        if let Err(error) = self.token_store.store_token(
+        self.token_store.store_token(
             &account_id,
             &serde_json::to_vec(&bundle)
                 .map_err(|_| "cannot encode Microsoft credentials".to_string())?,
-        ) {
-            reply(
-                &mut stream,
-                "500 Internal Server Error",
-                PageKind::Failed,
-                Some(&error),
-            )
-            .await;
-            return Err(error);
-        }
-        reply(&mut stream, "200 OK", PageKind::Success, None).await;
+        )?;
         Ok(MicrosoftConnectedAccount {
             account_id,
             email,
-            tenant: pending.tenant,
+            tenant: tenant.to_string(),
             granted_scopes: scope.split_whitespace().map(str::to_string).collect(),
         })
     }
 
     async fn exchange_code(
         &self,
-        pending: &PendingAttempt,
+        client_id: &str,
+        redirect_uri: &str,
+        verifier: &str,
+        tenant: &str,
         code: &str,
     ) -> Result<TokenResponse, String> {
         let body = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("client_id", &pending.client_id)
-            .append_pair("redirect_uri", &pending.redirect_uri)
-            .append_pair("code_verifier", &pending.verifier)
+            .append_pair("client_id", client_id)
+            .append_pair("redirect_uri", redirect_uri)
+            .append_pair("code_verifier", verifier)
             .append_pair("code", code)
             .append_pair("scope", SCOPES)
             .append_pair("grant_type", "authorization_code")
             .finish();
-        self.http
+        let response = self
+            .http
             .post(format!(
-                "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
-                pending.tenant
+                "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
             ))
             .header("content-type", "application/x-www-form-urlencoded")
             .body(body)
             .send()
             .await
-            .map_err(|_| "cannot reach the Microsoft token endpoint".to_string())?
-            .error_for_status()
-            .map_err(|_| "Microsoft rejected the authorization code".to_string())?
+            .map_err(|_| "cannot reach the Microsoft token endpoint".to_string())?;
+        let status = response.status();
+        let payload: serde_json::Value = response
             .json()
             .await
+            .map_err(|_| "Microsoft token response was invalid".to_string())?;
+        if !status.is_success() {
+            let err = payload
+                .get("error")
+                .and_then(|value| value.as_str())
+                .unwrap_or("token_exchange_failed");
+            let description = payload
+                .get("error_description")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            return Err(classify_token_error(err, description));
+        }
+        serde_json::from_value(payload)
             .map_err(|_| "Microsoft token response was invalid".to_string())
     }
 
@@ -505,19 +574,109 @@ fn is_uuid(value: &str) -> bool {
         })
 }
 
-fn classify_authorization_error(error: &str, description: Option<&str>) -> String {
-    let text = format!("{error} {}", description.unwrap_or_default()).to_lowercase();
-    if text.contains("admin") || text.contains("authorization_requestdenied") {
+fn scope_granted(granted_scope: &str, required: &str) -> bool {
+    let required_short = required
+        .trim_start_matches("https://graph.microsoft.com/")
+        .trim();
+    granted_scope.split_whitespace().any(|granted| {
+        let granted_short = granted
+            .trim_start_matches("https://graph.microsoft.com/")
+            .trim();
+        granted.eq_ignore_ascii_case(required)
+            || granted_short.eq_ignore_ascii_case(required_short)
+    })
+}
+
+#[cfg_attr(target_os = "ios", allow(dead_code))]
+fn is_user_cancel_error(
+    error: &str,
+    subcode: Option<&str>,
+    description: Option<&str>,
+) -> bool {
+    let sub = subcode.unwrap_or("").to_lowercase();
+    if sub.contains("cancel") {
+        return true;
+    }
+    let description = description.unwrap_or("").to_lowercase();
+    error.eq_ignore_ascii_case("access_denied")
+        && (description.contains("user canceled")
+            || description.contains("user cancelled")
+            || description.contains("the user canceled")
+            || description.contains("the user cancelled"))
+}
+
+fn classify_authorization_error(
+    error: &str,
+    description: Option<&str>,
+    subcode: Option<&str>,
+) -> String {
+    let description = description.unwrap_or_default();
+    let text = format!("{error} {description} {}", subcode.unwrap_or_default()).to_lowercase();
+    if text.contains("cancel") || (error.eq_ignore_ascii_case("access_denied") && text.contains("canceled"))
+    {
+        "Microsoft sign-in was cancelled".into()
+    } else if text.contains("admin") || text.contains("authorization_requestdenied") {
         "Microsoft administrator consent is required".into()
     } else if text.contains("conditional") || text.contains("aadsts53000") {
         "Microsoft conditional access requires interaction".into()
     } else if text.contains("consent") {
         "Microsoft user consent is required".into()
+    } else if text.contains("aadsts7000218") || text.contains("client_secret") {
+        "Microsoft public-client flow is disabled for this app registration".into()
+    } else if text.contains("aadsts50011") || text.contains("reply url") || text.contains("redirect")
+    {
+        "Microsoft redirect URI is not registered (desktop: http://127.0.0.1/…; iOS: msauth.com.galateacorp.mail://auth)"
+            .into()
+    } else if text.contains("origin") || text.contains("spa") || text.contains("aadsts900232") {
+        "Microsoft redirect URI is registered as SPA; use Mobile and desktop + loopback / msauth redirect"
+            .into()
     } else {
-        "Microsoft authorization was denied".into()
+        // Surface the provider code so generic failures are not mistaken for cancel.
+        let detail = description.split(". ").next().unwrap_or(description).trim();
+        if detail.is_empty() {
+            format!("Microsoft authorization failed ({error})")
+        } else {
+            format!("Microsoft authorization failed ({error}: {detail})")
+        }
     }
 }
 
+fn classify_token_error(error: &str, description: &str) -> String {
+    let text = format!("{error} {description}").to_lowercase();
+    if text.contains("aadsts7000218") || text.contains("client_secret") {
+        "Microsoft public-client flow is disabled for this app registration (enable Allow public client flows)"
+            .into()
+    } else if text.contains("origin") || text.contains("spa") || text.contains("aadsts900232") {
+        "Microsoft rejected the code because the redirect URI is typed as SPA, not Mobile and desktop"
+            .into()
+    } else {
+        format!("Microsoft rejected the authorization code ({error})")
+    }
+}
+
+fn build_microsoft_auth_url(
+    client_id: &str,
+    tenant: &str,
+    redirect_uri: &str,
+    challenge: &str,
+    state: &str,
+) -> Result<String, String> {
+    let endpoint = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize");
+    let mut url = Url::parse(&endpoint).map_err(|_| "invalid Microsoft OAuth endpoint")?;
+    url.query_pairs_mut()
+        .append_pair("client_id", client_id)
+        .append_pair("redirect_uri", redirect_uri)
+        .append_pair("response_type", "code")
+        .append_pair("response_mode", "query")
+        .append_pair("scope", SCOPES)
+        .append_pair("prompt", "select_account")
+        .append_pair("code_challenge", challenge)
+        .append_pair("code_challenge_method", "S256")
+        .append_pair("state", state);
+    Ok(url.to_string())
+}
+
+#[cfg(not(target_os = "ios"))]
 fn open_system_browser(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -530,7 +689,7 @@ fn open_system_browser(url: &str) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = url;
-        Err("system browser handoff is only implemented on macOS".into())
+        Err("system browser handoff is only implemented on Apple platforms".into())
     }
 }
 
@@ -567,5 +726,26 @@ mod tests {
         let second = random_base64url().unwrap();
         assert_eq!(first.len(), 43);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn cancel_vs_config_errors_are_not_collapsed() {
+        assert!(is_user_cancel_error(
+            "access_denied",
+            Some("cancel"),
+            Some("the user canceled the authentication"),
+        ));
+        assert!(!is_user_cancel_error(
+            "invalid_request",
+            None,
+            Some("AADSTS9002326: Cross-origin token redemption"),
+        ));
+        let spa = classify_authorization_error(
+            "invalid_request",
+            Some("AADSTS9002326: Cross-origin token redemption is permitted only for SPA"),
+            None,
+        );
+        assert!(spa.contains("SPA") || spa.contains("Mobile and desktop"));
+        assert!(!spa.contains("was denied"));
     }
 }

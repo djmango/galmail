@@ -273,8 +273,9 @@ try {
   mkdirSync(buildRoot, { recursive: true });
 
   if (!skipFrontend) {
-    console.log("→ Building frontend…");
-    run("bun", ["run", "--cwd", "apps/web", "build"]);
+    run("bun", ["scripts/sync-ios-web-assets.ts", "--build"]);
+  } else {
+    run("bun", ["scripts/sync-ios-web-assets.ts"]);
   }
 
   console.log(`→ Archiving ${SCHEME} (${BUNDLE_ID})…`);
@@ -284,7 +285,7 @@ try {
     "-scheme",
     SCHEME,
     "-configuration",
-    "Release",
+    "release",
     "-destination",
     "generic/platform=iOS",
     "-archivePath",
@@ -292,6 +293,7 @@ try {
     "-allowProvisioningUpdates",
     ...xcodeAuthArgs(auth),
     `DEVELOPMENT_TEAM=${TEAM_ID}`,
+    "CODE_SIGN_IDENTITY=Apple Distribution",
     "archive",
   ]);
 

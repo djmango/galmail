@@ -17,15 +17,21 @@ import {
 import { REMOTE_OPT_IN_DISCLOSURE_VERSION } from "@galmail/remote-opt-in";
 import { isEditableTarget, resolveEscapeAction } from "@galmail/keyboard";
 import {
-  clearLiveGmailAccount,
-  clearLiveMicrosoftAccount,
+  isNativeShell,
   persistDemoMailboxPreference,
+  persistInboxAccountFilter,
+  persistLastComposeAccountId,
+  readInboxAccountFilter,
+  removeLiveAccount,
+  resolveDefaultComposeAccountId,
   shouldPromptSignIn,
+  type InboxAccountFilter,
 } from "./lib/account-session";
 import {
   connectGmailWithPkce,
   disconnectGmailAccount,
-  googleDesktopClientId,
+  googleClientIdConfigured,
+  googleOAuthClientId,
   invokeErrorMessage,
 } from "./lib/gmail-connect";
 import {
@@ -49,6 +55,10 @@ import {
 } from "./lib/microsoft-calendar";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
 import type { NativeGmailSyncEngine } from "./lib/native-sync";
+import {
+  resolveMobileSurface,
+  useIsMobileLayout,
+} from "./lib/mobile-layout";
 import {
   DEFAULT_LAYOUT,
   getSystemTheme,
@@ -80,6 +90,7 @@ import {
   type FloatingDraft,
 } from "./components/FloatingDrafts";
 import { Icons } from "./components/Icons";
+import { LoadingScreen } from "./components/LoadingScreen";
 import { RemoteOptInModal } from "./components/RemoteOptInModal";
 import { type SettingsState } from "./components/SettingsBar";
 import { ActionButton } from "./components/ActionButton";
@@ -292,6 +303,8 @@ export function App() {
   const [labels, setLabels] = useState<MailLabel[]>([]);
   const [outbox, setOutbox] = useState<OutboxMutation[]>([]);
   const [activeLabel, setActiveLabel] = useState<string>("INBOX");
+  const [inboxAccountFilter, setInboxAccountFilter] =
+    useState<InboxAccountFilter>(() => readInboxAccountFilter());
   const [customLabelsOpen, setCustomLabelsOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -319,7 +332,7 @@ export function App() {
   );
   const [awaitingSignIn, setAwaitingSignIn] = useState(() =>
     shouldPromptSignIn({
-      googleClientIdConfigured: Boolean(googleDesktopClientId()),
+      googleClientIdConfigured: googleClientIdConfigured(),
       microsoftClientIdConfigured: Boolean(microsoftClientId()),
     }),
   );
@@ -347,6 +360,8 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     loadPersistedSidebarCollapsed(),
   );
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isMobile = useIsMobileLayout();
   const [, startTransition] = useTransition();
   const threadListRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -354,7 +369,10 @@ export function App() {
   const inputModeRef = useRef<EditorMode>("normal");
   const selectedIdRef = useRef<string | null>(null);
   const filteredThreadsRef = useRef<MailThread[]>([]);
+  const threadsRef = useRef<MailThread[]>([]);
   const bulkAnchorIdRef = useRef<string | null>(null);
+  const isMobileRef = useRef(isMobile);
+  const mobileNavOpenRef = useRef(mobileNavOpen);
   const overlayRef = useRef({
     paletteOpen: false,
     composeOpen: false,
@@ -363,7 +381,26 @@ export function App() {
   });
   inputModeRef.current = inputMode;
   selectedIdRef.current = selectedId;
+  threadsRef.current = threads;
+  isMobileRef.current = isMobile;
+  mobileNavOpenRef.current = mobileNavOpen;
   overlayRef.current = { paletteOpen, composeOpen, optInOpen, settingsOpen };
+
+  useEffect(() => {
+    if (!isMobile) setMobileNavOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNavOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileNavOpen]);
 
   const resolvedTheme: ResolvedTheme =
     settings.theme === "system" ? systemTheme : settings.theme;
@@ -396,6 +433,28 @@ export function App() {
     persistTrashAfterUnsubscribe(settings.trashAfterUnsubscribe);
   }, [settings.trashAfterUnsubscribe]);
 
+  // Native macOS menu Settings… (⌘,) → same toggle as the in-app binding.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        if (cancelled) return;
+        unlisten = await listen("galmail://open-settings", () => {
+          setPaletteOpen(false);
+          setSettingsOpen((open) => !open);
+        });
+      } catch {
+        // Browser / non-Tauri shells have no native menu event bus.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   const hydrateRuntime = async (rt: GalMailRuntime) => {
     setRuntime(rt);
     setThreads(rt.threads);
@@ -413,8 +472,17 @@ export function App() {
         ? `Live hydrate complete · ${rt.threads.length} threads · syncing…`
         : `Local hydrate complete · ${rt.threads.length} threads · fixture`,
     );
-    const c = await rt.remoteOptIn.getConsent(rt.gmailAccountId);
+    const c = await rt.remoteOptIn.getConsent(rt.defaultAccountId);
     setConsent(c);
+    // Drop filter if the filtered account was disconnected.
+    setInboxAccountFilter((current) => {
+      if (current === "all") return current;
+      if (rt.accounts.some((account) => account.accountId === current)) {
+        return current;
+      }
+      persistInboxAccountFilter("all");
+      return "all";
+    });
     try {
       const accountIds = [
         ...new Set(rt.accounts.map((account) => account.accountId)),
@@ -460,9 +528,18 @@ export function App() {
     if (awaitingSignIn) return;
     let cancelled = false;
     (async () => {
-      const rt = await createGalMailRuntime();
-      if (cancelled) return;
-      await hydrateRuntime(rt);
+      try {
+        const rt = await createGalMailRuntime();
+        if (cancelled) return;
+        await hydrateRuntime(rt);
+      } catch (error) {
+        if (cancelled) return;
+        // Live boot without accounts should not silent-fixture; return to sign-in.
+        const message = invokeErrorMessage(error, "Could not start inbox");
+        setGmailConnectError(message);
+        setStatus(message);
+        setAwaitingSignIn(shouldPromptSignIn());
+      }
     })();
     return () => {
       cancelled = true;
@@ -504,15 +581,21 @@ export function App() {
       syncedLabelsRef.current = new Set();
     }
 
-    const cacheKey = `${runtime.gmailAccountId}:${activeLabel}`;
+    const cacheKey = `${inboxAccountFilter}:${activeLabel}`;
     if (syncedLabelsRef.current.has(cacheKey)) return;
 
     let cancelled = false;
     const labelName = labelStatusName(activeLabel, labels);
+    const accountsForLabel =
+      inboxAccountFilter === "all"
+        ? runtime.accounts
+        : runtime.accounts.filter(
+            (account) => account.accountId === inboxAccountFilter,
+          );
     (async () => {
       setStatus(`Loading ${labelName}…`);
       try {
-        for (const account of runtime.accounts) {
+        for (const account of accountsForLabel) {
           if (cancelled) return;
           await sync.syncLabel(account.accountId, activeLabel);
         }
@@ -536,7 +619,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [runtime, activeLabel, labels]);
+  }, [runtime, activeLabel, labels, inboxAccountFilter]);
 
   useEffect(() => {
     if (!runtime || !openedId) {
@@ -561,6 +644,35 @@ export function App() {
       setMessage(ordered.at(-1) ?? null);
     });
   }, [runtime, openedId, threads]);
+
+  // Opening a thread marks it read (click, Enter, or j/k while reading).
+  useEffect(() => {
+    if (!runtime || !openedId) return;
+    const thread = threadsRef.current.find((item) => item.id === openedId);
+    if (!thread || thread.unreadCount === 0 || thread.messageIds.length === 0) {
+      return;
+    }
+    startTransition(() => {
+      setThreads((prev) =>
+        prev.map((item) =>
+          item.id === thread.id ? { ...item, unreadCount: 0 } : item,
+        ),
+      );
+    });
+    setMessage((current) =>
+      current ? { ...current, unread: false } : current,
+    );
+    setThreadMessages((items) =>
+      items.map((item) => ({ ...item, unread: false })),
+    );
+    void runtime.sync
+      .enqueue({
+        accountId: thread.accountId,
+        kind: "mark_read",
+        targetIds: thread.messageIds,
+      })
+      .then(() => runtime.sync.flushOutbox(thread.accountId));
+  }, [runtime, openedId]);
 
   const selectedIndex = useMemo(
     () => threads.findIndex((t) => t.id === selectedId),
@@ -685,6 +797,7 @@ export function App() {
       setComposeOpen(false);
       setOptInOpen(false);
       setSettingsOpen(false);
+      setMobileNavOpen(false);
       setMainView("mail");
       setSelectedId(threads[0]?.id ?? null);
       setActiveLabel("INBOX");
@@ -695,6 +808,10 @@ export function App() {
 
     const handleBack = () => {
       const overlays = overlayRef.current;
+      if (mobileNavOpenRef.current) {
+        setMobileNavOpen(false);
+        return;
+      }
       if (overlays.paletteOpen) {
         setPaletteOpen(false);
         requestAnimationFrame(() => focusThreadList());
@@ -816,7 +933,10 @@ export function App() {
       setInputMode("insert");
     });
     reg.on("command_palette", () => setPaletteOpen(true));
-    reg.on("open_settings", () => setSettingsOpen(true));
+    reg.on("open_settings", () => {
+      setPaletteOpen(false);
+      setSettingsOpen((open) => !open);
+    });
     reg.on("search", () => enterInsertMode());
     reg.on("enter_insert", () => enterInsertMode());
     reg.on("enter_normal", () => enterNormalMode());
@@ -831,6 +951,10 @@ export function App() {
     });
     reg.on("go_to_inbox", goToInbox);
     reg.on("toggle_sidebar", () => {
+      if (isMobileRef.current) {
+        setMobileNavOpen((value) => !value);
+        return;
+      }
       setSidebarCollapsed((value) => !value);
     });
     reg.on("back", handleBack);
@@ -843,6 +967,16 @@ export function App() {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        // Overlay inputs (palette, settings, opt-in) are not inbox Insert mode:
+        // one Esc closes the overlay instead of blurring the field first.
+        if (
+          overlays.paletteOpen ||
+          overlays.settingsOpen ||
+          overlays.optInOpen
+        ) {
+          handleBack();
+          return;
+        }
         const action = resolveEscapeAction({
           mode: inputModeRef.current,
           editableFocused: editable,
@@ -887,6 +1021,7 @@ export function App() {
       const id = reg.match(
         {
           key: e.key,
+          code: e.code,
           metaKey: e.metaKey,
           ctrlKey: e.ctrlKey,
           altKey: e.altKey,
@@ -903,11 +1038,13 @@ export function App() {
         return;
       }
       e.preventDefault();
+      e.stopPropagation();
       reg.dispatch(id);
     };
-    window.addEventListener("keydown", onKey);
+    // Capture so ⌘,/⌘K still win over focused controls.
+    window.addEventListener("keydown", onKey, true);
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       reg.clearPending();
     };
   }, [
@@ -922,6 +1059,24 @@ export function App() {
 
   const layout = settings.layout;
   const fullscreenList = layout === "fullscreen" && !openedId;
+  const mobileSurface = resolveMobileSurface({ mainView, openedId });
+  const showReadingBack = Boolean(openedId) && (isMobile || layout === "fullscreen");
+
+  const closeMobileNav = () => setMobileNavOpen(false);
+
+  const openMobileFolder = (labelId: string) => {
+    setMainView("mail");
+    setActiveLabel(labelId);
+    setOpenedId(null);
+    closeMobileNav();
+  };
+
+  const openMobileCalendar = () => {
+    setMainView("calendar");
+    setOpenedId(null);
+    closeMobileNav();
+    void refreshCalendar();
+  };
   const unsubscribeCapability = useMemo(
     () => (message ? capabilityForMessage(message) : null),
     [message],
@@ -954,17 +1109,21 @@ export function App() {
   );
 
   const filteredThreads = useMemo(() => {
+    const byAccount =
+      inboxAccountFilter === "all"
+        ? threads
+        : threads.filter((thread) => thread.accountId === inboxAccountFilter);
     const scoped =
       activeLabel === "ALL"
-        ? threads
+        ? byAccount
         : activeLabel === "ARCHIVE"
-          ? threads.filter(
+          ? byAccount.filter(
               (thread) =>
                 !thread.labelIds.includes("INBOX" as never) &&
                 !thread.labelIds.includes("TRASH" as never) &&
                 !thread.labelIds.includes("SPAM" as never),
             )
-          : threads.filter((thread) =>
+          : byAccount.filter((thread) =>
               thread.labelIds.includes(activeLabel as never),
             );
     if (!searchQuery.trim()) return scoped;
@@ -993,8 +1152,27 @@ export function App() {
       };
       return matchesMailSearch(synthetic, thread, query);
     });
-  }, [threads, searchQuery, searchMessageIds, activeLabel]);
+  }, [
+    threads,
+    searchQuery,
+    searchMessageIds,
+    activeLabel,
+    inboxAccountFilter,
+  ]);
   filteredThreadsRef.current = filteredThreads;
+
+  const setAccountFilter = (filter: InboxAccountFilter) => {
+    persistInboxAccountFilter(filter);
+    setInboxAccountFilter(filter);
+    setMainView("mail");
+  };
+
+  const composeAccountId = () =>
+    resolveDefaultComposeAccountId(
+      runtime?.accounts.map((account) => String(account.accountId)) ?? [],
+      inboxAccountFilter,
+    ) ??
+    (runtime ? String(runtime.defaultAccountId) : null);
   const bulkSelecting = bulkSelection.size > 0;
 
   const applyBulkRangeSelect = (threadId: string) => {
@@ -1014,7 +1192,11 @@ export function App() {
     );
   };
 
-  const virtualStart = Math.max(0, Math.floor(listScrollTop / 92) - 8);
+  const threadRowHeight = isMobile ? 96 : 92;
+  const virtualStart = Math.max(
+    0,
+    Math.floor(listScrollTop / threadRowHeight) - 8,
+  );
   const virtualThreads = filteredThreads.slice(virtualStart, virtualStart + 60);
 
   useEffect(() => {
@@ -1028,8 +1210,14 @@ export function App() {
       return;
     }
     let cancelled = false;
+    const searchAccounts =
+      inboxAccountFilter === "all"
+        ? runtime.accounts
+        : runtime.accounts.filter(
+            (account) => account.accountId === inboxAccountFilter,
+          );
     Promise.all(
-      runtime.accounts.map((account) =>
+      searchAccounts.map((account) =>
         runtime.sync.searchLocal(account.accountId, searchQuery),
       ),
     ).then((ids) => {
@@ -1038,7 +1226,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [runtime, searchQuery]);
+  }, [runtime, searchQuery, inboxAccountFilter]);
 
   const openCompose = (initial?: ComposeDraft) => {
     setComposeInitial(initial);
@@ -1113,13 +1301,18 @@ export function App() {
   };
 
   const refreshCalendar = async (rt: GalMailRuntime = runtime!) => {
-    const gmailAccount = rt.accounts.find((account) =>
-      account.accountId.startsWith("gmail:"),
+    const calendarCapable = rt.accounts.filter(
+      (account) =>
+        account.accountId.startsWith("gmail:") ||
+        account.accountId.startsWith("microsoft:"),
     );
-    const microsoftAccount = rt.accounts.find((account) =>
-      account.accountId.startsWith("microsoft:"),
-    );
-    if (rt.providerMode !== "live" || (!gmailAccount && !microsoftAccount)) {
+    const scoped =
+      inboxAccountFilter === "all"
+        ? calendarCapable
+        : calendarCapable.filter(
+            (account) => account.accountId === inboxAccountFilter,
+          );
+    if (rt.providerMode !== "live" || scoped.length === 0) {
       setCalendarEvents([]);
       setCalendarError(
         rt.providerMode === "live"
@@ -1132,27 +1325,21 @@ export function App() {
     setCalendarError(null);
     const start = new Date();
     const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const loads: Array<Promise<CalendarEvent[]>> = [];
-    if (gmailAccount) {
-      loads.push(
-        loadGoogleCalendarEvents({
-          accountId: gmailAccount.accountId,
-          start,
-          end,
-          limit: 50,
-        }),
-      );
-    }
-    if (microsoftAccount) {
-      loads.push(
-        loadMicrosoftCalendarEvents({
-          accountId: microsoftAccount.accountId,
-          start,
-          end,
-          limit: 50,
-        }),
-      );
-    }
+    const loads: Array<Promise<CalendarEvent[]>> = scoped.map((account) =>
+      account.accountId.startsWith("gmail:")
+        ? loadGoogleCalendarEvents({
+            accountId: account.accountId,
+            start,
+            end,
+            limit: 50,
+          })
+        : loadMicrosoftCalendarEvents({
+            accountId: account.accountId,
+            start,
+            end,
+            limit: 50,
+          }),
+    );
     const settled = await Promise.allSettled(loads);
     const events = settled
       .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
@@ -1180,8 +1367,10 @@ export function App() {
     return runtime.accounts
       .filter(
         (account) =>
-          account.accountId.startsWith("gmail:") ||
-          account.accountId.startsWith("microsoft:"),
+          (account.accountId.startsWith("gmail:") ||
+            account.accountId.startsWith("microsoft:")) &&
+          (inboxAccountFilter === "all" ||
+            account.accountId === inboxAccountFilter),
       )
       .map((account) => ({
         accountId: account.accountId,
@@ -1190,7 +1379,7 @@ export function App() {
           ? ("google" as const)
           : ("microsoft" as const),
       }));
-  }, [runtime]);
+  }, [runtime, inboxAccountFilter]);
 
   const createCalendarEvent = async (input: {
     accountId: string;
@@ -1288,15 +1477,19 @@ export function App() {
         .map((email) => email.trim())
         .filter(Boolean)
         .map((email) => ({ email }));
+    const selectedId =
+      draft.accountId ??
+      composeAccountId() ??
+      String(runtime!.defaultAccountId);
     const accountEmail =
-      runtime!.accounts.find(
-        (account) => account.accountId === runtime!.gmailAccountId,
-      )?.email ?? "me";
+      runtime!.accounts.find((account) => account.accountId === selectedId)
+        ?.email ?? "me";
     // Empty alias input is "" — must not win over the connected account via ??.
     const fromEmail = draft.alias?.trim() || accountEmail;
+    persistLastComposeAccountId(selectedId);
     return {
       id: draft.id ?? `draft_${crypto.randomUUID()}`,
-      accountId: runtime!.gmailAccountId,
+      accountId: selectedId as DomainComposeDraft["accountId"],
       to: addresses(draft.to),
       cc: addresses(draft.cc),
       bcc: addresses(draft.bcc),
@@ -1527,7 +1720,7 @@ export function App() {
     const draft = domainDraft(d);
     const undoUntil = new Date(Date.now() + 5_000).toISOString();
     const mutation = await runtime.sync.enqueue({
-      accountId: runtime.gmailAccountId,
+      accountId: draft.accountId,
       kind: "send",
       targetIds: [],
       payload: { draft } as unknown as Record<string, unknown>,
@@ -1541,7 +1734,7 @@ export function App() {
       toast.message("Send cancelled");
     };
     setTimeout(
-      () => void runtime.sync.flushOutbox(runtime.gmailAccountId),
+      () => void runtime.sync.flushOutbox(draft.accountId),
       5_000,
     );
     toast.success("Send queued", {
@@ -1551,12 +1744,19 @@ export function App() {
 
   if (awaitingSignIn) {
     return (
-      <div className="app" data-theme={resolvedTheme}>
+      <div
+        className="app"
+        data-theme={resolvedTheme}
+        data-mobile={isMobile ? "true" : "false"}
+      >
         <SignInScreen
           connecting={gmailConnecting || microsoftConnecting}
           error={gmailConnectError}
-          canConnectGmail={Boolean(googleDesktopClientId())}
-          canConnectMicrosoft={Boolean(microsoftClientId())}
+          nativeShell={isNativeShell()}
+          canConnectGmail={isNativeShell() && Boolean(googleOAuthClientId())}
+          canConnectMicrosoft={
+            isNativeShell() && Boolean(microsoftClientId())
+          }
           showDemoOption
           onConnectGmail={() => void connectGmail()}
           onConnectMicrosoft={() => void connectMicrosoft()}
@@ -1568,20 +1768,40 @@ export function App() {
 
   if (!runtime) {
     return (
-      <div className="app" data-theme={resolvedTheme}>
-        <p className="meta meta-hint">Loading encrypted local graph…</p>
+      <div
+        className="app"
+        data-theme={resolvedTheme}
+        data-mobile={isMobile ? "true" : "false"}
+      >
+        <LoadingScreen status={status} />
       </div>
     );
   }
+
+  const unreadCount = filteredThreads.filter((t) => t.unreadCount > 0).length;
+  const folderTitle = labelStatusName(activeLabel, labels);
 
   return (
     <div
       className="app"
       data-theme={resolvedTheme}
       data-layout={settings.layout}
-      data-sidebar={sidebarCollapsed ? "collapsed" : "expanded"}
+      data-sidebar={
+        isMobile || !sidebarCollapsed ? "expanded" : "collapsed"
+      }
+      data-mobile={isMobile ? "true" : "false"}
+      data-mobile-surface={mobileSurface}
+      data-mobile-nav={mobileNavOpen ? "open" : "closed"}
     >
       <div className="shell">
+        {isMobile && mobileNavOpen ? (
+          <button
+            type="button"
+            className="mobile-nav-scrim"
+            aria-label="Close folders"
+            onClick={closeMobileNav}
+          />
+        ) : null}
         <aside className="sidebar panel" aria-label="Folders">
           <div className="sidebar-header">
             <ActionButton
@@ -1613,6 +1833,10 @@ export function App() {
               label="Calendar"
               icon={<Icons.calendar />}
               onClick={() => {
+                if (isMobile) {
+                  openMobileCalendar();
+                  return;
+                }
                 setMainView("calendar");
                 void refreshCalendar();
               }}
@@ -1623,6 +1847,10 @@ export function App() {
               label="Archive"
               icon={<Icons.archive />}
               onClick={() => {
+                if (isMobile) {
+                  openMobileFolder("ARCHIVE");
+                  return;
+                }
                 setMainView("mail");
                 setActiveLabel("ARCHIVE");
               }}
@@ -1633,6 +1861,10 @@ export function App() {
               label="Starred"
               icon={<Icons.star />}
               onClick={() => {
+                if (isMobile) {
+                  openMobileFolder("STARRED");
+                  return;
+                }
                 setMainView("mail");
                 setActiveLabel("STARRED");
               }}
@@ -1643,6 +1875,10 @@ export function App() {
               label="Trash"
               icon={<Icons.trash />}
               onClick={() => {
+                if (isMobile) {
+                  openMobileFolder("TRASH");
+                  return;
+                }
                 setMainView("mail");
                 setActiveLabel("TRASH");
               }}
@@ -1653,10 +1889,62 @@ export function App() {
               label="Spam"
               icon={<Icons.warning />}
               onClick={() => {
+                if (isMobile) {
+                  openMobileFolder("SPAM");
+                  return;
+                }
                 setMainView("mail");
                 setActiveLabel("SPAM");
               }}
             />
+            {runtime.accounts.length > 0 && (
+              <div className="sidebar-labels" aria-label="Accounts">
+                <button
+                  type="button"
+                  className="sidebar-labels-toggle"
+                  aria-expanded
+                  tabIndex={-1}
+                >
+                  <span className="sidebar-labels-toggle-label">Accounts</span>
+                  <span className="sidebar-labels-toggle-count">
+                    {runtime.accounts.length}
+                  </span>
+                </button>
+                <div className="sidebar-labels-list">
+                  <ActionButton
+                    className={`nav-item ${inboxAccountFilter === "all" ? "active" : ""}`}
+                    variant="quiet"
+                    label="All accounts"
+                    icon={<Icons.inbox />}
+                    showShortcut={false}
+                    onClick={() => {
+                      setAccountFilter("all");
+                      if (isMobile) closeMobileNav();
+                    }}
+                  />
+                  {runtime.accounts.map((account) => (
+                    <ActionButton
+                      key={account.accountId}
+                      className={`nav-item ${inboxAccountFilter === account.accountId ? "active" : ""}`}
+                      variant="quiet"
+                      label={account.email}
+                      icon={
+                        account.accountId.startsWith("microsoft:") ? (
+                          <Icons.microsoft />
+                        ) : (
+                          <Icons.google />
+                        )
+                      }
+                      showShortcut={false}
+                      onClick={() => {
+                        setAccountFilter(account.accountId);
+                        if (isMobile) closeMobileNav();
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             {customLabels.length > 0 && (
               <div className="sidebar-labels">
                 <button
@@ -1684,6 +1972,10 @@ export function App() {
                         icon={<Icons.tag />}
                         showShortcut={false}
                         onClick={() => {
+                          if (isMobile) {
+                            openMobileFolder(label.id);
+                            return;
+                          }
                           setMainView("mail");
                           setActiveLabel(label.id);
                         }}
@@ -1743,7 +2035,10 @@ export function App() {
               label="Settings"
               icon={<Icons.settings />}
               command="open_settings"
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                closeMobileNav();
+                setSettingsOpen(true);
+              }}
             />
           </div>
         </aside>
@@ -1774,6 +2069,14 @@ export function App() {
         >
           {!(layout === "fullscreen" && openedId) && (
             <div className="thread-list-head">
+              {isMobile ? (
+                <div className="mobile-list-title">
+                  <strong>{folderTitle}</strong>
+                  <span>
+                    {unreadCount > 0 ? `${unreadCount} unread` : `${filteredThreads.length}`}
+                  </span>
+                </div>
+              ) : null}
               <label className="thread-search">
                 <span className="sr-only">Search mail</span>
                 <span className="thread-search-icon" aria-hidden="true">
@@ -1783,7 +2086,11 @@ export function App() {
                   ref={searchInputRef}
                   className="field-input"
                   type="search"
-                  placeholder="Search · from: subject: label:"
+                  placeholder={
+                    isMobile
+                      ? "Search mail"
+                      : "Search · from: subject: label:"
+                  }
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   onFocus={() => setInputMode("insert")}
@@ -1822,7 +2129,7 @@ export function App() {
               </div>
             </div>
           )}
-          <div aria-hidden style={{ height: virtualStart * 92 }} />
+          <div aria-hidden style={{ height: virtualStart * threadRowHeight }} />
           {virtualThreads.map((t) => {
             const name =
               t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown";
@@ -1902,7 +2209,7 @@ export function App() {
                 Math.max(
                   0,
                   filteredThreads.length - virtualStart - virtualThreads.length,
-                ) * 92,
+                ) * threadRowHeight,
             }}
           />
         </section>
@@ -1916,14 +2223,16 @@ export function App() {
         >
           {message ? (
             <>
-              {layout === "fullscreen" && (
-                <ActionButton
-                  className="back-btn"
-                  label="Back to inbox"
-                  icon={<Icons.back />}
-                  command="back"
-                  onClick={() => setOpenedId(null)}
-                />
+              {showReadingBack && (
+                <div className={isMobile ? "mobile-back-row" : undefined}>
+                  <ActionButton
+                    className="back-btn"
+                    label="Back to inbox"
+                    icon={<Icons.back />}
+                    command="back"
+                    onClick={() => setOpenedId(null)}
+                  />
+                </div>
               )}
               <div className="reading-toolbar">
                 <ActionButton
@@ -2079,6 +2388,91 @@ export function App() {
         )}
       </div>
 
+      {isMobile ? (
+        <nav className="mobile-bottom-nav" aria-label="Primary">
+          <button
+            type="button"
+            className={mobileNavOpen ? "is-active" : undefined}
+            aria-expanded={mobileNavOpen}
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
+            <Icons.menu />
+            <span>Folders</span>
+          </button>
+          <button
+            type="button"
+            className={
+              mainView === "mail" && activeLabel === "INBOX" && !openedId
+                ? "is-active mobile-nav-badge"
+                : "mobile-nav-badge"
+            }
+            aria-current={
+              mainView === "mail" && activeLabel === "INBOX" && !openedId
+                ? "page"
+                : undefined
+            }
+            data-count={
+              unreadCount > 0
+                ? unreadCount > 99
+                  ? "99+"
+                  : String(unreadCount)
+                : undefined
+            }
+            onClick={() => {
+              setMobileNavOpen(false);
+              setMainView("mail");
+              setActiveLabel("INBOX");
+              setOpenedId(null);
+              setStatus("Inbox");
+            }}
+          >
+            <Icons.inbox />
+            <span>Inbox</span>
+          </button>
+          <button
+            type="button"
+            className="mobile-nav-compose"
+            aria-label="Compose"
+            onClick={() => {
+              setMobileNavOpen(false);
+              setComposeInitial(undefined);
+              setComposeOpen(true);
+              setInputMode("insert");
+            }}
+          >
+            <Icons.compose />
+            <span>Compose</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMobileNavOpen(false);
+              if (openedId) setOpenedId(null);
+              setMainView("mail");
+              requestAnimationFrame(() => {
+                searchInputRef.current?.focus();
+                setInputMode("insert");
+              });
+            }}
+          >
+            <Icons.search />
+            <span>Search</span>
+          </button>
+          <button
+            type="button"
+            className={settingsOpen ? "is-active" : undefined}
+            aria-current={settingsOpen ? "page" : undefined}
+            onClick={() => {
+              setMobileNavOpen(false);
+              setSettingsOpen(true);
+            }}
+          >
+            <Icons.settings />
+            <span>Settings</span>
+          </button>
+        </nav>
+      ) : null}
+
       <StatusBar
         mode={inputMode}
         status={status}
@@ -2090,7 +2484,7 @@ export function App() {
           unread:
             mainView === "calendar"
               ? 0
-              : filteredThreads.filter((t) => t.unreadCount > 0).length,
+              : unreadCount,
           total:
             mainView === "calendar"
               ? calendarEvents.length
@@ -2121,7 +2515,24 @@ export function App() {
         <ComposeModal
           mode={inputMode}
           onModeChange={setInputMode}
-          initialDraft={composeInitial}
+          initialDraft={
+            composeInitial ?? {
+              to: "",
+              subject: "",
+              body: "",
+              accountId: composeAccountId() ?? undefined,
+            }
+          }
+          accounts={runtime.accounts.map((account) => ({
+            accountId: account.accountId,
+            email: account.email,
+            provider: account.accountId.startsWith("gmail:")
+              ? "gmail"
+              : account.accountId.startsWith("microsoft:")
+                ? "microsoft"
+                : "fixture",
+          }))}
+          defaultAccountId={composeAccountId() ?? undefined}
           requestReadReceipt={settings.requestReadReceipt}
           onClose={() => {
             setComposeOpen(false);
@@ -2132,7 +2543,7 @@ export function App() {
           onSaveDraft={async (draft) => {
             const normalized = domainDraft(draft);
             const mutation = await runtime.sync.enqueue({
-              accountId: runtime.gmailAccountId,
+              accountId: normalized.accountId,
               kind: "save_draft",
               targetIds: [normalized.id],
               payload: { draft: normalized } as unknown as Record<
@@ -2144,9 +2555,9 @@ export function App() {
             if (mutation.status === "failed") {
               throw new Error(mutation.lastError ?? "Draft save failed");
             }
-            await runtime.sync.flushOutbox(runtime.gmailAccountId);
+            await runtime.sync.flushOutbox(normalized.accountId);
             const failed = (
-              await runtime.sync.listOutbox(runtime.gmailAccountId)
+              await runtime.sync.listOutbox(normalized.accountId)
             ).find(
               (item) =>
                 item.kind === "save_draft" &&
@@ -2168,7 +2579,7 @@ export function App() {
               ? sendAt.toISOString()
               : new Date(Date.now() + 5_000).toISOString();
             const mutation = await runtime.sync.enqueue({
-              accountId: runtime.gmailAccountId,
+              accountId: normalized.accountId,
               kind: "send",
               targetIds: [],
               payload: { draft: normalized } as unknown as Record<
@@ -2193,7 +2604,7 @@ export function App() {
               toast.message("Send cancelled");
             };
             setTimeout(
-              () => void runtime.sync.flushOutbox(runtime.gmailAccountId),
+              () => void runtime.sync.flushOutbox(normalized.accountId),
               5_000,
             );
             toast.success("Send queued", {
@@ -2222,6 +2633,7 @@ export function App() {
           microsoftConnecting={microsoftConnecting}
           connectError={gmailConnectError}
           accounts={runtime.accounts.map((account) => ({
+            accountId: account.accountId,
             email: account.email,
             provider: account.accountId.startsWith("gmail:")
               ? "gmail"
@@ -2257,60 +2669,38 @@ export function App() {
           }}
           onConnectGmail={() => void connectGmail()}
           onConnectMicrosoft={() => void connectMicrosoft()}
-          onDisconnectGmail={
-            runtime.providerMode === "live" &&
-            runtime.accounts.some((account) =>
-              account.accountId.startsWith("gmail:"),
-            )
-              ? async () => {
+          onDisconnectAccount={
+            runtime.providerMode === "live"
+              ? async (accountId) => {
                   setGmailConnectError(null);
-                  const gmailId =
-                    runtime.accounts.find((account) =>
-                      account.accountId.startsWith("gmail:"),
-                    )?.accountId ?? runtime.gmailAccountId;
                   try {
-                    await disconnectGmailAccount(gmailId);
+                    if (accountId.startsWith("gmail:")) {
+                      await disconnectGmailAccount(accountId);
+                    } else if (accountId.startsWith("microsoft:")) {
+                      await disconnectMicrosoftAccount(accountId);
+                    }
                   } catch {
                     // Local session still clears even if remote revoke fails.
                   }
-                  clearLiveGmailAccount();
-                  setSettingsOpen(false);
-                  setAwaitingSignIn(
-                    shouldPromptSignIn({
-                      googleClientIdConfigured: Boolean(
-                        googleDesktopClientId(),
-                      ),
-                      microsoftClientIdConfigured: Boolean(microsoftClientId()),
-                    }),
-                  );
-                  setRuntime(null);
-                  toast.success("Disconnected Gmail");
-                }
-              : undefined
-          }
-          onDisconnectMicrosoft={
-            runtime.providerMode === "live" && runtime.microsoftAccountId
-              ? async () => {
-                  setGmailConnectError(null);
-                  try {
-                    await disconnectMicrosoftAccount(runtime.microsoftAccountId!);
-                  } catch {
-                    // Local session still clears even if remote revoke fails.
+                  removeLiveAccount(accountId);
+                  if (inboxAccountFilter === accountId) {
+                    setAccountFilter("all");
                   }
-                  clearLiveMicrosoftAccount();
-                  setCalendarEvents([]);
-                  setMainView("mail");
                   setSettingsOpen(false);
-                  setAwaitingSignIn(
-                    shouldPromptSignIn({
-                      googleClientIdConfigured: Boolean(
-                        googleDesktopClientId(),
-                      ),
-                      microsoftClientIdConfigured: Boolean(microsoftClientId()),
-                    }),
-                  );
-                  setRuntime(null);
-                  toast.success("Disconnected Microsoft");
+                  const stillPrompt = shouldPromptSignIn({
+                    googleClientIdConfigured: googleClientIdConfigured(),
+                    microsoftClientIdConfigured: Boolean(microsoftClientId()),
+                  });
+                  setAwaitingSignIn(stillPrompt);
+                  if (stillPrompt) {
+                    setRuntime(null);
+                    setCalendarEvents([]);
+                    setMainView("mail");
+                  } else {
+                    const next = await createGalMailRuntime();
+                    await hydrateRuntime(next);
+                  }
+                  toast.success("Disconnected account");
                 }
               : undefined
           }
@@ -2329,7 +2719,7 @@ export function App() {
             };
             await runtime.remoteOptIn.setConsent(updated);
             setConsent(
-              await runtime.remoteOptIn.getConsent(runtime.gmailAccountId),
+              await runtime.remoteOptIn.getConsent(runtime.defaultAccountId),
             );
             setOptInOpen(false);
             toast.success(

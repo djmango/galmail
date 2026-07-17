@@ -43,6 +43,16 @@ describe("CommandRegistry", () => {
     expect(reg.match({ key: ",", metaKey: false, ctrlKey: true, altKey: false })).toBe(
       "open_settings",
     );
+    // WebKit under ⌘ can report a weird `key`; prefer physical `code`.
+    expect(
+      reg.match({
+        key: "Unidentified",
+        code: "Comma",
+        metaKey: true,
+        ctrlKey: false,
+        altKey: false,
+      }),
+    ).toBe("open_settings");
   });
 
   it("binds Enter to reply in thread scope without conflicting list open", () => {

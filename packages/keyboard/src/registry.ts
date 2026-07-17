@@ -106,6 +106,24 @@ export function resolveEscapeAction(state: {
   return "dismiss";
 }
 
+/** Map KeyboardEvent.code → binding char when `key` is unreliable under modifiers. */
+const CODE_KEYS: Record<string, string> = {
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Backslash: "\\",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Semicolon: ";",
+  Quote: "'",
+  Minus: "-",
+  Equal: "=",
+  Backquote: "`",
+  Space: "space",
+  Escape: "escape",
+  Enter: "enter",
+};
+
 /** Normalize a KeyboardEvent-like object into a binding token (e.g. "meta+k", "escape"). */
 export function normalizeKey(event: {
   key: string;
@@ -113,17 +131,21 @@ export function normalizeKey(event: {
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey?: boolean;
+  /** Physical key id; preferred for punctuation chords like ⌘,. */
+  code?: string;
 }): string {
   const parts: string[] = [];
   if (event.metaKey) parts.push("meta");
   if (event.ctrlKey) parts.push("ctrl");
   if (event.altKey) parts.push("alt");
+  const fromCode = event.code ? CODE_KEYS[event.code] : undefined;
   const key =
-    event.key === " "
+    fromCode ??
+    (event.key === " "
       ? "space"
       : event.key.length === 1
         ? event.key.toLowerCase()
-        : event.key.toLowerCase();
+        : event.key.toLowerCase());
   parts.push(key);
   return parts.join("+");
 }
@@ -282,6 +304,7 @@ export class CommandRegistry {
       ctrlKey: boolean;
       altKey: boolean;
       shiftKey?: boolean;
+      code?: string;
     },
     context: MatchContext = {},
   ): CommandId | null {

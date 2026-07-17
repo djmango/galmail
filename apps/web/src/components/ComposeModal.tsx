@@ -12,6 +12,8 @@ import { Icons } from "./Icons";
 
 export interface ComposeDraft {
   id?: string;
+  /** Sending account; required when multiple accounts are connected. */
+  accountId?: string;
   to: string;
   cc?: string;
   bcc?: string;
@@ -24,6 +26,12 @@ export interface ComposeDraft {
   inReplyTo?: string;
   references?: string[];
 }
+
+export type ComposeAccountOption = {
+  accountId: string;
+  email: string;
+  provider: string;
+};
 
 type ComposeFieldId =
   | "to"
@@ -122,6 +130,10 @@ export function ComposeModal(props: {
   mode: EditorMode;
   onModeChange: (mode: EditorMode) => void;
   initialDraft?: ComposeDraft;
+  /** Connected accounts for the From picker. */
+  accounts?: ComposeAccountOption[];
+  /** Default From account when opening compose. */
+  defaultAccountId?: string;
   /** From settings; OFF by default. Passed through on send. */
   requestReadReceipt?: boolean;
   onClose: () => void;
@@ -129,6 +141,13 @@ export function ComposeModal(props: {
   onSaveDraft?: (draft: ComposeDraft) => Promise<void>;
   onSend: (draft: ComposeDraft, options?: ComposeSendOptions) => Promise<void>;
 }) {
+  const accountOptions = props.accounts ?? [];
+  const initialAccountId =
+    props.initialDraft?.accountId ??
+    props.defaultAccountId ??
+    accountOptions[0]?.accountId ??
+    "";
+  const [accountId, setAccountId] = useState(initialAccountId);
   const [to, setTo] = useState(props.initialDraft?.to ?? "");
   const [subject, setSubject] = useState(props.initialDraft?.subject ?? "");
   const [body, setBody] = useState(props.initialDraft?.body ?? "");
@@ -237,6 +256,9 @@ export function ComposeModal(props: {
 
   useEffect(() => {
     if (props.initialDraft) {
+      if (props.initialDraft.accountId) {
+        setAccountId(props.initialDraft.accountId);
+      }
       setTo(props.initialDraft.to);
       setSubject(props.initialDraft.subject);
       setBody(props.initialDraft.body);
@@ -250,6 +272,12 @@ export function ComposeModal(props: {
       }
     }
   }, [props.initialDraft]);
+
+  useEffect(() => {
+    if (!accountId && props.defaultAccountId) {
+      setAccountId(props.defaultAccountId);
+    }
+  }, [accountId, props.defaultAccountId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -295,8 +323,12 @@ export function ComposeModal(props: {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeField, fieldIds, busy]);
 
+  const selectedAccount =
+    accountOptions.find((account) => account.accountId === accountId) ??
+    accountOptions[0];
   const current: ComposeDraft = {
     id: draftId.current,
+    accountId: accountId || selectedAccount?.accountId,
     to,
     cc,
     bcc,
@@ -331,6 +363,7 @@ export function ComposeModal(props: {
     }, 750);
     return () => clearTimeout(timer);
   }, [
+    accountId,
     to,
     cc,
     bcc,
@@ -494,16 +527,37 @@ export function ComposeModal(props: {
             data-compose-field="alias"
           >
             <span className="compose-field-label">From</span>
-            <input
-              ref={aliasInputRef}
-              className="field-input"
-              placeholder="Alias (optional)"
-              aria-label="Send as alias"
-              type="email"
-              value={alias}
-              onChange={(e) => setAlias(e.target.value)}
-              onFocus={() => onFieldFocus("alias")}
-            />
+            {accountOptions.length > 0 ? (
+              <select
+                className="field-input"
+                aria-label="From account"
+                value={accountId || selectedAccount?.accountId || ""}
+                onChange={(e) => setAccountId(e.target.value)}
+                onFocus={() => onFieldFocus("alias")}
+              >
+                {accountOptions.map((account) => (
+                  <option key={account.accountId} value={account.accountId}>
+                    {account.email}
+                    {account.provider === "gmail"
+                      ? " · Gmail"
+                      : account.provider === "microsoft"
+                        ? " · Microsoft"
+                        : ""}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                ref={aliasInputRef}
+                className="field-input"
+                placeholder="Alias (optional)"
+                aria-label="Send as alias"
+                type="email"
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                onFocus={() => onFieldFocus("alias")}
+              />
+            )}
           </label>
 
           <label

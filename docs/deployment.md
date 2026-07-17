@@ -16,9 +16,25 @@ Static `apps/web/dist` can be served by any HTTPS origin (Cloudflare Pages, ngin
 ```bash
 # Requires Rust + platform SDKs (Xcode for Apple targets)
 bun install --frozen-lockfile
-bun run tauri:dev          # development
+bun run tauri:dev          # development (run from repo via package scripts)
 bun run tauri:build        # release (enable bundle + icons first)
 ```
+
+**macOS Dock / menu name:** `productName`, `mainBinaryName`, and the Cargo `[[bin]]` are
+all `GalMail`. After pulling, a fresh `tauri:dev` should show **GalMail** in the Dock
+(not `galmail-tauri`). No regenerating of iOS Xcode projects is required for this.
+
+**macOS Keychain prompts in `tauri:dev`:** Ad-hoc/linker-signed debug binaries change
+identity on every rebuild, so Keychain ACLs re-prompt. `tauri.macos.conf.json` uses
+`scripts/macos-dev-runner.sh` to codesign the debug binary with your
+`Apple Development:` identity (override with `GALMAIL_DEV_CODESIGN_IDENTITY`). Debug
+builds also rewrite GalMail Keychain items with an allow-all-apps ACL (compiled out of
+release). Production / Developer ID / notarized builds use the default app-bound ACL
+and should **not** prompt every launch when the Team ID stays the same.
+
+If an old item still prompts once after upgrading: unlock Keychain when asked, or delete
+`com.galmail.app.vault` / `com.galmail.app.oauth` items in Keychain Access and relaunch
+so they are recreated under the new ACL/signature.
 
 iOS: configure `developmentTeam` in `apps/web/src-tauri/tauri.conf.json` and App Group `group.com.galateacorp.mail`.
 

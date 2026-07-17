@@ -25,10 +25,26 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.galateacorp.mail.oauth</string>
+			<string>com.galateacorp.mail</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>galmail</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.galateacorp.mail.msauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>msauth.com.galateacorp.mail</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.galateacorp.mail.google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.966863975017-9jr34jv83g260dgs0nckqr4h2pm7q10c</string>
 			</array>
 		</dict>
 	</array>

@@ -43,7 +43,6 @@ targets:
       - path: ../../../../../swift/GalMailApple/Sources
       - path: ../../../../../swift/GalMailApple/Shared
       - path: Assets.xcassets
-      - path: Externals
       - path: galmail-tauri_iOS
       - path: assets
         buildPhase: resources
@@ -75,8 +74,16 @@ targets:
           - processing
           - remote-notification
         CFBundleURLTypes:
-          - CFBundleURLName: com.galateacorp.mail.oauth
+          # Product deep links (never carry OAuth codes).
+          - CFBundleURLName: com.galateacorp.mail
             CFBundleURLSchemes: [galmail]
+          # Microsoft Entra / MSAL iOS redirect: msauth.com.galateacorp.mail://auth
+          - CFBundleURLName: com.galateacorp.mail.msauth
+            CFBundleURLSchemes: [msauth.com.galateacorp.mail]
+          # Google iOS OAuth reverse-client-ID scheme (ASWebAuthenticationSession)
+          - CFBundleURLName: com.galateacorp.mail.google
+            CFBundleURLSchemes:
+              - com.googleusercontent.apps.966863975017-9jr34jv83g260dgs0nckqr4h2pm7q10c
     entitlements:
       path: galmail-tauri_iOS/galmail-tauri_iOS.entitlements
       properties:
@@ -112,11 +119,15 @@ targets:
       - sdk: Metal.framework
       - sdk: MetalKit.framework
       - sdk: QuartzCore.framework
+      - sdk: AuthenticationServices.framework
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
     preBuildScripts:
-      - script: bun run --cwd ../../.. tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
+      - script: bun run --cwd ../../.. ../../scripts/sync-ios-web-assets.ts
+        name: Sync Web Assets
+        basedOnDependencyAnalysis: false
+      - script: bun run --cwd ../../.. tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} arm64
         name: Build Rust Code
         basedOnDependencyAnalysis: false
         outputFiles:
