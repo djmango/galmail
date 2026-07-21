@@ -61,6 +61,7 @@ function expandHome(path: string) {
 
 const xcodePathEnv = {
   ...process.env,
+  CI: "true",
   PATH: `/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH ?? ""}`,
 };
 
@@ -278,64 +279,50 @@ try {
     run("bun", ["scripts/sync-ios-web-assets.ts"]);
   }
 
-  console.log(`→ Archiving ${SCHEME} (${BUNDLE_ID})…`);
-  run("xcodebuild", [
-    "-project",
-    iosProject,
-    "-scheme",
-    SCHEME,
-    "-configuration",
-    "release",
-    "-destination",
-    "generic/platform=iOS",
-    "-archivePath",
-    archivePath,
-    "-allowProvisioningUpdates",
-    ...xcodeAuthArgs(auth),
-    `DEVELOPMENT_TEAM=${TEAM_ID}`,
-    "CODE_SIGN_IDENTITY=Apple Distribution",
-    "archive",
-  ]);
-
+  // Prefer `tauri ios build` so the Xcode Rust script gets CLI options
+  // (direct xcodebuild fails with "failed to read CLI options" WebSocket errors).
+  console.log(`→ Building + exporting IPA via tauri ios build (${BUNDLE_ID})…`);
+  const tauriArgs = [
+    "x",
+    "tauri",
+    "ios",
+    "build",
+    "--ci",
+    "--export-method",
+    exportOnly || archiveOnly ? "debugging" : "app-store-connect",
+    "-c",
+    localConf,
+  ];
   if (archiveOnly) {
-    console.log(`\nDone. Archive at ${archivePath}`);
+    tauriArgs.push("--archive-only");
+  }
+  run("bun", tauriArgs, join(repoRoot, "apps/web"));
+
+  const tauriIpa = join(
+    appleDir,
+    "build",
+    "arm64",
+    "GalMail.ipa",
+  );
+  if (archiveOnly) {
+    console.log(`\nDone. Archive under ${join(appleDir, "build")}`);
     process.exit(0);
   }
 
-  console.log(
-    exportOnly
-      ? "→ Exporting IPA…"
-      : "→ Exporting IPA (app-store-connect)…",
-  );
-  run("xcodebuild", [
-    "-exportArchive",
-    "-archivePath",
-    archivePath,
-    "-exportPath",
-    exportDir,
-    "-exportOptionsPlist",
-    exportOnly ? exportPlist : uploadPlist,
-    "-allowProvisioningUpdates",
-    ...xcodeAuthArgs(auth),
-  ]);
-
   if (exportOnly) {
-    console.log(`\nDone. IPA at ${exportDir}/`);
+    console.log(`\nDone. IPA at ${tauriIpa}`);
   } else {
-    // upload plist destination=upload may already upload; also push via altool as fallback
     try {
-      uploadIpa(auth, findIpa(exportDir));
+      uploadIpa(auth, existsSync(tauriIpa) ? tauriIpa : findIpa(exportDir));
     } catch (err) {
       console.warn(
         "altool upload skipped/failed (export may have uploaded already):",
         err instanceof Error ? err.message : err,
       );
     }
+    console.log(`\nDone. Check TestFlight for processing + beta review.`);
     console.log(
-      `\nDone. Create the ASC app for ${BUNDLE_ID} if missing, then check TestFlight.`,
-    );
-    console.log(
-      `https://appstoreconnect.apple.com/apps → GalMail → TestFlight`,
+      `https://appstoreconnect.apple.com/apps/6791719499/testflight/ios`,
     );
   }
 } finally {

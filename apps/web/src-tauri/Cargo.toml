@@ -1,6 +1,6 @@
 [package]
 name = "galmail-tauri"
-version = "0.1.0"
+version = "2.0.0"
 description = "GalMail Tauri 2 shell (macOS / iOS)"
 authors = ["GalMail contributors"]
 edition = "2021"
