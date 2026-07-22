@@ -66,6 +66,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
 
+      - name: Ensure iOS assets directory exists
+        run: mkdir -p apps/web/src-tauri/gen/apple/assets
+
       - name: Install Apple Distribution certificate
         run: |
           # Env vars come from secrets/ci/apple.yaml via GITHUB_ENV (prior step).

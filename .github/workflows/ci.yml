@@ -80,13 +80,12 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --manifest-path apps/web/src-tauri/Cargo.toml
       - run: cargo clippy --manifest-path apps/web/src-tauri/Cargo.toml --all-targets -- -D warnings
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: apps/web/src-tauri
+      # cargo-audit CLI (not rustsec/audit-check): push events lack Checks:write
+      # for that action ("Resource not accessible by integration").
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - run: cargo audit
+      - run: cargo audit --file apps/web/src-tauri/Cargo.lock
 
   ios-project:
     runs-on: macos-15

@@ -242,6 +242,9 @@ function ensureProject() {
   }
 
   try {
+    // project.yml references `assets/`; sync may not have run yet and the
+    // directory is gitignored, so ensure it exists before XcodeGen validates.
+    mkdirSync(join(appleDir, "assets"), { recursive: true });
     console.log("→ Generating Xcode project…");
     run("xcodegen", ["generate", "--spec", specPath, "--project", appleDir]);
   } finally {
