@@ -478,8 +478,9 @@ impl SecureTokenStore for MacOsKeychain {
     fn delete_token(&self, account_id: &str) -> Result<(), String> {
         use security_framework::passwords::delete_generic_password_options;
         for service in [OAUTH_KEYCHAIN_SERVICE, OAUTH_KEYCHAIN_SERVICE_LEGACY] {
-            match delete_generic_password_options(oauth_password_options(service, account_id, false))
-            {
+            match delete_generic_password_options(oauth_password_options(
+                service, account_id, false,
+            )) {
                 Ok(()) => {}
                 Err(error) if error.code() == -25300 => {}
                 Err(error) => {
