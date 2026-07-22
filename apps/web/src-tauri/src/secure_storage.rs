@@ -332,10 +332,16 @@ impl DeviceKeyStore for MacOsKeychain {
 
 /// Provider-neutral OAuth token Keychain service (Gmail + Microsoft accountIds).
 /// Vault wrapping key uses `com.galmail.app.vault` — do not conflate.
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "ios")),
+    allow(dead_code)
+)]
 pub const OAUTH_KEYCHAIN_SERVICE: &str = "com.galmail.app.oauth";
 /// Legacy service name; dual-read + one-time migrate into [`OAUTH_KEYCHAIN_SERVICE`].
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "ios")),
+    allow(dead_code)
+)]
 pub const OAUTH_KEYCHAIN_SERVICE_LEGACY: &str = "com.galmail.app.gmail-oauth";
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
