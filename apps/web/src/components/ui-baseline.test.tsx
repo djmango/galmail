@@ -201,7 +201,11 @@ describe("current UI baseline", () => {
 
   it("themes plain-text mail fallback", () => {
     const html = renderToStaticMarkup(
-      <SafeMailBody text="Plain body" sender="sender@example.com" theme="light" />,
+      <SafeMailBody
+        text="Plain body"
+        sender="sender@example.com"
+        theme="light"
+      />,
     );
     expect(html).toContain("mail-plain-text");
     expect(html).toContain("Plain body");

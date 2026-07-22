@@ -118,14 +118,14 @@ export function removeLiveAccount(accountId: string): void {
   }
 }
 
-/** @deprecated Prefer addLiveAccount — appends instead of replacing. */
+/** @deprecated Prefer addLiveAccount - appends instead of replacing. */
 export function persistLiveGmailAccount(accountId: string): void {
   addLiveAccount(
     accountId.startsWith("gmail:") ? accountId : `gmail:${accountId}`,
   );
 }
 
-/** @deprecated Prefer addLiveAccount — appends instead of replacing. */
+/** @deprecated Prefer addLiveAccount - appends instead of replacing. */
 export function persistLiveMicrosoftAccount(accountId: string): void {
   addLiveAccount(
     accountId.startsWith("microsoft:")
@@ -220,7 +220,7 @@ export function shouldPromptSignIn(_input?: {
   return true;
 }
 
-/** @deprecated Prefer shouldPromptSignIn — kept for existing call sites during migration. */
+/** @deprecated Prefer shouldPromptSignIn - kept for existing call sites during migration. */
 export function shouldPromptGmailSignIn(clientIdConfigured: boolean): boolean {
   return shouldPromptSignIn({
     googleClientIdConfigured: clientIdConfigured,

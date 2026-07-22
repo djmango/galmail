@@ -85,9 +85,13 @@ the resulting lockfile.
 
 ### Local secrets (sops, no `.env`)
 
-Dev config lives in `secrets/dev.yaml` (SSH-age encrypted). Never create a
-`.env`. `bun run dev` / `bun run tauri:dev` load secrets via
+Dev config lives in `secrets/dev.yaml` (SSH-age encrypted with your SSH key).
+Never create a `.env`. `bun run dev` / `bun run tauri:dev` load secrets via
 `scripts/with-sops.ts` (not a committed `.env`).
+
+Apple TestFlight / signing material is separate: `secrets/ci/apple.yaml`,
+encrypted to your SSH key **and** a CI-only age key. CI decrypts with the
+repository secret `SOPS_AGE_KEY` only — see [docs/deployment.md](docs/deployment.md).
 
 ```bash
 # first time: encrypt from the example, then import Google Desktop client JSON
@@ -121,6 +125,7 @@ endpoint even with PKCE; only the native Tauri process reads it from sops.
 Security and privacy policies: [SECURITY.md](SECURITY.md),
 [privacy policy](docs/privacy-policy.md), and
 [testable requirements](docs/security-requirements.md).
+
 ## Performance budgets
 
 | Metric                           | Target   |

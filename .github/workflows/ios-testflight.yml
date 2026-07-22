@@ -1,0 +1,131 @@
+name: ios-testflight
+
+# Ships a new TestFlight build on every push to master (and on manual dispatch).
+# Apple credentials live in secrets/ci/apple.yaml (sops). CI decrypts with
+# repository secret SOPS_AGE_KEY — see docs/deployment.md § TestFlight CI.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-testflight-master
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    name: Build and upload to TestFlight
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Install XcodeGen and sops
+        run: |
+          brew install xcodegen sops
+          sops --version
+
+      - name: Decrypt Apple CI secrets (sops)
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          if [[ -z "${SOPS_AGE_KEY}" ]]; then
+            echo "::error::Missing repository secret SOPS_AGE_KEY (CI age private key)."
+            echo "See docs/deployment.md (TestFlight CI / sops)."
+            exit 1
+          fi
+          bun scripts/ci-decrypt-sops-env.ts secrets/ci/apple.yaml
+          missing=()
+          for name in \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY \
+            IOS_DISTRIBUTION_CERTIFICATE_BASE64 \
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD; do
+            if ! grep -q "^${name}=" "$GITHUB_ENV" && ! grep -q "^${name}<<" "$GITHUB_ENV"; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::secrets/ci/apple.yaml missing keys: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Apple Distribution certificate
+        run: |
+          # Env vars come from secrets/ci/apple.yaml via GITHUB_ENV (prior step).
+          KEYCHAIN_PASSWORD="${IOS_KEYCHAIN_PASSWORD:-galmail-ci-keychain}"
+          CERTIFICATE_PATH="$RUNNER_TEMP/ios-distribution.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/galmail-ios.keychain-db"
+          echo "$IOS_DISTRIBUTION_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed -e 's/"//g')
+
+      - name: Install provisioning profiles
+        run: |
+          if [[ -z "${IOS_PROVISIONING_PROFILES_BASE64:-}" ]]; then
+            echo "IOS_PROVISIONING_PROFILES_BASE64 not set; relying on Xcode automatic profile sync via ASC API."
+            exit 0
+          fi
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          ARCHIVE="$RUNNER_TEMP/ios-profiles.tgz"
+          echo "$IOS_PROVISIONING_PROFILES_BASE64" | base64 --decode > "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$PROFILES_DIR"
+          echo "Installed $(find "$PROFILES_DIR" -name '*.mobileprovision' | wc -l | tr -d ' ') provisioning profile(s)."
+
+      - name: Install App Store Connect API key
+        run: |
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR" "$HOME/private_keys"
+          KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s\n' "$APP_STORE_CONNECT_API_KEY" > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          ln -sf "$KEY_PATH" "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          {
+            echo "APP_STORE_CONNECT_API_KEY_PATH=$KEY_PATH"
+            echo "APPLE_API_KEY_PATH=$KEY_PATH"
+            echo "APPLE_API_KEY=${APP_STORE_CONNECT_API_KEY_ID}"
+            echo "APPLE_API_ISSUER=${APP_STORE_CONNECT_API_ISSUER_ID}"
+          } >> "$GITHUB_ENV"
+
+      - name: Archive, export, and upload to TestFlight
+        env:
+          # Monotonic CFBundleVersion; App Store rejects duplicate build numbers.
+          GALMAIL_IOS_BUILD_NUMBER: ${{ github.run_number }}
+        run: bun run ios:archive:testflight
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: galmail-ios-ipa
+          path: |
+            apps/web/src-tauri/gen/apple/build/**/*.ipa
+            .local/ios-build/export/*.ipa
+          if-no-files-found: warn
+          retention-days: 14

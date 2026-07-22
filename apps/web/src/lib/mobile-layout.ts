@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** Phone / narrow tablet shell — desktop three-pane stays above this. */
+/** Phone / narrow tablet shell - desktop three-pane stays above this. */
 export const MOBILE_LAYOUT_QUERY = "(max-width: 768px)";
 
 export function readIsMobileLayout(): boolean {

@@ -83,7 +83,6 @@ export function createHomelabApp(
     if (error instanceof HTTPException) {
       return c.json({ error: error.message }, error.status);
     }
-    console.error("homelab_api_error", error);
     return c.json({ error: "internal error" }, 500);
   });
 

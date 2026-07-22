@@ -119,7 +119,10 @@ function normalizeEvent(accountId: string, raw: GraphEvent): CalendarEvent {
 }
 
 function graphDateTime(iso: string): string {
-  return new Date(iso).toISOString().replace(/\.\d{3}Z$/, "").replace(/Z$/, "");
+  return new Date(iso)
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "")
+    .replace(/Z$/, "");
 }
 
 function writeBody(input: CalendarEventWrite): Record<string, unknown> {
@@ -183,8 +186,7 @@ export async function listMicrosoftCalendarEvents(input: {
   accessToken?: string;
 }): Promise<CalendarEvent[]> {
   const start = input.start ?? new Date();
-  const end =
-    input.end ?? new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const end = input.end ?? new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
   const limit = Math.min(100, input.limit ?? 50);
   const params = new URLSearchParams({
     startDateTime: start.toISOString(),
@@ -233,10 +235,7 @@ export async function createMicrosoftCalendarEvent(input: {
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Microsoft calendar create failed (${response.status})`);
   }
-  return normalizeEvent(
-    input.accountId,
-    (await response.json()) as GraphEvent,
-  );
+  return normalizeEvent(input.accountId, (await response.json()) as GraphEvent);
 }
 
 /** Patch an existing calendar event. */
@@ -261,10 +260,7 @@ export async function updateMicrosoftCalendarEvent(input: {
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`Microsoft calendar update failed (${response.status})`);
   }
-  return normalizeEvent(
-    input.accountId,
-    (await response.json()) as GraphEvent,
-  );
+  return normalizeEvent(input.accountId, (await response.json()) as GraphEvent);
 }
 
 /** Delete a calendar event. */
@@ -284,7 +280,10 @@ export async function deleteMicrosoftCalendarEvent(input: {
   if (response.status === 401 || response.status === 403) {
     throw denyMessage();
   }
-  if (response.status !== 204 && (response.status < 200 || response.status >= 300)) {
+  if (
+    response.status !== 204 &&
+    (response.status < 200 || response.status >= 300)
+  ) {
     throw new Error(`Microsoft calendar delete failed (${response.status})`);
   }
 }

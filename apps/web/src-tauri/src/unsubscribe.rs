@@ -55,9 +55,7 @@ fn validate_external_url(raw: &str) -> Result<Url, String> {
 }
 
 #[tauri::command]
-pub async fn one_click_unsubscribe(
-    request: OneClickUnsubscribeRequest,
-) -> Result<(), String> {
+pub async fn one_click_unsubscribe(request: OneClickUnsubscribeRequest) -> Result<(), String> {
     let url = validate_https_url(&request.url)?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -86,10 +84,7 @@ pub async fn one_click_unsubscribe(
     if status.is_success() {
         Ok(())
     } else {
-        Err(format!(
-            "unsubscribe failed with HTTP {}",
-            status.as_u16()
-        ))
+        Err(format!("unsubscribe failed with HTTP {}", status.as_u16()))
     }
 }
 

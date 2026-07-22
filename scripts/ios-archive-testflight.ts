@@ -47,6 +47,8 @@ const args = process.argv.slice(2);
 const exportOnly = args.includes("--export-only");
 const archiveOnly = args.includes("--archive-only");
 const skipFrontend = args.includes("--skip-frontend");
+/** Optional monotonic App Store build number (CI sets this from GITHUB_RUN_NUMBER). */
+const buildNumber = process.env.GALMAIL_IOS_BUILD_NUMBER?.trim() || "";
 
 type AscAuth = {
   keyPath: string;
@@ -199,31 +201,54 @@ function xcodeAuthArgs(auth: AscAuth) {
 }
 
 function ensureLocalTeamConfig() {
-  if (!existsSync(localConf)) {
-    writeFileSync(
-      localConf,
-      `${JSON.stringify(
-        {
-          $schema: "https://schema.tauri.app/config/2",
-          bundle: { iOS: { developmentTeam: TEAM_ID } },
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    console.log(`→ Wrote ${localConf} (gitignored)`);
+  const iosBundle: Record<string, string> = { developmentTeam: TEAM_ID };
+  if (buildNumber) {
+    // Tauri maps bundle.iOS.bundleVersion → CFBundleVersion for App Store uniqueness.
+    iosBundle.bundleVersion = buildNumber;
   }
+  writeFileSync(
+    localConf,
+    `${JSON.stringify(
+      {
+        $schema: "https://schema.tauri.app/config/2",
+        bundle: { iOS: iosBundle },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(
+    buildNumber
+      ? `→ Wrote ${localConf} (team ${TEAM_ID}, CFBundleVersion ${buildNumber})`
+      : `→ Wrote ${localConf} (team ${TEAM_ID})`,
+  );
 }
 
 function ensureProject() {
-  console.log("→ Generating Xcode project…");
-  run("xcodegen", [
-    "generate",
-    "--spec",
-    join(appleDir, "project.yml"),
-    "--project",
-    appleDir,
-  ]);
+  const projectYml = join(appleDir, "project.yml");
+  let specPath = projectYml;
+  let temporarySpec: string | null = null;
+  if (buildNumber) {
+    temporarySpec = join(appleDir, `.project.ci-${buildNumber}.yml`);
+    writeFileSync(
+      temporarySpec,
+      readFileSync(projectYml, "utf8").replace(
+        /CFBundleVersion:\s*["']?[^"'\n]+["']?/g,
+        `CFBundleVersion: "${buildNumber}"`,
+      ),
+    );
+    specPath = temporarySpec;
+    console.log(`→ Using CFBundleVersion=${buildNumber} for this archive`);
+  }
+
+  try {
+    console.log("→ Generating Xcode project…");
+    run("xcodegen", ["generate", "--spec", specPath, "--project", appleDir]);
+  } finally {
+    if (temporarySpec) {
+      rmSync(temporarySpec, { force: true });
+    }
+  }
 
   // Inject team into generated pbxproj for this machine only (project.yml stays empty).
   const pbx = join(iosProject, "project.pbxproj");

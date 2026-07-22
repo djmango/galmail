@@ -58,7 +58,7 @@ function placeFlyoutTip(
   button: HTMLElement,
   tip: HTMLElement,
 ): { side: TipSide; top: number; left: number } | null {
-  // Expanded sidebar keeps the label in-flow — no flyout to place.
+  // Expanded sidebar keeps the label in-flow - no flyout to place.
   if (getComputedStyle(tip).position === "static") return null;
 
   const br = button.getBoundingClientRect();
@@ -92,8 +92,7 @@ function placeFlyoutTip(
 
   const inSidebar = Boolean(button.closest(".sidebar"));
   const collapsedSidebar =
-    inSidebar &&
-    button.closest('.app[data-sidebar="collapsed"]') != null;
+    inSidebar && button.closest('.app[data-sidebar="collapsed"]') != null;
 
   let side: TipSide = "top";
   if (collapsedSidebar) {
@@ -115,8 +114,14 @@ function placeFlyoutTip(
     left = br.right + TIP_GAP;
   }
 
-  left = Math.max(TIP_EDGE, Math.min(left, window.innerWidth - tr.width - TIP_EDGE));
-  top = Math.max(TIP_EDGE, Math.min(top, window.innerHeight - tr.height - TIP_EDGE));
+  left = Math.max(
+    TIP_EDGE,
+    Math.min(left, window.innerWidth - tr.width - TIP_EDGE),
+  );
+  top = Math.max(
+    TIP_EDGE,
+    Math.min(top, window.innerHeight - tr.height - TIP_EDGE),
+  );
 
   return { side, top, left };
 }
@@ -181,9 +186,7 @@ export function ActionButton({
         .join(" ")}
       // Prefer the styled flyout; native title fights it and looks worse.
       title={useFlyoutTip ? undefined : tipText}
-      aria-label={
-        iconOnly || useReveal ? label : buttonProps["aria-label"]
-      }
+      aria-label={iconOnly || useReveal ? label : buttonProps["aria-label"]}
       aria-keyshortcuts={buttonProps["aria-keyshortcuts"] ?? ariaShortcut(keys)}
       onPointerEnter={(event) => {
         updateTipPlacement();

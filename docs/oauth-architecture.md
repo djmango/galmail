@@ -90,10 +90,10 @@ Swift presents `ASWebAuthenticationSession`, and the callback URL is delivered
 back to Rust for PKCE token exchange (same `gmail_oauth_*` /
 `microsoft_oauth_*` commands as desktop).
 
-| Provider | Redirect URI | Callback scheme (Info.plist / session) |
-| --- | --- | --- |
-| Google | `com.googleusercontent.apps.{CLIENT_ID_PREFIX}:/oauthredirect` | `com.googleusercontent.apps.{CLIENT_ID_PREFIX}` |
-| Microsoft | `msauth.com.galateacorp.mail://auth` | `msauth.com.galateacorp.mail` |
+| Provider  | Redirect URI                                                   | Callback scheme (Info.plist / session)          |
+| --------- | -------------------------------------------------------------- | ----------------------------------------------- |
+| Google    | `com.googleusercontent.apps.{CLIENT_ID_PREFIX}:/oauthredirect` | `com.googleusercontent.apps.{CLIENT_ID_PREFIX}` |
+| Microsoft | `msauth.com.galateacorp.mail://auth`                           | `msauth.com.galateacorp.mail`                   |
 
 Current Google iOS client (`VITE_GOOGLE_IOS_CLIENT_ID`):
 

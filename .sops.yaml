@@ -1,7 +1,24 @@
+keys:
+  # Operator SSH key (native sops SSH-age). Decrypt/edit locally with
+  # SOPS_AGE_SSH_PRIVATE_KEY_FILE=~/.ssh/id_ed25519 (or bun scripts/with-sops.ts).
+  - &sulaiman ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK4RmXrS61fSaWojx1aK9oB1N1LzllAkOpcLrcXsUsVz sulaiman.ghori@outlook.com
+  # GitHub Actions only. Private key is repository secret SOPS_AGE_KEY — never commit it.
+  - &galmail_ci age1u6fxm2ap7c00fyhmxchxg0wumuhjk0xd8va78xenntcryvplr3zsurppc9
+
 creation_rules:
+  # Local/dev secrets: operator only (not readable by CI).
+  - path_regex: secrets/(dev|google-desktop-oauth|tauri-updater)\.(ya?ml|json)$
+    key_groups:
+      - age:
+          - *sulaiman
+  # CI-readable Apple/signing material: operator + CI age key.
+  - path_regex: secrets/ci/.*\.(ya?ml|json)$
+    key_groups:
+      - age:
+          - *sulaiman
+          - *galmail_ci
+  # Fallback for other secrets/* files: operator only.
   - path_regex: secrets/.*\.(ya?ml|json)$
     key_groups:
       - age:
-          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK4RmXrS61fSaWojx1aK9oB1N1LzllAkOpcLrcXsUsVz sulaiman.ghori@outlook.com
-  # Keep encrypted secrets committed; ignore plaintext temps and downloads.
-
+          - *sulaiman

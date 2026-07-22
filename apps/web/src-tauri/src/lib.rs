@@ -31,12 +31,32 @@ struct AppState {
     release_support: ReleaseSupport,
     safe_mode: bool,
     startup_issue: Option<&'static str>,
+    startup_detail: Option<String>,
 }
 
 impl AppState {
     fn database(&self) -> Result<&EncryptedDatabase, String> {
         self.database.as_ref().ok_or_else(|| {
-            "encrypted database is unavailable; use GalMail recovery commands".into()
+            if let Some(detail) = self.startup_detail.as_deref() {
+                return format!(
+                    "encrypted database is unavailable ({detail}); delete and reinstall GalMail, or use recovery commands"
+                );
+            }
+            match self.startup_issue {
+                Some("keychain-unavailable") => {
+                    "encrypted database is unavailable: Keychain could not store the vault key. Delete and reinstall GalMail, and confirm Keychain Sharing is enabled for this App ID.".into()
+                }
+                Some(issue) => format!(
+                    "encrypted database is unavailable ({issue}); use GalMail recovery commands"
+                ),
+                None if self.safe_mode => {
+                    "encrypted database is unavailable in safe mode; exit safe mode and restart"
+                        .into()
+                }
+                None => {
+                    "encrypted database is unavailable; use GalMail recovery commands".into()
+                }
+            }
         })
     }
 
@@ -648,12 +668,12 @@ fn initialize_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
     let data_directory = app.path().app_data_dir()?;
     let release_support = ReleaseSupport::new(data_directory.clone());
     let safe_mode = release_support.safe_mode_requested();
-    let (database, startup_issue) = if safe_mode {
-        (None, None)
+    let (database, startup_issue, startup_detail) = if safe_mode {
+        (None, None, None)
     } else {
         match open_or_create(&data_directory, &MacOsKeychain) {
-            Ok(database) => (Some(database), None),
-            Err(error) => (None, Some(classify_startup_error(&error))),
+            Ok(database) => (Some(database), None, None),
+            Err(error) => (None, Some(classify_startup_error(&error)), Some(error)),
         }
     };
     let token_store: Arc<dyn SecureTokenStore> = Arc::new(MacOsKeychain);
@@ -665,12 +685,13 @@ fn initialize_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
         release_support,
         safe_mode: safe_mode || startup_issue.is_some(),
         startup_issue,
+        startup_detail,
     });
 
     #[cfg(target_os = "macos")]
     {
-        use tauri::Emitter;
         use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        use tauri::Emitter;
         // Default Tauri menu has no Settings item, so ⌘, never reaches the webview.
         // Install a Settings… item with CmdOrCtrl+, and emit into the UI.
         let settings = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;

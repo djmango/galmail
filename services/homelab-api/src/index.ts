@@ -9,14 +9,6 @@ await migrate(db);
 
 const app = createHomelabApp(config, db);
 
-console.log(
-  JSON.stringify({
-    event: "homelab_api_listen",
-    port: config.port,
-    region: config.processingRegion,
-  }),
-);
-
 export default {
   port: config.port,
   fetch: app.fetch,

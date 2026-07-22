@@ -4,6 +4,8 @@
 //! localhost; Swift presents the auth session and delivers the callback URL to
 //! Rust for PKCE token exchange.
 
+#![cfg_attr(not(target_os = "ios"), allow(dead_code))]
+
 use std::collections::HashMap;
 #[cfg(target_os = "ios")]
 use std::{sync::Mutex, time::Duration};
@@ -130,10 +132,8 @@ mod bridge {
 
         // Apple: RTLD_DEFAULT == (void *)-2 — search the process image list.
         extern "C" {
-            fn dlsym(
-                handle: *mut std::ffi::c_void,
-                symbol: *const c_char,
-            ) -> *mut std::ffi::c_void;
+            fn dlsym(handle: *mut std::ffi::c_void, symbol: *const c_char)
+                -> *mut std::ffi::c_void;
         }
         const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
 
@@ -153,8 +153,7 @@ mod bridge {
         let attempt = CString::new(attempt_id)
             .map_err(|_| "OAuth attempt id contains an interior NUL".to_string())?;
         // SAFETY: pointers are valid C strings for the duration of the call.
-        let started =
-            unsafe { present_fn(url.as_ptr(), scheme.as_ptr(), attempt.as_ptr()) };
+        let started = unsafe { present_fn(url.as_ptr(), scheme.as_ptr(), attempt.as_ptr()) };
         if started {
             Ok(())
         } else {
@@ -241,16 +240,13 @@ mod tests {
 
     #[test]
     fn parses_custom_scheme_callback_query() {
-        let query = parse_callback_query(
-            "com.googleusercontent.apps.abc:/oauthredirect?code=xyz&state=s1",
-        )
-        .unwrap();
+        let query =
+            parse_callback_query("com.googleusercontent.apps.abc:/oauthredirect?code=xyz&state=s1")
+                .unwrap();
         assert_eq!(query.get("code").map(String::as_str), Some("xyz"));
         assert_eq!(query.get("state").map(String::as_str), Some("s1"));
-        let ms = parse_callback_query(
-            "msauth.com.galateacorp.mail://auth?code=ms&state=st&error=",
-        )
-        .unwrap();
+        let ms = parse_callback_query("msauth.com.galateacorp.mail://auth?code=ms&state=st&error=")
+            .unwrap();
         assert_eq!(ms.get("code").map(String::as_str), Some("ms"));
         let fragment = parse_callback_query(
             "com.googleusercontent.apps.abc:/oauthredirect#code=frag&state=s2",
@@ -262,10 +258,7 @@ mod tests {
 
     #[test]
     fn microsoft_constants_match_docs() {
-        assert_eq!(
-            MICROSOFT_REDIRECT_URI,
-            "msauth.com.galateacorp.mail://auth"
-        );
+        assert_eq!(MICROSOFT_REDIRECT_URI, "msauth.com.galateacorp.mail://auth");
         assert!(MICROSOFT_REDIRECT_URI.starts_with(MICROSOFT_CALLBACK_SCHEME));
     }
 }
