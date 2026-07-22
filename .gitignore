@@ -84,6 +84,7 @@ apps/web/src-tauri/gen/*
 apps/web/src-tauri/gen/apple/build/
 apps/web/src-tauri/gen/apple/Externals/
 apps/web/src-tauri/gen/apple/assets/
+apps/web/src-tauri/gen/apple/.project.ci-*.yml
 **/xcuserdata/
 **/DerivedData/
 *.xcuserstate

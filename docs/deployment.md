@@ -38,6 +38,32 @@ so they are recreated under the new ACL/signature.
 
 iOS: configure `developmentTeam` in `apps/web/src-tauri/tauri.conf.json` and App Group `group.com.galateacorp.mail`.
 
+### TestFlight CI (push to `master`)
+
+The `ios-testflight` workflow builds, signs, and uploads an IPA to App Store
+Connect TestFlight on every push to `master` (and on manual
+`workflow_dispatch`). Build numbers come from `GITHUB_RUN_NUMBER`.
+
+Create these repository secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret                                  | Value                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `APP_STORE_CONNECT_API_KEY_ID`          | Key ID from App Store Connect → Users and Access → Integrations                                                    |
+| `APP_STORE_CONNECT_API_ISSUER_ID`       | Issuer ID shown above the keys table                                                                               |
+| `APP_STORE_CONNECT_API_KEY`             | Full contents of the downloaded `AuthKey_*.p8` (App Manager or Admin)                                              |
+| `IOS_DISTRIBUTION_CERTIFICATE_BASE64`   | `base64 < Apple_Distribution.p12`                                                                                  |
+| `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password for that `.p12`                                                                                           |
+| `IOS_PROVISIONING_PROFILES_BASE64`      | Optional. `tar czf - *.mobileprovision \| base64` for the App Store profiles named in `ExportOptions-upload.plist` |
+| `IOS_KEYCHAIN_PASSWORD`                 | Optional CI keychain password (defaults to a fixed local value)                                                    |
+
+Local equivalent (same env names, plus a path to the `.p8`):
+
+```bash
+export APP_STORE_CONNECT_API_KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8
+export GALMAIL_IOS_BUILD_NUMBER=123   # optional override
+bun run ios:archive:testflight
+```
+
 ## Homelab Docker stack (self-hosted)
 
 For operators who want push registration, consent sync, and optional AI on
