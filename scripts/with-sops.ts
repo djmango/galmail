@@ -12,9 +12,9 @@
  * Note: `sops exec-env` cannot pass command arguments (e.g. `--filter`) on
  * sops 3.13, so we decrypt explicitly and spawn the command ourselves.
  *
- * Passphrase-protected SSH keys are unlocked once and reused for every
- * `sops -d` via SOPS_AGE_SSH_PRIVATE_KEY_CMD (each sops process would
- * otherwise re-prompt).
+ * Passphrase-protected SSH keys are unlocked once into a 0600 temp file and
+ * reused for every `sops -d` via SOPS_AGE_SSH_PRIVATE_KEY_FILE (each sops
+ * process would otherwise re-prompt).
  */
 import {
   existsSync,
@@ -28,15 +28,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { restoreTerminal } from "./restore-tty";
 import { parseSecretsDocument } from "./secrets-yaml";
-
-const PRINT_SSH_IDENTITY = "--print-ssh-identity";
-const SSH_IDENTITY_ENV = "GALMAIL_SOPS_SSH_IDENTITY";
-const scriptPath = resolve(import.meta.path);
-
-if (process.argv.includes(PRINT_SSH_IDENTITY)) {
-  process.stdout.write(process.env[SSH_IDENTITY_ENV] ?? "");
-  process.exit(0);
-}
 
 const root = resolve(import.meta.dir, "..");
 const secretsDir = resolve(root, "secrets");
@@ -93,6 +84,8 @@ function isExampleSecretsName(name: string): boolean {
 function isSecretsOverlayName(name: string): boolean {
   if (isExampleSecretsName(name)) return false;
   if (name.includes(".plain.")) return false;
+  // CI-only material (secrets/ci/*) is decrypted by workflows, not local with-sops.
+  if (name === "ci") return false;
   const isYaml = name.endsWith(".yaml") || name.endsWith(".yml");
   const isJson = name.endsWith(".json");
   if (!isYaml && !isJson) return false;
@@ -190,39 +183,32 @@ function unlockSshPrivateKey(keyPath: string): string {
 
 /**
  * sops 3.13 re-reads SOPS_AGE_SSH_PRIVATE_KEY_FILE in every process and
- * re-prompts for the passphrase. Unlock once and expose an unprotected
- * identity through SOPS_AGE_SSH_PRIVATE_KEY_CMD instead.
+ * re-prompts for the passphrase. Unlock once into a temp file instead.
  */
 function prepareAgeSshIdentity(
   childEnv: Record<string, string | undefined>,
-): void {
+): (() => void) | undefined {
   if (
     childEnv.SOPS_AGE_KEY ||
     childEnv.SOPS_AGE_KEY_FILE ||
     childEnv.SOPS_AGE_KEY_CMD ||
     childEnv.SOPS_AGE_SSH_PRIVATE_KEY_CMD
   ) {
-    return;
+    return undefined;
   }
 
   const keyPath =
     childEnv.SOPS_AGE_SSH_PRIVATE_KEY_FILE ||
     resolve(childEnv.HOME ?? "", ".ssh/id_ed25519");
-  if (!keyPath || !existsSync(keyPath)) return;
-  if (!sshPrivateKeyNeedsPassphrase(keyPath)) return;
+  if (!keyPath || !existsSync(keyPath)) return undefined;
+  if (!sshPrivateKeyNeedsPassphrase(keyPath)) return undefined;
 
-  childEnv[SSH_IDENTITY_ENV] = unlockSshPrivateKey(keyPath);
-  // Absolute bun + script so sops' shlex split does not depend on PATH/cwd.
-  childEnv.SOPS_AGE_SSH_PRIVATE_KEY_CMD = `${process.execPath} ${scriptPath} ${PRINT_SSH_IDENTITY}`;
-  // Prefer CMD over FILE: FILE is tried first and would still prompt.
-  delete childEnv.SOPS_AGE_SSH_PRIVATE_KEY_FILE;
-}
-
-function stripSessionSshIdentity(
-  childEnv: Record<string, string | undefined>,
-): void {
-  delete childEnv[SSH_IDENTITY_ENV];
-  delete childEnv.SOPS_AGE_SSH_PRIVATE_KEY_CMD;
+  const unlocked = unlockSshPrivateKey(keyPath);
+  const dir = mkdtempSync(join(tmpdir(), "galmail-sops-unlocked-"));
+  const tmpKey = join(dir, "id_ed25519");
+  writeFileSync(tmpKey, unlocked, { mode: 0o600 });
+  childEnv.SOPS_AGE_SSH_PRIVATE_KEY_FILE = tmpKey;
+  return () => rmSync(dir, { recursive: true, force: true });
 }
 
 function decryptSecretsFile(path: string): Record<string, unknown> {
@@ -269,17 +255,23 @@ if (!existsSync(primaryYaml) && existsSync(primaryJson)) {
   );
 }
 
-prepareAgeSshIdentity(env);
+const cleanupUnlockedSsh = prepareAgeSshIdentity(env);
 
-const merged: Record<string, string | undefined> = { ...env };
-for (const file of files) {
-  const secrets = decryptSecretsFile(file);
-  for (const [key, value] of Object.entries(secrets)) {
-    if (key === "sops") continue;
-    if (value === null || value === undefined) continue;
-    merged[key] = typeof value === "string" ? value : JSON.stringify(value);
+try {
+  const merged: Record<string, string | undefined> = { ...env };
+  for (const file of files) {
+    const secrets = decryptSecretsFile(file);
+    for (const [key, value] of Object.entries(secrets)) {
+      if (key === "sops") continue;
+      if (value === null || value === undefined) continue;
+      merged[key] = typeof value === "string" ? value : JSON.stringify(value);
+    }
   }
-}
 
-stripSessionSshIdentity(merged);
-await run(args, merged);
+  // Do not leak the unlocked key path into the child command environment.
+  delete merged.SOPS_AGE_SSH_PRIVATE_KEY_FILE;
+  delete merged.SOPS_AGE_SSH_PRIVATE_KEY_CMD;
+  await run(args, merged);
+} finally {
+  cleanupUnlockedSsh?.();
+}

@@ -17,6 +17,8 @@
     "secrets:edit": "bun scripts/edit-dev-secrets.ts",
     "secrets:migrate-yaml": "bun scripts/migrate-dev-secrets-to-yaml.ts",
     "secrets:import-google": "bun scripts/import-google-oauth-json.ts",
+    "secrets:check": "bun scripts/check-secrets-encrypted.ts",
+
     "build": "bun run --filter @galmail/core-api build && bun run --filter './packages/*' build && bun run --filter './services/*' build && bun run --filter @galmail/web build",
     "typecheck": "bun run --filter @galmail/core-api build && bun run --filter './packages/*' build && bun run --filter '*' typecheck",
     "test": "bun test",
