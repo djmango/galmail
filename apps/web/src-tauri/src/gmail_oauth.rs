@@ -709,7 +709,7 @@ fn open_system_browser(url: &str) -> Result<(), String> {
             .arg(url)
             .spawn()
             .map_err(|_| "cannot open the system browser for Google sign-in".to_string())?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {

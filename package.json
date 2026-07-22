@@ -53,5 +53,8 @@
     "apps/*",
     "packages/*",
     "services/*"
-  ]
+  ],
+  "overrides": {
+    "sharp": ">=0.35.0"
+  }
 }

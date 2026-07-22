@@ -4,6 +4,8 @@
 //! localhost; Swift presents the auth session and delivers the callback URL to
 //! Rust for PKCE token exchange.
 
+#![cfg_attr(not(target_os = "ios"), allow(dead_code))]
+
 use std::collections::HashMap;
 #[cfg(target_os = "ios")]
 use std::{sync::Mutex, time::Duration};
