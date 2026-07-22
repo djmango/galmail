@@ -34,7 +34,16 @@ function ensureDist() {
       ].join(" "),
     );
   }
-  console.log("→ Building frontend…");
+  console.log("→ Building workspace packages + frontend…");
+  // apps/web `tsc` resolves @galmail/* from package dist outputs.
+  execFileSync("bun", ["run", "--filter", "@galmail/core-api", "build"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync("bun", ["run", "--filter", "./packages/*", "build"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
   execFileSync("bun", ["run", "build"], {
     cwd: webRoot,
     stdio: "inherit",
