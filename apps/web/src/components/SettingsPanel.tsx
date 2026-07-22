@@ -83,7 +83,9 @@ export function SettingsPanel(props: {
               {props.accounts.map((account) => (
                 <div
                   className="settings-row account-row"
-                  key={account.accountId || `${account.provider}:${account.email}`}
+                  key={
+                    account.accountId || `${account.provider}:${account.email}`
+                  }
                 >
                   <div className="settings-row-text">
                     <strong>{account.email}</strong>

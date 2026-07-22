@@ -37,7 +37,7 @@ function formatTimeRange(event: CalendarEvent): string {
     hour: "numeric",
     minute: "2-digit",
   };
-  return `${start.toLocaleTimeString(undefined, opts)} – ${end.toLocaleTimeString(undefined, opts)}`;
+  return `${start.toLocaleTimeString(undefined, opts)} - ${end.toLocaleTimeString(undefined, opts)}`;
 }
 
 function attendeesSummary(event: CalendarEvent): string {

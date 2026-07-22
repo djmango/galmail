@@ -6,18 +6,18 @@ use crate::secure_storage::SecureTokenStore;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(not(target_os = "ios"))]
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
 use std::{
     collections::HashMap,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-#[cfg(not(target_os = "ios"))]
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
-#[cfg(not(target_os = "ios"))]
-use tokio::{io::AsyncWriteExt, net::TcpListener};
-use tokio::sync::Mutex;
 #[cfg(target_os = "ios")]
 use tokio::sync::oneshot;
+use tokio::sync::Mutex;
+#[cfg(not(target_os = "ios"))]
+use tokio::{io::AsyncWriteExt, net::TcpListener};
 use url::Url;
 
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -184,8 +184,7 @@ impl GmailOAuthState {
 
         #[cfg(target_os = "ios")]
         {
-            let callback_url =
-                ios_oauth::await_callback(pending.ios_callback, ATTEMPT_TTL).await?;
+            let callback_url = ios_oauth::await_callback(pending.ios_callback, ATTEMPT_TTL).await?;
             let query = ios_oauth::parse_callback_query(&callback_url)?;
             if query.get("state").map(String::as_str) != Some(pending.state.as_str()) {
                 return Err("OAuth callback state validation failed".into());
@@ -224,20 +223,18 @@ impl GmailOAuthState {
             if description.is_empty() {
                 return Err(format!("Google authorization failed ({error})"));
             }
-            return Err(format!("Google authorization failed ({error}: {description})"));
+            return Err(format!(
+                "Google authorization failed ({error}: {description})"
+            ));
         }
 
         #[cfg(not(target_os = "ios"))]
         {
             let listener = TcpListener::from_std(pending.listener)
                 .map_err(|_| "cannot activate the OAuth callback listener".to_string())?;
-            let (mut stream, query) = accept_oauth_callback(
-                &listener,
-                "/oauth/callback",
-                &pending.state,
-                ATTEMPT_TTL,
-            )
-            .await?;
+            let (mut stream, query) =
+                accept_oauth_callback(&listener, "/oauth/callback", &pending.state, ATTEMPT_TTL)
+                    .await?;
 
             async fn reply(
                 stream: &mut tokio::net::TcpStream,
@@ -341,9 +338,7 @@ impl GmailOAuthState {
                 || granted == "gmail.modify"
         });
         if !has_gmail {
-            return Err(format!(
-                "Google did not grant gmail.modify (got: {scope})"
-            ));
+            return Err(format!("Google did not grant gmail.modify (got: {scope})"));
         }
         let email = self.user_email(&token.access_token).await?;
         let account_id = format!("gmail:{}", email.to_lowercase());
@@ -518,15 +513,8 @@ impl GmailOAuthState {
             return Err("invalid Google Calendar API path".into());
         }
         let url = format!("https://www.googleapis.com{path}");
-        self.google_http_request(
-            account_id,
-            client_id,
-            method,
-            &url,
-            body,
-            "Google Calendar",
-        )
-        .await
+        self.google_http_request(account_id, client_id, method, &url, body, "Google Calendar")
+            .await
     }
 
     async fn google_http_request(

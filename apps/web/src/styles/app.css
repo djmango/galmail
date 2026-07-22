@@ -518,7 +518,7 @@ select:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  /* Compositor flyouts paint outside the control — don't clip them. */
+  /* Compositor flyouts paint outside the control - don't clip them. */
   overflow: visible;
 }
 
@@ -541,7 +541,7 @@ select:focus-visible {
   color: var(--ink);
   white-space: nowrap;
   cursor: pointer;
-  /* Only paint properties — padding/gap animations force layout every frame. */
+  /* Only paint properties - padding/gap animations force layout every frame. */
   transition:
     background-color 160ms var(--ui-ease),
     border-color 160ms var(--ui-ease),
@@ -610,7 +610,7 @@ select:focus-visible {
 
 /*
  * Icon-first reveal (toolbar hot path): compositor-only flyout above + centered.
- * Transform + opacity only — no max-width / grid / padding layout thrash.
+ * Transform + opacity only - no max-width / grid / padding layout thrash.
  * Host toolbars use overflow: visible so labels aren't clipped.
  */
 .ui-button-reveal {
@@ -780,7 +780,7 @@ select:focus-visible {
   border-right: 1px solid var(--line);
 }
 
-/* Denser inbox list only — leave sidebar/reading pane pad alone.
+/* Denser inbox list only - leave sidebar/reading pane pad alone.
    Left pad stays 0 so unread accent bars sit flush on the pane edge. */
 .thread-list.panel {
   padding: 0.4rem 0.1rem 0.4rem 0;
@@ -816,7 +816,7 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* Flyouts use fixed positioning — contain shell scroll here. */
+  /* Flyouts use fixed positioning - contain shell scroll here. */
   overflow: hidden;
   container-type: inline-size;
   container-name: sidebar;
@@ -1787,7 +1787,7 @@ select:focus-visible {
   position: fixed;
   inset: 0;
   z-index: 40;
-  /* Solid scrim — backdrop-filter blur is expensive in WKWebView. */
+  /* Solid scrim - backdrop-filter blur is expensive in WKWebView. */
   background: rgba(8, 10, 14, 0.62);
 }
 

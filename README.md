@@ -121,6 +121,7 @@ endpoint even with PKCE; only the native Tauri process reads it from sops.
 Security and privacy policies: [SECURITY.md](SECURITY.md),
 [privacy policy](docs/privacy-policy.md), and
 [testable requirements](docs/security-requirements.md).
+
 ## Performance budgets
 
 | Metric                           | Target   |

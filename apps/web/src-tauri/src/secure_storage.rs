@@ -106,6 +106,79 @@ impl MacOsKeychain {
     const ACCOUNT: &'static str = "device-wrap-key-v1";
 }
 
+/// Shared Keychain access group from Info.plist (`GalMailKeychainAccessGroup`).
+///
+/// iOS entitlements require items in `$(AppIdentifierPrefix)com.galateacorp.mail.keychain`
+/// so the app and notification/share extensions can share keys. Swift already sets this;
+/// Rust must too or SecItemAdd fails on device (safe-mode / "database unavailable").
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn keychain_access_group() -> Option<String> {
+    use core_foundation::base::TCFType;
+    use core_foundation::string::{CFString, CFStringRef};
+    use std::os::raw::c_void;
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFBundleGetMainBundle() -> *mut c_void;
+        fn CFBundleGetValueForInfoDictionaryKey(
+            bundle: *mut c_void,
+            key: CFStringRef,
+        ) -> *const c_void;
+    }
+
+    unsafe {
+        let bundle = CFBundleGetMainBundle();
+        if bundle.is_null() {
+            return None;
+        }
+        let key = CFString::new("GalMailKeychainAccessGroup");
+        let value = CFBundleGetValueForInfoDictionaryKey(bundle, key.as_concrete_TypeRef());
+        if value.is_null() {
+            return None;
+        }
+        let cf_string = CFString::wrap_under_get_rule(value as CFStringRef);
+        let group = cf_string.to_string();
+        // Reject unsubstituted build placeholders.
+        if group.is_empty() || group.contains("$(") {
+            return None;
+        }
+        Some(group)
+    }
+}
+
+/// Configure generic-password options the way GalMail Swift does on iOS:
+/// access group (when present), device-local, after-first-unlock accessibility.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn configure_password_options(
+    options: &mut security_framework::passwords::PasswordOptions,
+    for_write: bool,
+) {
+    use security_framework::access_control::{ProtectionMode, SecAccessControl};
+
+    options.set_access_synchronized(Some(false));
+    if let Some(group) = keychain_access_group() {
+        options.set_access_group(&group);
+    }
+    // Data Protection keychain is always on for iOS; keep the attribute explicit.
+    #[cfg(not(target_os = "macos"))]
+    options.use_protected_keychain();
+    if for_write {
+        if let Ok(access) = SecAccessControl::create_with_protection(
+            Some(ProtectionMode::AccessibleAfterFirstUnlockThisDeviceOnly),
+            0,
+        ) {
+            options.set_access_control(access);
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn keychain_status_message(action: &str, code: i32) -> String {
+    // Common iOS failures: -34018 missing entitlement / access group,
+    // -25299 duplicate item, -25300 not found (handled by callers).
+    format!("{action} failed (Keychain status {code})")
+}
+
 /// Debug-only: attach a classic Keychain ACL that allows any application.
 ///
 /// `tauri:dev` binaries are normally ad-hoc signed; each rebuild gets a new
@@ -113,9 +186,7 @@ impl MacOsKeychain {
 /// Production / notarized builds keep the default app-bound ACL (this helper
 /// is compiled out of release builds).
 #[cfg(all(debug_assertions, target_os = "macos"))]
-fn apply_debug_allow_all_apps_acl(
-    options: &mut security_framework::passwords::PasswordOptions,
-) {
+fn apply_debug_allow_all_apps_acl(options: &mut security_framework::passwords::PasswordOptions) {
     use core_foundation::base::TCFType;
     use core_foundation::string::{CFString, CFStringRef};
     use security_framework::os::macos::access::SecAccess;
@@ -187,7 +258,7 @@ impl DeviceKeyStore for MacOsKeychain {
     fn load(&self) -> Result<Option<[u8; KEY_LEN]>, String> {
         use security_framework::passwords::{generic_password, PasswordOptions};
         let mut options = PasswordOptions::new_generic_password(Self::SERVICE, Self::ACCOUNT);
-        options.set_access_synchronized(Some(false));
+        configure_password_options(&mut options, false);
         match generic_password(options) {
             Ok(bytes) => {
                 let key: [u8; KEY_LEN] = bytes
@@ -207,7 +278,10 @@ impl DeviceKeyStore for MacOsKeychain {
                 Ok(Some(key))
             }
             Err(error) if error.code() == -25300 => Ok(None),
-            Err(_) => Err("cannot read vault wrapping key from Keychain".into()),
+            Err(error) => Err(keychain_status_message(
+                "cannot read vault wrapping key from Keychain",
+                error.code(),
+            )),
         }
     }
 
@@ -220,18 +294,38 @@ impl DeviceKeyStore for MacOsKeychain {
                 key,
                 "GalMail vault wrapping key",
                 "Wraps the local GalMail vault key; never synchronized",
-            )
-            .map_err(|_| "cannot store vault wrapping key in Keychain".into());
+            );
         }
         #[cfg(not(all(debug_assertions, target_os = "macos")))]
         {
-            use security_framework::passwords::{set_generic_password_options, PasswordOptions};
+            use security_framework::passwords::{
+                delete_generic_password_options, set_generic_password_options, PasswordOptions,
+            };
+            // Delete first so SecItemAdd applies access group + accessibility cleanly.
+            let mut delete_options =
+                PasswordOptions::new_generic_password(Self::SERVICE, Self::ACCOUNT);
+            configure_password_options(&mut delete_options, false);
+            let _ = delete_generic_password_options(delete_options);
             let mut options = PasswordOptions::new_generic_password(Self::SERVICE, Self::ACCOUNT);
-            options.set_access_synchronized(Some(false));
+            configure_password_options(&mut options, true);
             options.set_label("GalMail vault wrapping key");
             options.set_description("Wraps the local GalMail vault key; never synchronized");
-            set_generic_password_options(key, options)
-                .map_err(|_| "cannot store vault wrapping key in Keychain".into())
+            set_generic_password_options(key, options).map_err(|error| {
+                let hint = if keychain_access_group().is_none() {
+                    " (missing GalMailKeychainAccessGroup in Info.plist)"
+                } else if error.code() == -34018 {
+                    " (Keychain access group entitlement missing from the provisioning profile)"
+                } else {
+                    ""
+                };
+                format!(
+                    "{}{hint}",
+                    keychain_status_message(
+                        "cannot store vault wrapping key in Keychain",
+                        error.code()
+                    )
+                )
+            })
         }
     }
 }
@@ -243,32 +337,43 @@ pub const OAUTH_KEYCHAIN_SERVICE: &str = "com.galmail.app.oauth";
 pub const OAUTH_KEYCHAIN_SERVICE_LEGACY: &str = "com.galmail.app.gmail-oauth";
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-fn oauth_password_options(service: &str, account_id: &str) -> security_framework::passwords::PasswordOptions {
+fn oauth_password_options(
+    service: &str,
+    account_id: &str,
+    for_write: bool,
+) -> security_framework::passwords::PasswordOptions {
     use security_framework::passwords::PasswordOptions;
     let mut options = PasswordOptions::new_generic_password(service, account_id);
-    options.set_access_synchronized(Some(false));
+    configure_password_options(&mut options, for_write);
     options
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn load_oauth_bytes(service: &str, account_id: &str) -> Result<Option<Vec<u8>>, String> {
     use security_framework::passwords::generic_password;
-    match generic_password(oauth_password_options(service, account_id)) {
+    match generic_password(oauth_password_options(service, account_id, false)) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.code() == -25300 => Ok(None),
-        Err(_) => Err("cannot read OAuth credentials from Keychain".into()),
+        Err(error) => Err(keychain_status_message(
+            "cannot read OAuth credentials from Keychain",
+            error.code(),
+        )),
     }
 }
 
 /// Copy a legacy Keychain item into the new service, then delete the old entry.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn migrate_oauth_item_from_legacy(account_id: &str) -> Result<Option<Vec<u8>>, String> {
-    use security_framework::passwords::delete_generic_password;
+    use security_framework::passwords::delete_generic_password_options;
     let Some(bytes) = load_oauth_bytes(OAUTH_KEYCHAIN_SERVICE_LEGACY, account_id)? else {
         return Ok(None);
     };
     store_oauth_bytes(OAUTH_KEYCHAIN_SERVICE, account_id, &bytes)?;
-    let _ = delete_generic_password(OAUTH_KEYCHAIN_SERVICE_LEGACY, account_id);
+    let _ = delete_generic_password_options(oauth_password_options(
+        OAUTH_KEYCHAIN_SERVICE_LEGACY,
+        account_id,
+        false,
+    ));
     Ok(Some(bytes))
 }
 
@@ -288,18 +393,14 @@ fn store_oauth_bytes(service: &str, account_id: &str, value: &[u8]) -> Result<()
     #[cfg(not(all(debug_assertions, target_os = "macos")))]
     {
         use security_framework::passwords::{
-            delete_generic_password, set_generic_password_options, PasswordOptions,
+            delete_generic_password_options, set_generic_password_options,
         };
-        let _ = delete_generic_password(service, account_id);
-        let mut options = PasswordOptions::new_generic_password(service, account_id);
-        options.set_access_synchronized(Some(false));
+        let _ = delete_generic_password_options(oauth_password_options(service, account_id, false));
+        let mut options = oauth_password_options(service, account_id, true);
         options.set_label("GalMail OAuth authorization");
         options.set_description("Provider OAuth tokens; never synchronized");
         set_generic_password_options(value, options).map_err(|error| {
-            format!(
-                "cannot store OAuth credentials in Keychain (code {})",
-                error.code()
-            )
+            keychain_status_message("cannot store OAuth credentials in Keychain", error.code())
         })
     }
 }
@@ -307,17 +408,25 @@ fn store_oauth_bytes(service: &str, account_id: &str, value: &[u8]) -> Result<()
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn list_oauth_accounts_for_service(service: &str) -> Result<Vec<String>, String> {
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
-    let results = match ItemSearchOptions::new()
+    let mut search = ItemSearchOptions::new();
+    search
         .class(ItemClass::generic_password())
         .service(service)
         .load_attributes(true)
         .load_data(false)
-        .limit(Limit::All)
-        .search()
-    {
+        .limit(Limit::All);
+    if let Some(group) = keychain_access_group() {
+        search.access_group(&group);
+    }
+    let results = match search.search() {
         Ok(items) => items,
         Err(error) if error.code() == -25300 => return Ok(vec![]),
-        Err(_) => return Err("cannot enumerate OAuth Keychain accounts".into()),
+        Err(error) => {
+            return Err(keychain_status_message(
+                "cannot enumerate OAuth Keychain accounts",
+                error.code(),
+            ));
+        }
     };
     let mut ids = Vec::new();
     for item in results {
@@ -356,20 +465,28 @@ impl SecureTokenStore for MacOsKeychain {
     }
 
     fn store_token(&self, account_id: &str, value: &[u8]) -> Result<(), String> {
-        use security_framework::passwords::delete_generic_password;
+        use security_framework::passwords::delete_generic_password_options;
         // New writes only go to the provider-neutral service.
-        let _ = delete_generic_password(OAUTH_KEYCHAIN_SERVICE_LEGACY, account_id);
+        let _ = delete_generic_password_options(oauth_password_options(
+            OAUTH_KEYCHAIN_SERVICE_LEGACY,
+            account_id,
+            false,
+        ));
         store_oauth_bytes(OAUTH_KEYCHAIN_SERVICE, account_id, value)
     }
 
     fn delete_token(&self, account_id: &str) -> Result<(), String> {
-        use security_framework::passwords::delete_generic_password;
+        use security_framework::passwords::delete_generic_password_options;
         for service in [OAUTH_KEYCHAIN_SERVICE, OAUTH_KEYCHAIN_SERVICE_LEGACY] {
-            match delete_generic_password(service, account_id) {
+            match delete_generic_password_options(oauth_password_options(service, account_id, false))
+            {
                 Ok(()) => {}
                 Err(error) if error.code() == -25300 => {}
-                Err(_) => {
-                    return Err("cannot remove OAuth credentials from Keychain".into());
+                Err(error) => {
+                    return Err(keychain_status_message(
+                        "cannot remove OAuth credentials from Keychain",
+                        error.code(),
+                    ));
                 }
             }
         }

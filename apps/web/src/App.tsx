@@ -1484,7 +1484,7 @@ export function App() {
     const accountEmail =
       runtime!.accounts.find((account) => account.accountId === selectedId)
         ?.email ?? "me";
-    // Empty alias input is "" — must not win over the connected account via ??.
+    // Empty alias input is "" - must not win over the connected account via ??.
     const fromEmail = draft.alias?.trim() || accountEmail;
     persistLastComposeAccountId(selectedId);
     return {
@@ -2551,7 +2551,7 @@ export function App() {
                 unknown
               >,
             });
-            // Failed rows stay failed until Retry — do not flush/retry on autosave.
+            // Failed rows stay failed until Retry - do not flush/retry on autosave.
             if (mutation.status === "failed") {
               throw new Error(mutation.lastError ?? "Draft save failed");
             }

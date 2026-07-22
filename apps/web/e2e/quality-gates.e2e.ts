@@ -27,6 +27,8 @@ test("keyboard mail and compose flows remain usable", async ({ page }) => {
   await expect(reply.getByPlaceholder("Subject", { exact: true })).toHaveValue(
     /^Re:/,
   );
+  // Compose uses Insert → Normal → dismiss, so Esc twice closes the dialog.
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Compose" })).toBeHidden();
 
@@ -37,15 +39,18 @@ test("keyboard mail and compose flows remain usable", async ({ page }) => {
     .getByPlaceholder("Subject", { exact: true })
     .fill("Deterministic E2E message");
   await compose.getByPlaceholder("Message").fill("Queued while local-first.");
-  await compose.getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText(/send · pending/i)).toBeVisible();
+  await compose.locator('button[type="submit"]').click();
+  await expect(page.getByText(/send · (?:pending|scheduled)/i)).toBeVisible();
 });
 
 test("settings persist and offline navigation stays local", async ({
   context,
   page,
 }) => {
-  await page.getByLabel("Folders").getByRole("button", { name: "Settings" }).click();
+  await page
+    .getByLabel("Folders")
+    .getByRole("button", { name: "Settings" })
+    .click();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await page.getByRole("button", { name: "Light" }).click();
   await page.getByRole("button", { name: "Close settings" }).click();

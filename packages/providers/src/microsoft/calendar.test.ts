@@ -162,7 +162,12 @@ describe("Microsoft calendar client", () => {
     const httpOk: GraphHttpClient = {
       async request(input) {
         expect(input.method).toBe("DELETE");
-        return { status: 204, async json() { return null; } };
+        return {
+          status: 204,
+          async json() {
+            return null;
+          },
+        };
       },
     };
     await deleteMicrosoftCalendarEvent({
@@ -173,7 +178,12 @@ describe("Microsoft calendar client", () => {
 
     const httpDenied: GraphHttpClient = {
       async request() {
-        return { status: 403, async json() { return {}; } };
+        return {
+          status: 403,
+          async json() {
+            return {};
+          },
+        };
       },
     };
     await expect(

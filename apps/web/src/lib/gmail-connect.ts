@@ -36,7 +36,7 @@ function isAppleMobileWebView(): boolean {
 export function googleOAuthClientId(): string | undefined {
   if (isAppleMobileWebView()) {
     // iOS must use the iOS OAuth client (custom-scheme / no secret). Never fall
-    // back to the desktop client — that yields Google's generic failure after
+    // back to the desktop client - that yields Google's generic failure after
     // consent (redirect_uri is not registered for Desktop clients).
     return googleIosClientId();
   }

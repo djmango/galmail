@@ -31,7 +31,8 @@
     "ios:sync-web-assets": "bun scripts/sync-ios-web-assets.ts",
     "ios:check": "xcodegen generate --spec apps/web/src-tauri/gen/apple/project.yml --project apps/web/src-tauri/gen/apple && xcodebuild -project apps/web/src-tauri/gen/apple/galmail-tauri.xcodeproj -scheme GalMailAppleTests -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build-for-testing && xcodebuild -project apps/web/src-tauri/gen/apple/galmail-tauri.xcodeproj -target GalMailNotificationService -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build && xcodebuild -project apps/web/src-tauri/gen/apple/galmail-tauri.xcodeproj -target GalMailShareExtension -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build",
     "ios:archive:testflight": "bun scripts/ios-archive-testflight.ts",
-    "ios:rust:check": "cargo check --manifest-path apps/web/src-tauri/Cargo.toml --target aarch64-apple-ios-sim",
+    "ios:rust:check": "bun scripts/ensure-frontend-dist.ts && cargo check --manifest-path apps/web/src-tauri/Cargo.toml --target aarch64-apple-ios-sim",
+    "macos:rust:check": "bun scripts/ensure-frontend-dist.ts && cargo check --manifest-path apps/web/src-tauri/Cargo.toml --target aarch64-apple-darwin",
     "performance:check": "bun run build && bun scripts/check-budgets.ts",
     "quality:local": "bun run lint && bun run security:check && bun run security:dependencies && bun run security:rust && bun test && bun run typecheck && bun run build && bun scripts/check-budgets.ts && bun run bench && bun run e2e && bun run format:check && cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && cargo test --manifest-path apps/web/src-tauri/Cargo.toml && cargo clippy --manifest-path apps/web/src-tauri/Cargo.toml --all-targets -- -D warnings && CI=true bun run tauri:build && git diff --check",
     "format:check": "bun run format:js && bun run format:rust",
@@ -40,7 +41,6 @@
     "bench": "bun run --filter @galmail/core-api bench",
     "relay:dev": "bun run --filter @galmail/blind-relay dev",
     "homelab:dev": "bun run --filter @galmail/homelab-api dev",
-
     "tauri:dev": "bun scripts/with-sops.ts -- bun scripts/run-web.ts tauri:dev",
     "tauri:dev:fixture": "bun scripts/run-web.ts tauri:dev",
     "tauri:build": "bun scripts/run-web.ts tauri:build",

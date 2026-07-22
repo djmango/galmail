@@ -6,18 +6,18 @@ use crate::secure_storage::SecureTokenStore;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+#[cfg(not(target_os = "ios"))]
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
 use std::{
     collections::HashMap,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-#[cfg(not(target_os = "ios"))]
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
-#[cfg(not(target_os = "ios"))]
-use tokio::{io::AsyncWriteExt, net::TcpListener};
-use tokio::sync::Mutex;
 #[cfg(target_os = "ios")]
 use tokio::sync::oneshot;
+use tokio::sync::Mutex;
+#[cfg(not(target_os = "ios"))]
+use tokio::{io::AsyncWriteExt, net::TcpListener};
 use url::Url;
 
 const ATTEMPT_TTL: Duration = Duration::from_secs(180);
@@ -28,7 +28,8 @@ const ATTEMPT_TTL: Duration = Duration::from_secs(180);
 /// - Advanced: Allow public client flows = Yes
 /// - delegated: User.Read, Mail.ReadWrite, Mail.Send, Calendars.ReadWrite,
 ///   offline_access, openid, profile, email
-const SCOPES: &str = "openid profile email offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite";
+const SCOPES: &str =
+    "openid profile email offline_access User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite";
 #[cfg(not(target_os = "ios"))]
 const CALLBACK_PATH: &str = "/oauth/microsoft/callback";
 
@@ -128,13 +129,8 @@ impl MicrosoftOAuthState {
         #[cfg(target_os = "ios")]
         {
             let redirect_uri = ios_oauth::MICROSOFT_REDIRECT_URI.to_string();
-            let authorization_url = build_microsoft_auth_url(
-                &client_id,
-                &tenant,
-                &redirect_uri,
-                &challenge,
-                &state,
-            )?;
+            let authorization_url =
+                build_microsoft_auth_url(&client_id, &tenant, &redirect_uri, &challenge, &state)?;
             let ios_callback = ios_oauth::register_waiter(attempt_id.clone());
             // Store pending before presenting so complete() can await the callback.
             self.pending.lock().await.insert(
@@ -167,9 +163,9 @@ impl MicrosoftOAuthState {
         {
             let listener = StdTcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
                 .map_err(|_| "cannot bind the Microsoft OAuth callback listener".to_string())?;
-            listener
-                .set_nonblocking(true)
-                .map_err(|_| "cannot configure the Microsoft OAuth callback listener".to_string())?;
+            listener.set_nonblocking(true).map_err(|_| {
+                "cannot configure the Microsoft OAuth callback listener".to_string()
+            })?;
             let port = listener
                 .local_addr()
                 .map_err(|_| "cannot inspect the Microsoft OAuth callback listener".to_string())?
@@ -178,13 +174,8 @@ impl MicrosoftOAuthState {
             // listen on 127.0.0.1. Register the loopback redirect as Mobile and
             // desktop (manifest may be required for http://127.0.0.1).
             let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
-            let authorization_url = build_microsoft_auth_url(
-                &client_id,
-                &tenant,
-                &redirect_uri,
-                &challenge,
-                &state,
-            )?;
+            let authorization_url =
+                build_microsoft_auth_url(&client_id, &tenant, &redirect_uri, &challenge, &state)?;
             // Store pending before opening the browser so complete() can listen even
             // when SSO redirects immediately.
             self.pending.lock().await.insert(
@@ -582,17 +573,12 @@ fn scope_granted(granted_scope: &str, required: &str) -> bool {
         let granted_short = granted
             .trim_start_matches("https://graph.microsoft.com/")
             .trim();
-        granted.eq_ignore_ascii_case(required)
-            || granted_short.eq_ignore_ascii_case(required_short)
+        granted.eq_ignore_ascii_case(required) || granted_short.eq_ignore_ascii_case(required_short)
     })
 }
 
 #[cfg_attr(target_os = "ios", allow(dead_code))]
-fn is_user_cancel_error(
-    error: &str,
-    subcode: Option<&str>,
-    description: Option<&str>,
-) -> bool {
+fn is_user_cancel_error(error: &str, subcode: Option<&str>, description: Option<&str>) -> bool {
     let sub = subcode.unwrap_or("").to_lowercase();
     if sub.contains("cancel") {
         return true;
@@ -612,7 +598,8 @@ fn classify_authorization_error(
 ) -> String {
     let description = description.unwrap_or_default();
     let text = format!("{error} {description} {}", subcode.unwrap_or_default()).to_lowercase();
-    if text.contains("cancel") || (error.eq_ignore_ascii_case("access_denied") && text.contains("canceled"))
+    if text.contains("cancel")
+        || (error.eq_ignore_ascii_case("access_denied") && text.contains("canceled"))
     {
         "Microsoft sign-in was cancelled".into()
     } else if text.contains("admin") || text.contains("authorization_requestdenied") {
@@ -623,7 +610,9 @@ fn classify_authorization_error(
         "Microsoft user consent is required".into()
     } else if text.contains("aadsts7000218") || text.contains("client_secret") {
         "Microsoft public-client flow is disabled for this app registration".into()
-    } else if text.contains("aadsts50011") || text.contains("reply url") || text.contains("redirect")
+    } else if text.contains("aadsts50011")
+        || text.contains("reply url")
+        || text.contains("redirect")
     {
         "Microsoft redirect URI is not registered (desktop: http://127.0.0.1/…; iOS: msauth.com.galateacorp.mail://auth)"
             .into()
