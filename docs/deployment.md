@@ -62,15 +62,15 @@ The only Actions secret required for TestFlight is:
 
 Contents of `secrets/ci/apple.yaml` (after decrypt):
 
-| Key                                       | Value                                                                                                              |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `APP_STORE_CONNECT_API_KEY_ID`            | Key ID from App Store Connect → Users and Access → Integrations                                                    |
-| `APP_STORE_CONNECT_API_ISSUER_ID`         | Issuer ID shown above the keys table                                                                               |
-| `APP_STORE_CONNECT_API_KEY`               | Full PEM of the downloaded `AuthKey_*.p8` (App Manager or Admin)                                                   |
-| `IOS_DISTRIBUTION_CERTIFICATE_BASE64`     | `base64 < Apple_Distribution.p12` (Distribution identity only)                                                     |
-| `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`   | Password for that `.p12`                                                                                           |
-| `IOS_PROVISIONING_PROFILES_BASE64`        | Optional. `tar czf - *.mobileprovision \| base64` for the App Store profiles named in `ExportOptions-upload.plist` |
-| `IOS_KEYCHAIN_PASSWORD`                   | Optional CI keychain password (defaults to a fixed local value)                                                    |
+| Key                                     | Value                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `APP_STORE_CONNECT_API_KEY_ID`          | Key ID from App Store Connect → Users and Access → Integrations                                                    |
+| `APP_STORE_CONNECT_API_ISSUER_ID`       | Issuer ID shown above the keys table                                                                               |
+| `APP_STORE_CONNECT_API_KEY`             | Full PEM of the downloaded `AuthKey_*.p8` (App Manager or Admin)                                                   |
+| `IOS_DISTRIBUTION_CERTIFICATE_BASE64`   | `base64 < Apple_Distribution.p12` (Distribution identity only)                                                     |
+| `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password for that `.p12`                                                                                           |
+| `IOS_PROVISIONING_PROFILES_BASE64`      | Optional. `tar czf - *.mobileprovision \| base64` for the App Store profiles named in `ExportOptions-upload.plist` |
+| `IOS_KEYCHAIN_PASSWORD`                 | Optional CI keychain password (defaults to a fixed local value)                                                    |
 
 Keep a backup of `SOPS_AGE_KEY` outside GitHub (for example 1Password). GitHub
 does not let you read a secret back after it is set. Rotate by generating a new
