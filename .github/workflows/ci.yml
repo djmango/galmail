@@ -91,7 +91,16 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # rustup occasionally hits "Connection reset by peer" against static.rust-lang.org.
+      - name: Install Rust toolchain
+        id: ios-rust
+        continue-on-error: true
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - name: Retry Rust toolchain
+        if: steps.ios-rust.outcome == 'failure'
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios-sim
       - run: brew install xcodegen
