@@ -420,14 +420,25 @@ async function submitExportCompliance(
       }),
     },
   );
-  if (!patch.ok) {
-    const err = await patch.text();
-    throw new Error(
-      `Failed to submit export compliance for build ${buildNumber}: ${patch.status} ${err}`,
+  if (patch.ok) {
+    console.log(
+      `→ Export compliance submitted (usesNonExemptEncryption=false) for build ${buildNumber}`,
     );
+    return;
   }
-  console.log(
-    `→ Export compliance submitted (usesNonExemptEncryption=false) for build ${buildNumber}`,
+  const errText = await patch.text();
+  // Info.plist ITSAppUsesNonExemptEncryption already answered this at upload time.
+  if (
+    patch.status === 409 &&
+    errText.includes("You cannot update when the value is already set")
+  ) {
+    console.log(
+      `→ Export compliance already set for build ${buildNumber} (from Info.plist)`,
+    );
+    return;
+  }
+  throw new Error(
+    `Failed to submit export compliance for build ${buildNumber}: ${patch.status} ${errText}`,
   );
 }
 
