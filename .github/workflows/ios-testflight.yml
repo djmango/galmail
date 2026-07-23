@@ -58,21 +58,26 @@ jobs:
             exit 1
           fi
           bun scripts/ci-decrypt-sops-env.ts secrets/ci/apple.yaml
+          bun scripts/ci-decrypt-sops-env.ts secrets/ci/vite.yaml
           missing=()
           for name in \
             APP_STORE_CONNECT_API_KEY_ID \
             APP_STORE_CONNECT_API_ISSUER_ID \
             APP_STORE_CONNECT_API_KEY \
             IOS_DISTRIBUTION_CERTIFICATE_BASE64 \
-            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD; do
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD \
+            VITE_GOOGLE_IOS_CLIENT_ID \
+            VITE_MICROSOFT_CLIENT_ID; do
             if ! grep -q "^${name}=" "$GITHUB_ENV" && ! grep -q "^${name}<<" "$GITHUB_ENV"; then
               missing+=("$name")
             fi
           done
           if (( ${#missing[@]} > 0 )); then
-            echo "::error::secrets/ci/apple.yaml missing keys: ${missing[*]}"
+            echo "::error::secrets/ci/*.yaml missing keys: ${missing[*]}"
             exit 1
           fi
+          # Confirm Vite will see provider client IDs (values stay in GITHUB_ENV; do not echo them).
+          echo "OAuth client IDs loaded for iOS web build (VITE_GOOGLE_IOS_CLIENT_ID, VITE_MICROSOFT_CLIENT_ID)."
 
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile

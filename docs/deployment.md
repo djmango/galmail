@@ -48,13 +48,20 @@ rejects iOS SDKs older than 26). Build numbers are
 
 #### Secrets model (sops)
 
-Apple CI credentials are **committed encrypted** in `secrets/ci/apple.yaml`.
+Apple CI credentials and public OAuth client IDs for release builds are
+**committed encrypted** under `secrets/ci/`:
+
+- `secrets/ci/apple.yaml` — signing / App Store Connect
+- `secrets/ci/vite.yaml` — `VITE_GOOGLE_IOS_CLIENT_ID`, `VITE_MICROSOFT_CLIENT_ID`, tenant
+
 `.sops.yaml` encrypts that path to:
 
 1. **Your SSH key** (`ssh-ed25519` …) — local decrypt/edit (`sops secrets/ci/apple.yaml`)
 2. **CI age key** (`age1u6fxm…` / `&galmail_ci`) — GitHub Actions decrypt only
 
 Dev overlays under `secrets/dev*.yaml` stay **operator-only** (CI cannot read them).
+TestFlight CI loads `vite.yaml` into the environment before the Vite web build so
+live Google/Microsoft sign-in works on device.
 
 The only Actions secret required for TestFlight is:
 
@@ -73,6 +80,14 @@ Contents of `secrets/ci/apple.yaml` (after decrypt):
 | `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Password for that `.p12`                                                                                           |
 | `IOS_PROVISIONING_PROFILES_BASE64`      | Optional. `tar czf - *.mobileprovision \| base64` for the App Store profiles named in `ExportOptions-upload.plist` |
 | `IOS_KEYCHAIN_PASSWORD`                 | Optional CI keychain password (defaults to a fixed local value)                                                    |
+
+Contents of `secrets/ci/vite.yaml` (after decrypt):
+
+| Key                         | Value                                                                 |
+| --------------------------- | --------------------------------------------------------------------- |
+| `VITE_GOOGLE_IOS_CLIENT_ID` | Google Cloud iOS OAuth client ID                                      |
+| `VITE_MICROSOFT_CLIENT_ID`  | Entra Application (client) ID                                         |
+| `VITE_MICROSOFT_TENANT`     | Directory (tenant) ID, or `common` for multi-tenant                    |
 
 Keep a backup of `SOPS_AGE_KEY` outside GitHub (for example 1Password). GitHub
 does not let you read a secret back after it is set. Rotate by generating a new
