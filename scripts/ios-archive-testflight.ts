@@ -356,6 +356,81 @@ async function latestAscBuildNumber(auth: AscAuth): Promise<number | null> {
   }
 }
 
+/** Wait for ASC to finish processing, then clear export-compliance so TestFlight can ship. */
+async function submitExportCompliance(
+  auth: AscAuth,
+  buildNumber: string,
+): Promise<void> {
+  const token = ascJwt(auth);
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+  const deadline = Date.now() + 8 * 60 * 1000;
+  let buildId: string | null = null;
+
+  console.log(
+    `→ Waiting for ASC to process CFBundleVersion=${buildNumber} (export compliance)…`,
+  );
+  while (Date.now() < deadline) {
+    const url = new URL("https://api.appstoreconnect.apple.com/v1/builds");
+    url.searchParams.set("filter[app]", ASC_APP_ID);
+    url.searchParams.set("filter[version]", buildNumber);
+    url.searchParams.set("sort", "-uploadedDate");
+    url.searchParams.set("limit", "1");
+    const response = await fetch(url, {
+      headers: { Authorization: headers.Authorization },
+    });
+    if (response.ok) {
+      const body = (await response.json()) as {
+        data?: Array<{
+          id: string;
+          attributes?: { processingState?: string };
+        }>;
+      };
+      const build = body.data?.[0];
+      if (build) {
+        buildId = build.id;
+        const state = build.attributes?.processingState ?? "UNKNOWN";
+        if (state === "VALID" || state === "INVALID") break;
+        console.log(`  processingState=${state}; retrying…`);
+      }
+    }
+    await new Promise((r) => setTimeout(r, 15_000));
+  }
+
+  if (!buildId) {
+    console.warn(
+      "→ ASC build not visible yet; answer export compliance in App Store Connect if TestFlight stays blocked.",
+    );
+    return;
+  }
+
+  const patch = await fetch(
+    `https://api.appstoreconnect.apple.com/v1/builds/${buildId}`,
+    {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        data: {
+          type: "builds",
+          id: buildId,
+          attributes: { usesNonExemptEncryption: false },
+        },
+      }),
+    },
+  );
+  if (!patch.ok) {
+    const err = await patch.text();
+    throw new Error(
+      `Failed to submit export compliance for build ${buildNumber}: ${patch.status} ${err}`,
+    );
+  }
+  console.log(
+    `→ Export compliance submitted (usesNonExemptEncryption=false) for build ${buildNumber}`,
+  );
+}
+
 /**
  * Monotonic CFBundleVersion for App Store Connect.
  * Prefer max(ASC latest+1, GALMAIL_IOS_BUILD_NUMBER); else env; else unix seconds.
@@ -435,10 +510,9 @@ try {
     // Must fail the job if ASC rejects the upload (e.g. duplicate build number).
     // Previously this was swallowed, so CI went green with no new TestFlight build.
     uploadIpa(auth, ipaPath);
+    await submitExportCompliance(auth, buildNumber);
     console.log(`\nDone. Uploaded CFBundleVersion=${buildNumber}.`);
-    console.log(
-      `Check TestFlight (processing can take several minutes):`,
-    );
+    console.log(`Check TestFlight (internal testers once READY_FOR_BETA_TESTING):`);
     console.log(
       `https://appstoreconnect.apple.com/apps/${ASC_APP_ID}/testflight/ios`,
     );

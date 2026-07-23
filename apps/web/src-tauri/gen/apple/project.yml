@@ -65,6 +65,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: "2.0.0"
         CFBundleVersion: "4"
+        # Standard HTTPS/TLS only — skip ASC export-compliance questionnaire.
+        ITSAppUsesNonExemptEncryption: false
         GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         BGTaskSchedulerPermittedIdentifiers:
           - com.galateacorp.mail.refresh
