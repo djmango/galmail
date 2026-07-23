@@ -14,6 +14,7 @@
  *   bun scripts/ios-archive-testflight.ts --skip-frontend
  */
 import { execFileSync, execSync } from "node:child_process";
+import { createPrivateKey, createSign } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -42,13 +43,13 @@ const exportPlist = join(appleDir, "ExportOptions-export.plist");
 const TEAM_ID = "A95F4H2423";
 const SCHEME = "galmail-tauri_iOS";
 const BUNDLE_ID = "com.galateacorp.mail";
+/** App Store Connect numeric app id (GalMail). */
+const ASC_APP_ID = "6791719499";
 
 const args = process.argv.slice(2);
 const exportOnly = args.includes("--export-only");
 const archiveOnly = args.includes("--archive-only");
 const skipFrontend = args.includes("--skip-frontend");
-/** Optional monotonic App Store build number (CI sets this from GITHUB_RUN_NUMBER). */
-const buildNumber = process.env.GALMAIL_IOS_BUILD_NUMBER?.trim() || "";
 
 type AscAuth = {
   keyPath: string;
@@ -200,7 +201,7 @@ function xcodeAuthArgs(auth: AscAuth) {
   ];
 }
 
-function ensureLocalTeamConfig() {
+function ensureLocalTeamConfig(buildNumber: string) {
   const iosBundle: Record<string, string> = { developmentTeam: TEAM_ID };
   if (buildNumber) {
     // Tauri maps bundle.iOS.bundleVersion → CFBundleVersion for App Store uniqueness.
@@ -224,7 +225,7 @@ function ensureLocalTeamConfig() {
   );
 }
 
-function ensureProject() {
+function ensureProject(buildNumber: string) {
   const projectYml = join(appleDir, "project.yml");
   let specPath = projectYml;
   let temporarySpec: string | null = null;
@@ -295,10 +296,100 @@ function findIpa(dir: string) {
   return ipa;
 }
 
+function ascJwt(auth: AscAuth): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(
+    JSON.stringify({ alg: "ES256", kid: auth.keyId, typ: "JWT" }),
+  ).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({
+      iss: auth.issuerId,
+      iat: now,
+      exp: now + 20 * 60,
+      aud: "appstoreconnect-v1",
+    }),
+  ).toString("base64url");
+  const data = `${header}.${payload}`;
+  const key = createPrivateKey(readFileSync(auth.keyPath));
+  const signer = createSign("SHA256");
+  signer.update(data);
+  signer.end();
+  const sig = signer
+    .sign({ key, dsaEncoding: "ieee-p1363" })
+    .toString("base64url");
+  return `${data}.${sig}`;
+}
+
+/** Highest CFBundleVersion already on App Store Connect, or null if unknown. */
+async function latestAscBuildNumber(auth: AscAuth): Promise<number | null> {
+  try {
+    const token = ascJwt(auth);
+    const url = new URL("https://api.appstoreconnect.apple.com/v1/builds");
+    url.searchParams.set("filter[app]", ASC_APP_ID);
+    // uploadedDate avoids lexicographic "version" sort bugs (e.g. "9" > "10").
+    url.searchParams.set("sort", "-uploadedDate");
+    url.searchParams.set("limit", "50");
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      console.warn(
+        `→ ASC builds query failed (${response.status}); falling back for build number`,
+      );
+      return null;
+    }
+    const body = (await response.json()) as {
+      data?: Array<{ attributes?: { version?: string } }>;
+    };
+    const versions = (body.data ?? [])
+      .map((b) => b.attributes?.version?.trim())
+      .filter((v): v is string => !!v && /^\d+$/.test(v))
+      .map(Number);
+    if (versions.length === 0) return null;
+    return Math.max(...versions);
+  } catch (error) {
+    console.warn(
+      "→ ASC builds query error; falling back for build number:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
+/**
+ * Monotonic CFBundleVersion for App Store Connect.
+ * Prefer max(ASC latest+1, GALMAIL_IOS_BUILD_NUMBER); else env; else unix seconds.
+ */
+async function resolveBuildNumber(auth: AscAuth): Promise<string> {
+  const fromEnv = process.env.GALMAIL_IOS_BUILD_NUMBER?.trim();
+  const envNum =
+    fromEnv && /^\d+$/.test(fromEnv) ? Number(fromEnv) : null;
+  const latest = await latestAscBuildNumber(auth);
+
+  let next: number;
+  if (latest !== null) {
+    next = Math.max(latest + 1, envNum ?? 0);
+    console.log(`→ ASC latest CFBundleVersion=${latest}; using ${next}`);
+  } else if (envNum !== null) {
+    next = envNum;
+    console.log(
+      `→ Using CFBundleVersion=${next} from GALMAIL_IOS_BUILD_NUMBER`,
+    );
+  } else {
+    next = Math.floor(Date.now() / 1000);
+    console.log(`→ Using CFBundleVersion=${next} (timestamp fallback)`);
+  }
+  return String(next);
+}
+
 const auth = resolveAuth();
 try {
-  ensureLocalTeamConfig();
-  ensureProject();
+  const buildNumber = await resolveBuildNumber(auth);
+  // Expose for tauri/xcodebuild subprocesses that read the env.
+  process.env.GALMAIL_IOS_BUILD_NUMBER = buildNumber;
+
+  ensureLocalTeamConfig(buildNumber);
+  ensureProject(buildNumber);
   mkdirSync(buildRoot, { recursive: true });
 
   if (!skipFrontend) {
@@ -340,17 +431,16 @@ try {
   if (exportOnly) {
     console.log(`\nDone. IPA at ${tauriIpa}`);
   } else {
-    try {
-      uploadIpa(auth, existsSync(tauriIpa) ? tauriIpa : findIpa(exportDir));
-    } catch (err) {
-      console.warn(
-        "altool upload skipped/failed (export may have uploaded already):",
-        err instanceof Error ? err.message : err,
-      );
-    }
-    console.log(`\nDone. Check TestFlight for processing + beta review.`);
+    const ipaPath = existsSync(tauriIpa) ? tauriIpa : findIpa(exportDir);
+    // Must fail the job if ASC rejects the upload (e.g. duplicate build number).
+    // Previously this was swallowed, so CI went green with no new TestFlight build.
+    uploadIpa(auth, ipaPath);
+    console.log(`\nDone. Uploaded CFBundleVersion=${buildNumber}.`);
     console.log(
-      `https://appstoreconnect.apple.com/apps/6791719499/testflight/ios`,
+      `Check TestFlight (processing can take several minutes):`,
+    );
+    console.log(
+      `https://appstoreconnect.apple.com/apps/${ASC_APP_ID}/testflight/ios`,
     );
   }
 } finally {

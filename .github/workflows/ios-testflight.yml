@@ -119,6 +119,8 @@ jobs:
       - name: Archive, export, and upload to TestFlight
         env:
           # Monotonic CFBundleVersion; App Store rejects duplicate build numbers.
+          # Hint only — script takes max(this, ASC latest+1, unix seconds).
+          # run_number alone collides after manual uploads (ASC already had 3).
           GALMAIL_IOS_BUILD_NUMBER: ${{ github.run_number }}
         run: bun run ios:archive:testflight
 

@@ -63,8 +63,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: "2"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "4"
         GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         BGTaskSchedulerPermittedIdentifiers:
           - com.galateacorp.mail.refresh
@@ -143,8 +143,8 @@ targets:
       path: GalMailNotificationService/Info.plist
       properties:
         CFBundleDisplayName: GalMail Notification Service
-        CFBundleShortVersionString: "2"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "4"
         GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
@@ -173,8 +173,8 @@ targets:
       path: GalMailShareExtension/Info.plist
       properties:
         CFBundleDisplayName: GalMail Share
-        CFBundleShortVersionString: "2"
-        CFBundleVersion: "3"
+        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "4"
         GalMailKeychainAccessGroup: $(AppIdentifierPrefix)com.galateacorp.mail.keychain
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
