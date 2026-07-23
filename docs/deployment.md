@@ -42,7 +42,9 @@ iOS: configure `developmentTeam` in `apps/web/src-tauri/tauri.conf.json` and App
 
 The `ios-testflight` workflow builds, signs, and uploads an IPA to App Store
 Connect TestFlight on every push to `master` (and on manual
-`workflow_dispatch`). Build numbers come from `GITHUB_RUN_NUMBER`.
+`workflow_dispatch`). It runs on `macos-26` with Xcode 26+ (App Store Connect
+rejects iOS SDKs older than 26). Build numbers are
+`max(App Store Connect latest + 1, GITHUB_RUN_NUMBER)`.
 
 #### Secrets model (sops)
 
