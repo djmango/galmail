@@ -45,6 +45,8 @@ const SCHEME = "galmail-tauri_iOS";
 const BUNDLE_ID = "com.galateacorp.mail";
 /** App Store Connect numeric app id (GalMail). */
 const ASC_APP_ID = "6791719499";
+/** External TestFlight group (sulaiman.ghori@outlook.com, etc.). */
+const ASC_EXTERNAL_BETA_GROUP_ID = "e2a84b08-d622-4ff0-af2e-7df298fef7cf";
 
 const args = process.argv.slice(2);
 const exportOnly = args.includes("--export-only");
@@ -356,22 +358,13 @@ async function latestAscBuildNumber(auth: AscAuth): Promise<number | null> {
   }
 }
 
-/** Wait for ASC to finish processing, then clear export-compliance so TestFlight can ship. */
-async function submitExportCompliance(
+async function waitForProcessedBuild(
   auth: AscAuth,
   buildNumber: string,
-): Promise<void> {
+): Promise<string | null> {
   const token = ascJwt(auth);
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
   const deadline = Date.now() + 8 * 60 * 1000;
-  let buildId: string | null = null;
-
-  console.log(
-    `→ Waiting for ASC to process CFBundleVersion=${buildNumber} (export compliance)…`,
-  );
+  console.log(`→ Waiting for ASC to process CFBundleVersion=${buildNumber}…`);
   while (Date.now() < deadline) {
     const url = new URL("https://api.appstoreconnect.apple.com/v1/builds");
     url.searchParams.set("filter[app]", ASC_APP_ID);
@@ -379,7 +372,7 @@ async function submitExportCompliance(
     url.searchParams.set("sort", "-uploadedDate");
     url.searchParams.set("limit", "1");
     const response = await fetch(url, {
-      headers: { Authorization: headers.Authorization },
+      headers: { Authorization: `Bearer ${token}` },
     });
     if (response.ok) {
       const body = (await response.json()) as {
@@ -390,22 +383,26 @@ async function submitExportCompliance(
       };
       const build = body.data?.[0];
       if (build) {
-        buildId = build.id;
         const state = build.attributes?.processingState ?? "UNKNOWN";
-        if (state === "VALID" || state === "INVALID") break;
+        if (state === "VALID" || state === "INVALID") return build.id;
         console.log(`  processingState=${state}; retrying…`);
       }
     }
     await new Promise((r) => setTimeout(r, 15_000));
   }
+  return null;
+}
 
-  if (!buildId) {
-    console.warn(
-      "→ ASC build not visible yet; answer export compliance in App Store Connect if TestFlight stays blocked.",
-    );
-    return;
-  }
-
+/** Clear export-compliance so TestFlight can ship (no-op if Info.plist already set it). */
+async function submitExportCompliance(
+  auth: AscAuth,
+  buildId: string,
+  buildNumber: string,
+): Promise<void> {
+  const headers = {
+    Authorization: `Bearer ${ascJwt(auth)}`,
+    "Content-Type": "application/json",
+  };
   const patch = await fetch(
     `https://api.appstoreconnect.apple.com/v1/builds/${buildId}`,
     {
@@ -440,6 +437,92 @@ async function submitExportCompliance(
   throw new Error(
     `Failed to submit export compliance for build ${buildNumber}: ${patch.status} ${errText}`,
   );
+}
+
+/**
+ * Phone testers are on the external group; uploads only land in internal until
+ * we assign the build and submit Beta App Review.
+ */
+async function distributeToExternalTesters(
+  auth: AscAuth,
+  buildId: string,
+  buildNumber: string,
+): Promise<void> {
+  const headers = {
+    Authorization: `Bearer ${ascJwt(auth)}`,
+    "Content-Type": "application/json",
+  };
+
+  const assign = await fetch(
+    `https://api.appstoreconnect.apple.com/v1/betaGroups/${ASC_EXTERNAL_BETA_GROUP_ID}/relationships/builds`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        data: [{ type: "builds", id: buildId }],
+      }),
+    },
+  );
+  if (assign.status !== 204 && !assign.ok) {
+    throw new Error(
+      `Failed to assign build ${buildNumber} to external group: ${assign.status} ${await assign.text()}`,
+    );
+  }
+  console.log(`→ Assigned build ${buildNumber} to external TestFlight group`);
+
+  const submit = await fetch(
+    "https://api.appstoreconnect.apple.com/v1/betaAppReviewSubmissions",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        data: {
+          type: "betaAppReviewSubmissions",
+          relationships: {
+            build: { data: { type: "builds", id: buildId } },
+          },
+        },
+      }),
+    },
+  );
+  if (submit.status === 201) {
+    const body = (await submit.json()) as {
+      data?: { attributes?: { betaReviewState?: string } };
+    };
+    console.log(
+      `→ Submitted build ${buildNumber} for Beta App Review (${body.data?.attributes?.betaReviewState ?? "ok"})`,
+    );
+    return;
+  }
+  const errText = await submit.text();
+  // Already submitted / already available to external testers.
+  if (
+    submit.status === 409 &&
+    (errText.includes("already") || errText.includes("ENTITY_ERROR.RELATIONSHIP"))
+  ) {
+    console.log(
+      `→ Beta App Review already in place for build ${buildNumber}`,
+    );
+    return;
+  }
+  throw new Error(
+    `Failed to submit Beta App Review for build ${buildNumber}: ${submit.status} ${errText}`,
+  );
+}
+
+async function finalizeTestFlightDistribution(
+  auth: AscAuth,
+  buildNumber: string,
+): Promise<void> {
+  const buildId = await waitForProcessedBuild(auth, buildNumber);
+  if (!buildId) {
+    console.warn(
+      "→ ASC build not visible yet; distribute manually in App Store Connect if TestFlight stays empty.",
+    );
+    return;
+  }
+  await submitExportCompliance(auth, buildId, buildNumber);
+  await distributeToExternalTesters(auth, buildId, buildNumber);
 }
 
 /**
@@ -521,9 +604,11 @@ try {
     // Must fail the job if ASC rejects the upload (e.g. duplicate build number).
     // Previously this was swallowed, so CI went green with no new TestFlight build.
     uploadIpa(auth, ipaPath);
-    await submitExportCompliance(auth, buildNumber);
+    await finalizeTestFlightDistribution(auth, buildNumber);
     console.log(`\nDone. Uploaded CFBundleVersion=${buildNumber}.`);
-    console.log(`Check TestFlight (internal testers once READY_FOR_BETA_TESTING):`);
+    console.log(
+      `Check TestFlight (external group after Beta Review / IN_BETA_TESTING):`,
+    );
     console.log(
       `https://appstoreconnect.apple.com/apps/${ASC_APP_ID}/testflight/ios`,
     );
