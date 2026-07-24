@@ -83,11 +83,11 @@ Contents of `secrets/ci/apple.yaml` (after decrypt):
 
 Contents of `secrets/ci/vite.yaml` (after decrypt):
 
-| Key                         | Value                                                                 |
-| --------------------------- | --------------------------------------------------------------------- |
-| `VITE_GOOGLE_IOS_CLIENT_ID` | Google Cloud iOS OAuth client ID                                      |
-| `VITE_MICROSOFT_CLIENT_ID`  | Entra Application (client) ID                                         |
-| `VITE_MICROSOFT_TENANT`     | Directory (tenant) ID, or `common` for multi-tenant                    |
+| Key                         | Value                                               |
+| --------------------------- | --------------------------------------------------- |
+| `VITE_GOOGLE_IOS_CLIENT_ID` | Google Cloud iOS OAuth client ID                    |
+| `VITE_MICROSOFT_CLIENT_ID`  | Entra Application (client) ID                       |
+| `VITE_MICROSOFT_TENANT`     | Directory (tenant) ID, or `common` for multi-tenant |
 
 Keep a backup of `SOPS_AGE_KEY` outside GitHub (for example 1Password). GitHub
 does not let you read a secret back after it is set. Rotate by generating a new
