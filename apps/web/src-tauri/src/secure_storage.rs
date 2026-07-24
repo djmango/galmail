@@ -103,10 +103,13 @@ pub struct MacOsKeychain;
 /// Device vault wrap Keychain service. Must stay aligned with
 /// `GalMailKeychainPolicy.rustDeviceVaultService` (enforced by
 /// `scripts/keychain-contract.test.ts`).
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
 pub const VAULT_KEYCHAIN_SERVICE: &str = "com.galmail.app.vault";
 /// Account attribute for the device vault wrapping key.
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
 pub const VAULT_KEYCHAIN_ACCOUNT: &str = "device-wrap-key-v1";
 /// Extension vault service (Swift). Distinct from [`VAULT_KEYCHAIN_SERVICE`].
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
 pub const EXTENSION_VAULT_KEYCHAIN_SERVICE: &str = "com.galateacorp.mail.vault";
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
