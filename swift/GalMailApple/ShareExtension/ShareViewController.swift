@@ -94,11 +94,11 @@ final class ShareViewController: UIViewController {
 
     private func loadShareKey() throws -> SymmetricKey {
         let accessGroup = Bundle.main.object(
-            forInfoDictionaryKey: "GalMailKeychainAccessGroup"
-        ) as? String ?? "com.galateacorp.mail.keychain"
+            forInfoDictionaryKey: GalMailKeychainPolicy.accessGroupInfoKey
+        ) as? String ?? GalMailKeychainPolicy.accessGroupSuffix
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.galateacorp.mail.vault",
+            kSecAttrService as String: GalMailKeychainPolicy.extensionVaultService,
             kSecAttrAccount as String: "share-inbox-key",
             kSecAttrAccessGroup as String: accessGroup,
             kSecReturnData as String: true,

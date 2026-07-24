@@ -18,8 +18,10 @@ import UserNotifications
 public enum GalMailAppleBridge {
     public static let appGroupId = "group.com.galateacorp.mail"
     public static var keychainAccessGroup: String {
-        Bundle.main.object(forInfoDictionaryKey: "GalMailKeychainAccessGroup") as? String
-            ?? "com.galateacorp.mail.keychain"
+        Bundle.main.object(
+            forInfoDictionaryKey: GalMailKeychainPolicy.accessGroupInfoKey
+        ) as? String
+            ?? GalMailKeychainPolicy.accessGroupSuffix
     }
 
     public static let appRefreshTask = "com.galateacorp.mail.refresh"
@@ -263,10 +265,10 @@ public enum GalMailKeychain {
     public static func store(_ data: Data, account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.galateacorp.mail.vault",
+            kSecAttrService as String: GalMailKeychainPolicy.extensionVaultService,
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: GalMailAppleBridge.keychainAccessGroup,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrAccessible as String: GalMailKeychainPolicy.accessible,
         ]
         SecItemDelete(query as CFDictionary)
         var item = query
@@ -278,7 +280,7 @@ public enum GalMailKeychain {
     public static func load(account: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "com.galateacorp.mail.vault",
+            kSecAttrService as String: GalMailKeychainPolicy.extensionVaultService,
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: GalMailAppleBridge.keychainAccessGroup,
             kSecReturnData as String: true,

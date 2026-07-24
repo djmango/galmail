@@ -266,4 +266,22 @@ mod tests {
             .unwrap();
         assert!(!directory.path().join("galmail.db").exists());
     }
+
+    #[test]
+    fn classify_startup_error_maps_keychain_into_recovery() {
+        assert_eq!(
+            classify_startup_error(
+                "cannot read credentials from Keychain failed (Keychain status -25308)"
+            ),
+            "keychain-unavailable"
+        );
+        assert_eq!(
+            classify_startup_error("vault wrapping key is missing from Keychain"),
+            "keychain-unavailable"
+        );
+        assert_eq!(
+            classify_startup_error("unsupported schema version"),
+            "unsupported-database-version"
+        );
+    }
 }

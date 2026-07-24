@@ -16,9 +16,9 @@ public final class GalMailOAuthPresenter: NSObject, ASWebAuthenticationPresentat
     @objc public static let shared = GalMailOAuthPresenter()
 
     /// Provider-neutral OAuth Keychain service (tokens stored by Rust).
-    public static let oauthKeychainService = "com.galmail.app.oauth"
+    public static let oauthKeychainService = GalMailKeychainPolicy.oauthService
     /// Legacy service; Rust migrates items into `oauthKeychainService`.
-    public static let oauthKeychainServiceLegacy = "com.galmail.app.gmail-oauth"
+    public static let oauthKeychainServiceLegacy = GalMailKeychainPolicy.oauthServiceLegacy
 
     private var session: ASWebAuthenticationSession?
     /// attemptId → true while that session owns the presenter (for cancel fan-out).
