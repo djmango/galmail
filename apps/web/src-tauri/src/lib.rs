@@ -61,10 +61,30 @@ impl AppState {
     }
 
     fn require_normal_mode(&self) -> Result<(), String> {
-        if self.safe_mode || self.database.is_none() {
-            Err("network and account operations are disabled in safe mode".into())
-        } else {
-            Ok(())
+        if self.database.is_some() && !self.safe_mode {
+            return Ok(());
+        }
+        // Prefer the concrete startup failure over the generic safe-mode copy so
+        // TestFlight / device logs show Keychain status codes.
+        if let Some(detail) = self.startup_detail.as_deref() {
+            return Err(format!(
+                "network and account operations are disabled ({detail})"
+            ));
+        }
+        match self.startup_issue {
+            Some("keychain-unavailable") => Err(
+                "network and account operations are disabled: Keychain could not store the vault key. Delete and reinstall GalMail, or reset local data from the sign-in screen.".into(),
+            ),
+            Some(issue) => Err(format!(
+                "network and account operations are disabled ({issue})"
+            )),
+            None if self.safe_mode => Err(
+                "network and account operations are disabled in safe mode; exit safe mode and restart".into(),
+            ),
+            None => Err(
+                "network and account operations are disabled; encrypted database is unavailable"
+                    .into(),
+            ),
         }
     }
 }
@@ -539,6 +559,7 @@ fn recovery_status(state: State<'_, AppState>) -> RecoveryStatus {
         safe_mode: state.safe_mode,
         database_available: state.database.is_some(),
         startup_issue: state.startup_issue,
+        startup_detail: state.startup_detail.clone(),
         portable_recovery_configured: false,
     }
 }
@@ -614,15 +635,17 @@ fn export_redacted_diagnostics(state: State<'_, AppState>) -> Result<String, Str
 
 #[tauri::command]
 fn reset_local_database(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     confirmation: String,
 ) -> Result<RestartRequired, String> {
     state
         .release_support
         .reset_local_database(&confirmation, state.database.is_none())?;
-    Ok(RestartRequired {
-        restart_required: true,
-    })
+    // Drop a stale safe-mode marker so the next launch retries vault open.
+    let _ = state.release_support.set_safe_mode(false);
+    // Never returns — relaunches so open_or_create runs again.
+    app.restart()
 }
 
 #[tauri::command]
