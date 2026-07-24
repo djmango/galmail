@@ -25,6 +25,7 @@ pub struct RecoveryStatus {
     pub safe_mode: bool,
     pub database_available: bool,
     pub startup_issue: Option<&'static str>,
+    pub startup_detail: Option<String>,
     pub portable_recovery_configured: bool,
 }
 

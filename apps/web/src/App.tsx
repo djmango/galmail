@@ -330,6 +330,8 @@ export function App() {
   const [gmailConnectError, setGmailConnectError] = useState<string | null>(
     null,
   );
+  const [recoveryRequired, setRecoveryRequired] = useState(false);
+  const [recoveryResetting, setRecoveryResetting] = useState(false);
   const [awaitingSignIn, setAwaitingSignIn] = useState(() =>
     shouldPromptSignIn({
       googleClientIdConfigured: googleClientIdConfigured(),
@@ -539,6 +541,39 @@ export function App() {
         setGmailConnectError(message);
         setStatus(message);
         setAwaitingSignIn(shouldPromptSignIn());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [awaitingSignIn]);
+
+  useEffect(() => {
+    if (!awaitingSignIn || !isNativeShell()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const status = await invoke<{
+          databaseAvailable: boolean;
+          safeMode: boolean;
+          startupIssue: string | null;
+          startupDetail: string | null;
+        }>("recovery_status");
+        if (cancelled) return;
+        if (status.databaseAvailable && !status.safeMode) {
+          setRecoveryRequired(false);
+          return;
+        }
+        setRecoveryRequired(true);
+        const detail =
+          status.startupDetail?.trim() ||
+          status.startupIssue ||
+          "encrypted database is unavailable";
+        setGmailConnectError(detail);
+        setStatus(detail);
+      } catch {
+        // recovery_status is native-only; ignore in unsupported shells.
       }
     })();
     return () => {
@@ -1258,6 +1293,29 @@ export function App() {
   const closeDraft = (id: string) =>
     setDrafts((items) => items.filter((x) => x.id !== id));
 
+  const resetLocalData = async () => {
+    if (!isNativeShell()) return;
+    const confirmed = window.confirm(
+      "Reset local GalMail data on this device? Mail on Google/Microsoft is not deleted. You will sign in again after restart.",
+    );
+    if (!confirmed) return;
+    setRecoveryResetting(true);
+    setGmailConnectError(null);
+    setStatus("Resetting local data…");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("reset_local_database", {
+        confirmation: "DELETE LOCAL GALMAIL DATA",
+      });
+    } catch (error) {
+      const message = invokeErrorMessage(error, "Could not reset local data");
+      setGmailConnectError(message);
+      setStatus(message);
+      toast.error(message);
+      setRecoveryResetting(false);
+    }
+  };
+
   const connectGmail = async () => {
     setGmailConnectError(null);
     setGmailConnecting(true);
@@ -1758,6 +1816,9 @@ export function App() {
             isNativeShell() && Boolean(microsoftClientId())
           }
           showDemoOption
+          recoveryRequired={recoveryRequired}
+          recoveryResetting={recoveryResetting}
+          onResetLocalData={() => void resetLocalData()}
           onConnectGmail={() => void connectGmail()}
           onConnectMicrosoft={() => void connectMicrosoft()}
           onUseDemo={() => void useDemoMailbox()}
