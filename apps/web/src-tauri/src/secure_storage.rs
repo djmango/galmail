@@ -146,6 +146,46 @@ fn keychain_access_group() -> Option<String> {
     }
 }
 
+/// Match GalMail Swift: `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+///
+/// Prefer this over `SecAccessControl` for generic passwords. AccessControl
+/// items can surface errSecInteractionNotAllowed (-25308) during early app
+/// launch when Keychain UI/interaction is not allowed.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn set_accessible_after_first_unlock(options: &mut security_framework::passwords::PasswordOptions) {
+    use core_foundation::base::TCFType;
+    use core_foundation::string::{CFString, CFStringRef};
+    use security_framework_sys::access_control::kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
+
+    #[link(name = "Security", kind = "framework")]
+    extern "C" {
+        static kSecAttrAccessible: CFStringRef;
+    }
+
+    #[allow(deprecated)]
+    options.query.push((
+        unsafe { CFString::wrap_under_get_rule(kSecAttrAccessible) },
+        unsafe {
+            CFString::wrap_under_get_rule(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+                .into_CFType()
+        },
+    ));
+}
+
+/// Do not attempt Keychain auth UI (avoids -25308 at cold start).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn set_authentication_ui_skip(options: &mut security_framework::passwords::PasswordOptions) {
+    use core_foundation::base::TCFType;
+    use core_foundation::string::CFString;
+    use security_framework_sys::item::{kSecUseAuthenticationUI, kSecUseAuthenticationUISkip};
+
+    #[allow(deprecated)]
+    options.query.push((
+        unsafe { CFString::wrap_under_get_rule(kSecUseAuthenticationUI) },
+        unsafe { CFString::wrap_under_get_rule(kSecUseAuthenticationUISkip).into_CFType() },
+    ));
+}
+
 /// Configure generic-password options the way GalMail Swift does on iOS:
 /// access group (when requested), device-local, after-first-unlock accessibility.
 ///
@@ -157,8 +197,6 @@ fn configure_password_options(
     for_write: bool,
     include_access_group: bool,
 ) {
-    use security_framework::access_control::{ProtectionMode, SecAccessControl};
-
     options.set_access_synchronized(Some(false));
     if include_access_group {
         if let Some(group) = keychain_access_group() {
@@ -169,26 +207,31 @@ fn configure_password_options(
     #[cfg(not(target_os = "macos"))]
     options.use_protected_keychain();
     if for_write {
-        if let Ok(access) = SecAccessControl::create_with_protection(
-            Some(ProtectionMode::AccessibleAfterFirstUnlockThisDeviceOnly),
-            0,
-        ) {
-            options.set_access_control(access);
-        }
+        set_accessible_after_first_unlock(options);
+    } else {
+        set_authentication_ui_skip(options);
     }
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn keychain_status_message(action: &str, code: i32) -> String {
     // Common iOS failures: -34018 missing entitlement / access group,
+    // -25308 interaction not allowed (locked / early launch AccessControl),
     // -25299 duplicate item, -25300 not found (handled by callers).
+    if code == -25308 {
+        return format!(
+            "{action} failed (Keychain status {code}: unlock the device and reopen GalMail)"
+        );
+    }
     format!("{action} failed (Keychain status {code})")
 }
 
-/// errSecItemNotFound or errSecMissingEntitlement — try the other access-group view.
+/// Soft Keychain misses: try the other access-group view / retry.
+///
+/// -25300 not found, -34018 missing entitlement, -25308 interaction not allowed.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-fn keychain_miss_or_entitlement(code: i32) -> bool {
-    code == -25300 || code == -34018
+fn keychain_soft_miss(code: i32) -> bool {
+    code == -25300 || code == -34018 || code == -25308
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -198,7 +241,7 @@ fn generic_password_variants(
     for_write: bool,
 ) -> Vec<security_framework::passwords::PasswordOptions> {
     use security_framework::passwords::PasswordOptions;
-    let mut variants = Vec::with_capacity(2);
+    let mut variants = Vec::with_capacity(3);
     if keychain_access_group().is_some() {
         let mut with_group = PasswordOptions::new_generic_password(service, account);
         configure_password_options(&mut with_group, for_write, true);
@@ -207,6 +250,12 @@ fn generic_password_variants(
     let mut legacy = PasswordOptions::new_generic_password(service, account);
     configure_password_options(&mut legacy, for_write, false);
     variants.push(legacy);
+    // Last-resort read: bare service/account (no sync/group flags).
+    if !for_write {
+        let mut bare = PasswordOptions::new_generic_password(service, account);
+        set_authentication_ui_skip(&mut bare);
+        variants.push(bare);
+    }
     variants
 }
 
@@ -216,26 +265,40 @@ fn load_generic_password_bytes(
     account: &str,
 ) -> Result<Option<(Vec<u8>, bool)>, String> {
     use security_framework::passwords::generic_password;
-    let mut last_error: Option<i32> = None;
+    use std::thread;
+    use std::time::Duration;
+
     let prefer_group = keychain_access_group().is_some();
-    for (index, options) in generic_password_variants(service, account, false)
-        .into_iter()
-        .enumerate()
-    {
-        let used_shared_group = prefer_group && index == 0;
-        match generic_password(options) {
-            Ok(bytes) => return Ok(Some((bytes, used_shared_group))),
-            Err(error) if keychain_miss_or_entitlement(error.code()) => {
-                last_error = Some(error.code());
-            }
-            Err(error) => {
-                return Err(keychain_status_message(
-                    "cannot read credentials from Keychain",
-                    error.code(),
-                ));
+    let mut last_error: Option<i32> = None;
+
+    // Retry: -25308 is common during early launch before Keychain is interactive.
+    for attempt in 0..4 {
+        for (index, options) in generic_password_variants(service, account, false)
+            .into_iter()
+            .enumerate()
+        {
+            let used_shared_group = prefer_group && index == 0;
+            match generic_password(options) {
+                Ok(bytes) => return Ok(Some((bytes, used_shared_group))),
+                Err(error) if keychain_soft_miss(error.code()) => {
+                    last_error = Some(error.code());
+                }
+                Err(error) => {
+                    return Err(keychain_status_message(
+                        "cannot read credentials from Keychain",
+                        error.code(),
+                    ));
+                }
             }
         }
+        if last_error != Some(-25308) {
+            break;
+        }
+        if attempt + 1 < 4 {
+            thread::sleep(Duration::from_millis(150 * (attempt as u64 + 1)));
+        }
     }
+
     match last_error {
         Some(-25300) | None => Ok(None),
         Some(code) => Err(keychain_status_message(
@@ -349,9 +412,11 @@ impl DeviceKeyStore for MacOsKeychain {
                 "Wraps the local GalMail vault key; never synchronized",
             );
         }
-        // Migrate pre-shared-group vault keys into the entitlement access group.
+        // Once Keychain is readable, rewrite to shared group + kSecAttrAccessible
+        // so later cold starts do not hit AccessControl -25308 again.
         #[cfg(not(all(debug_assertions, target_os = "macos")))]
-        if !used_shared_group && keychain_access_group().is_some() {
+        {
+            let _ = used_shared_group;
             let _ = self.store(&key);
         }
         Ok(Some(key))
@@ -470,7 +535,7 @@ fn list_oauth_accounts_for_service(service: &str) -> Result<Vec<String>, String>
         }
         let results = match search.search() {
             Ok(items) => items,
-            Err(error) if keychain_miss_or_entitlement(error.code()) => continue,
+            Err(error) if keychain_soft_miss(error.code()) => continue,
             Err(error) => {
                 return Err(keychain_status_message(
                     "cannot enumerate OAuth Keychain accounts",
