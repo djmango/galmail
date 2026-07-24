@@ -170,6 +170,7 @@ targets:
     type: app-extension
     platform: iOS
     sources:
+      - path: ../../../../../swift/GalMailApple/Shared
       - path: ../../../../../swift/GalMailApple/ShareExtension
     info:
       path: GalMailShareExtension/Info.plist

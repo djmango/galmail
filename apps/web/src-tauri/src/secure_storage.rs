@@ -100,10 +100,19 @@ fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 pub struct MacOsKeychain;
 
+/// Device vault wrap Keychain service. Must stay aligned with
+/// `GalMailKeychainPolicy.rustDeviceVaultService` (enforced by
+/// `scripts/keychain-contract.test.ts`).
+pub const VAULT_KEYCHAIN_SERVICE: &str = "com.galmail.app.vault";
+/// Account attribute for the device vault wrapping key.
+pub const VAULT_KEYCHAIN_ACCOUNT: &str = "device-wrap-key-v1";
+/// Extension vault service (Swift). Distinct from [`VAULT_KEYCHAIN_SERVICE`].
+pub const EXTENSION_VAULT_KEYCHAIN_SERVICE: &str = "com.galateacorp.mail.vault";
+
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 impl MacOsKeychain {
-    const SERVICE: &'static str = "com.galmail.app.vault";
-    const ACCOUNT: &'static str = "device-wrap-key-v1";
+    const SERVICE: &'static str = VAULT_KEYCHAIN_SERVICE;
+    const ACCOUNT: &'static str = VAULT_KEYCHAIN_ACCOUNT;
 }
 
 /// Shared Keychain access group from Info.plist (`GalMailKeychainAccessGroup`).
@@ -229,7 +238,7 @@ fn keychain_status_message(action: &str, code: i32) -> String {
 /// Soft Keychain misses: try the other access-group view / retry.
 ///
 /// -25300 not found, -34018 missing entitlement, -25308 interaction not allowed.
-#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
 fn keychain_soft_miss(code: i32) -> bool {
     code == -25300 || code == -34018 || code == -25308
 }
@@ -713,9 +722,20 @@ mod tests {
         assert_eq!(OAUTH_KEYCHAIN_SERVICE, "com.galmail.app.oauth");
         assert_eq!(OAUTH_KEYCHAIN_SERVICE_LEGACY, "com.galmail.app.gmail-oauth");
         assert_ne!(OAUTH_KEYCHAIN_SERVICE, OAUTH_KEYCHAIN_SERVICE_LEGACY);
-        assert_ne!(OAUTH_KEYCHAIN_SERVICE, "com.galmail.app.vault");
-        assert_ne!(OAUTH_KEYCHAIN_SERVICE_LEGACY, "com.galmail.app.vault");
+        assert_ne!(OAUTH_KEYCHAIN_SERVICE, VAULT_KEYCHAIN_SERVICE);
+        assert_ne!(OAUTH_KEYCHAIN_SERVICE_LEGACY, VAULT_KEYCHAIN_SERVICE);
         // Extension vault service must not be renamed by this migration.
-        assert_ne!(OAUTH_KEYCHAIN_SERVICE, "com.galateacorp.mail.vault");
+        assert_ne!(OAUTH_KEYCHAIN_SERVICE, EXTENSION_VAULT_KEYCHAIN_SERVICE);
+        assert_ne!(VAULT_KEYCHAIN_SERVICE, EXTENSION_VAULT_KEYCHAIN_SERVICE);
+        assert_eq!(VAULT_KEYCHAIN_ACCOUNT, "device-wrap-key-v1");
+    }
+
+    #[test]
+    fn keychain_soft_miss_covers_not_found_entitlement_and_interaction() {
+        assert!(keychain_soft_miss(-25300));
+        assert!(keychain_soft_miss(-34018));
+        assert!(keychain_soft_miss(-25308));
+        assert!(!keychain_soft_miss(-25299));
+        assert!(!keychain_soft_miss(0));
     }
 }
