@@ -1,0 +1,23 @@
+---
+description: Always verify GitHub CI (and TestFlight) is green after every push or merge
+alwaysApply: true
+---
+
+# Verify CI after every push or merge
+
+Pushing or merging is not done until the relevant GitHub Actions runs finish green.
+
+## Required after `git push` or merging a PR
+
+1. Identify the branch/PR and the workflows that must pass for that change.
+   - Default for PRs / `master`: `ci` (js, e2e, rust, ios-project, nix).
+   - Pushes to `master` that touch Apple/release paths also require `ios-testflight` green — not only `ci`.
+2. Watch until completion (`gh pr checks <n> --watch` or `gh run watch <id>`). Do not stop at "jobs started" or "most jobs passed".
+3. If anything fails: read the failed job logs, fix, push again, and re-watch to green. Do not leave a red tip on `master`.
+4. Only then report success to the user, including the run conclusions that matter (especially `ios-testflight` when it ran).
+
+## Do not
+
+- Merge and walk away while `ios-testflight` (or any required workflow) is still pending.
+- Treat "PR CI green" as enough when `master` also runs TestFlight upload after merge.
+- Declare the task finished while the latest run on the pushed tip is red or still in progress.

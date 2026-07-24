@@ -132,11 +132,9 @@ function authFromOnePassword(): AscAuth | null {
       try {
         writeFileSync(
           sshKey,
-          execFileSync(
-            "op",
-            ["read", "op://Private/id_ed25519/private key"],
-            { encoding: "utf8" },
-          ),
+          execFileSync("op", ["read", "op://Private/id_ed25519/private key"], {
+            encoding: "utf8",
+          }),
           { mode: 0o600 },
         );
         issuerId = execFileSync(
@@ -262,9 +260,14 @@ function ensureProject(buildNumber: string) {
   if (text.includes('DEVELOPMENT_TEAM = "";')) {
     writeFileSync(
       pbx,
-      text.replaceAll('DEVELOPMENT_TEAM = "";', `DEVELOPMENT_TEAM = ${TEAM_ID};`),
+      text.replaceAll(
+        'DEVELOPMENT_TEAM = "";',
+        `DEVELOPMENT_TEAM = ${TEAM_ID};`,
+      ),
     );
-    console.log(`→ Set DEVELOPMENT_TEAM=${TEAM_ID} in generated pbxproj (not source yml)`);
+    console.log(
+      `→ Set DEVELOPMENT_TEAM=${TEAM_ID} in generated pbxproj (not source yml)`,
+    );
   }
 }
 
@@ -300,14 +303,18 @@ function findIpa(dir: string) {
 
 function ascJwt(auth: AscAuth): string {
   const now = Math.floor(Date.now() / 1000);
+  // Apple rejects tokens that appear from the future (runner clock skew) and
+  // caps lifetime at 20 minutes. Stay inside both bounds.
+  const iat = now - 60;
+  const exp = iat + 15 * 60;
   const header = Buffer.from(
     JSON.stringify({ alg: "ES256", kid: auth.keyId, typ: "JWT" }),
   ).toString("base64url");
   const payload = Buffer.from(
     JSON.stringify({
       iss: auth.issuerId,
-      iat: now,
-      exp: now + 20 * 60,
+      iat,
+      exp,
       aud: "appstoreconnect-v1",
     }),
   ).toString("base64url");
@@ -322,18 +329,38 @@ function ascJwt(auth: AscAuth): string {
   return `${data}.${sig}`;
 }
 
+/** Mint a fresh JWT per attempt; retry ASC 401 flakes (seen after long archives). */
+async function ascRequest(
+  auth: AscAuth,
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  let last: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${ascJwt(auth)}`);
+    if (init.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    last = await fetch(url, { ...init, headers });
+    if (last.status !== 401) return last;
+    console.warn(
+      `→ ASC 401 on ${init.method ?? "GET"} (attempt ${attempt + 1}/3); minting fresh JWT…`,
+    );
+    await new Promise((r) => setTimeout(r, 750 * (attempt + 1)));
+  }
+  return last!;
+}
+
 /** Highest CFBundleVersion already on App Store Connect, or null if unknown. */
 async function latestAscBuildNumber(auth: AscAuth): Promise<number | null> {
   try {
-    const token = ascJwt(auth);
     const url = new URL("https://api.appstoreconnect.apple.com/v1/builds");
     url.searchParams.set("filter[app]", ASC_APP_ID);
     // uploadedDate avoids lexicographic "version" sort bugs (e.g. "9" > "10").
     url.searchParams.set("sort", "-uploadedDate");
     url.searchParams.set("limit", "50");
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const response = await ascRequest(auth, url.toString());
     if (!response.ok) {
       console.warn(
         `→ ASC builds query failed (${response.status}); falling back for build number`,
@@ -362,7 +389,6 @@ async function waitForProcessedBuild(
   auth: AscAuth,
   buildNumber: string,
 ): Promise<string | null> {
-  const token = ascJwt(auth);
   const deadline = Date.now() + 8 * 60 * 1000;
   console.log(`→ Waiting for ASC to process CFBundleVersion=${buildNumber}…`);
   while (Date.now() < deadline) {
@@ -371,9 +397,8 @@ async function waitForProcessedBuild(
     url.searchParams.set("filter[version]", buildNumber);
     url.searchParams.set("sort", "-uploadedDate");
     url.searchParams.set("limit", "1");
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    // Fresh JWT each poll: archives can exceed a single token's lifetime.
+    const response = await ascRequest(auth, url.toString());
     if (response.ok) {
       const body = (await response.json()) as {
         data?: Array<{
@@ -387,6 +412,8 @@ async function waitForProcessedBuild(
         if (state === "VALID" || state === "INVALID") return build.id;
         console.log(`  processingState=${state}; retrying…`);
       }
+    } else if (response.status !== 401) {
+      console.warn(`  ASC poll status=${response.status}; retrying…`);
     }
     await new Promise((r) => setTimeout(r, 15_000));
   }
@@ -399,15 +426,11 @@ async function submitExportCompliance(
   buildId: string,
   buildNumber: string,
 ): Promise<void> {
-  const headers = {
-    Authorization: `Bearer ${ascJwt(auth)}`,
-    "Content-Type": "application/json",
-  };
-  const patch = await fetch(
+  const patch = await ascRequest(
+    auth,
     `https://api.appstoreconnect.apple.com/v1/builds/${buildId}`,
     {
       method: "PATCH",
-      headers,
       body: JSON.stringify({
         data: {
           type: "builds",
@@ -434,6 +457,14 @@ async function submitExportCompliance(
     );
     return;
   }
+  // IPA already uploaded with ITSAppUsesNonExemptEncryption=false. Do not fail
+  // the whole TestFlight job on transient ASC auth flakes after a successful upload.
+  if (patch.status === 401 || patch.status === 403) {
+    console.warn(
+      `→ Export compliance PATCH ${patch.status} for build ${buildNumber}; continuing (Info.plist already declares no non-exempt encryption). ${errText}`,
+    );
+    return;
+  }
   throw new Error(
     `Failed to submit export compliance for build ${buildNumber}: ${patch.status} ${errText}`,
   );
@@ -448,16 +479,11 @@ async function distributeToExternalTesters(
   buildId: string,
   buildNumber: string,
 ): Promise<void> {
-  const headers = {
-    Authorization: `Bearer ${ascJwt(auth)}`,
-    "Content-Type": "application/json",
-  };
-
-  const assign = await fetch(
+  const assign = await ascRequest(
+    auth,
     `https://api.appstoreconnect.apple.com/v1/betaGroups/${ASC_EXTERNAL_BETA_GROUP_ID}/relationships/builds`,
     {
       method: "POST",
-      headers,
       body: JSON.stringify({
         data: [{ type: "builds", id: buildId }],
       }),
@@ -470,11 +496,11 @@ async function distributeToExternalTesters(
   }
   console.log(`→ Assigned build ${buildNumber} to external TestFlight group`);
 
-  const submit = await fetch(
+  const submit = await ascRequest(
+    auth,
     "https://api.appstoreconnect.apple.com/v1/betaAppReviewSubmissions",
     {
       method: "POST",
-      headers,
       body: JSON.stringify({
         data: {
           type: "betaAppReviewSubmissions",
@@ -498,11 +524,10 @@ async function distributeToExternalTesters(
   // Already submitted / already available to external testers.
   if (
     submit.status === 409 &&
-    (errText.includes("already") || errText.includes("ENTITY_ERROR.RELATIONSHIP"))
+    (errText.includes("already") ||
+      errText.includes("ENTITY_ERROR.RELATIONSHIP"))
   ) {
-    console.log(
-      `→ Beta App Review already in place for build ${buildNumber}`,
-    );
+    console.log(`→ Beta App Review already in place for build ${buildNumber}`);
     return;
   }
   throw new Error(
@@ -531,8 +556,7 @@ async function finalizeTestFlightDistribution(
  */
 async function resolveBuildNumber(auth: AscAuth): Promise<string> {
   const fromEnv = process.env.GALMAIL_IOS_BUILD_NUMBER?.trim();
-  const envNum =
-    fromEnv && /^\d+$/.test(fromEnv) ? Number(fromEnv) : null;
+  const envNum = fromEnv && /^\d+$/.test(fromEnv) ? Number(fromEnv) : null;
   const latest = await latestAscBuildNumber(auth);
 
   let next: number;
@@ -586,12 +610,7 @@ try {
   }
   run("bun", tauriArgs, join(repoRoot, "apps/web"));
 
-  const tauriIpa = join(
-    appleDir,
-    "build",
-    "arm64",
-    "GalMail.ipa",
-  );
+  const tauriIpa = join(appleDir, "build", "arm64", "GalMail.ipa");
   if (archiveOnly) {
     console.log(`\nDone. Archive under ${join(appleDir, "build")}`);
     process.exit(0);
