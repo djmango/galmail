@@ -41,6 +41,27 @@ final class KeychainPolicyTests: XCTestCase {
         )
     }
 
+    func testNormalizedAccessGroupKeepsTeamPrefix() {
+        let prefixed = "A95F4H2423.com.galateacorp.mail.keychain"
+        XCTAssertEqual(
+            GalMailKeychainPolicy.normalizedAccessGroup(
+                prefixed,
+                teamIdentifier: "A95F4H2423"
+            ),
+            prefixed
+        )
+    }
+
+    func testNormalizedAccessGroupRepairsBareSuffix() {
+        XCTAssertEqual(
+            GalMailKeychainPolicy.normalizedAccessGroup(
+                "com.galateacorp.mail.keychain",
+                teamIdentifier: "A95F4H2423"
+            ),
+            "A95F4H2423.com.galateacorp.mail.keychain"
+        )
+    }
+
     func testRustDeviceVaultAccountIsStable() {
         XCTAssertEqual(
             GalMailKeychainPolicy.rustDeviceVaultAccount,

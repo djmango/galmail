@@ -118,6 +118,91 @@ impl MacOsKeychain {
     const ACCOUNT: &'static str = VAULT_KEYCHAIN_ACCOUNT;
 }
 
+/// Shared Keychain access-group suffix (team prefix required at runtime).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+const KEYCHAIN_ACCESS_GROUP_SUFFIX: &str = "com.galateacorp.mail.keychain";
+
+/// Team ID from the running process entitlements (`A95F4H2423`), when present.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn team_identifier() -> Option<String> {
+    use core_foundation::base::TCFType;
+    use core_foundation::string::{CFString, CFStringRef};
+    use std::os::raw::c_void;
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: *const c_void);
+    }
+
+    #[link(name = "Security", kind = "framework")]
+    extern "C" {
+        fn SecTaskCreateFromSelf(allocator: *const c_void) -> *mut c_void;
+        fn SecTaskCopyValueForEntitlement(
+            task: *mut c_void,
+            entitlement: CFStringRef,
+            error: *mut *mut c_void,
+        ) -> *const c_void;
+    }
+
+    unsafe {
+        let task = SecTaskCreateFromSelf(std::ptr::null());
+        if task.is_null() {
+            return None;
+        }
+        let key = CFString::new("com.apple.developer.team-identifier");
+        let value =
+            SecTaskCopyValueForEntitlement(task, key.as_concrete_TypeRef(), std::ptr::null_mut());
+        CFRelease(task as *const c_void);
+        if value.is_null() {
+            return None;
+        }
+        let cf_string = CFString::wrap_under_create_rule(value as CFStringRef);
+        let team = cf_string.to_string();
+        if team.len() == 10
+            && team
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+        {
+            Some(team)
+        } else {
+            None
+        }
+    }
+}
+
+/// Ensure Keychain access groups include the Apple team prefix.
+///
+/// TestFlight builds have hit `$(AppIdentifierPrefix)` expanding to empty, so
+/// Info.plist shipped `com.galateacorp.mail.keychain` without `A95F4H2423.`.
+/// SecItemAdd then returns -34018 (errSecMissingEntitlement).
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn normalize_keychain_access_group(raw: &str) -> Option<String> {
+    let group = raw.trim();
+    if group.is_empty() || group.contains("$(") {
+        return None;
+    }
+    // Already `TEAMID.suffix`.
+    if let Some((team, rest)) = group.split_once('.') {
+        if team.len() == 10
+            && team
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+            && !rest.is_empty()
+        {
+            return Some(group.to_string());
+        }
+    }
+    // Bare suffix (or other unprefixed value) — prepend the signing team.
+    let suffix =
+        if group == KEYCHAIN_ACCESS_GROUP_SUFFIX || group.ends_with(KEYCHAIN_ACCESS_GROUP_SUFFIX) {
+            KEYCHAIN_ACCESS_GROUP_SUFFIX
+        } else {
+            group
+        };
+    let team = team_identifier()?;
+    Some(format!("{team}.{suffix}"))
+}
+
 /// Shared Keychain access group from Info.plist (`GalMailKeychainAccessGroup`).
 ///
 /// iOS entitlements require items in `$(AppIdentifierPrefix)com.galateacorp.mail.keychain`
@@ -138,24 +223,29 @@ fn keychain_access_group() -> Option<String> {
         ) -> *const c_void;
     }
 
-    unsafe {
+    let from_plist = unsafe {
         let bundle = CFBundleGetMainBundle();
         if bundle.is_null() {
-            return None;
+            None
+        } else {
+            let key = CFString::new("GalMailKeychainAccessGroup");
+            let value = CFBundleGetValueForInfoDictionaryKey(bundle, key.as_concrete_TypeRef());
+            if value.is_null() {
+                None
+            } else {
+                let cf_string = CFString::wrap_under_get_rule(value as CFStringRef);
+                Some(cf_string.to_string())
+            }
         }
-        let key = CFString::new("GalMailKeychainAccessGroup");
-        let value = CFBundleGetValueForInfoDictionaryKey(bundle, key.as_concrete_TypeRef());
-        if value.is_null() {
-            return None;
+    };
+    if let Some(raw) = from_plist.as_deref() {
+        if let Some(group) = normalize_keychain_access_group(raw) {
+            return Some(group);
         }
-        let cf_string = CFString::wrap_under_get_rule(value as CFStringRef);
-        let group = cf_string.to_string();
-        // Reject unsubstituted build placeholders.
-        if group.is_empty() || group.contains("$(") {
-            return None;
-        }
-        Some(group)
     }
+    // Info.plist missing/unsubstituted — still try team + canonical suffix.
+    let team = team_identifier()?;
+    Some(format!("{team}.{KEYCHAIN_ACCESS_GROUP_SUFFIX}"))
 }
 
 /// Match GalMail Swift: `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
@@ -513,15 +603,39 @@ fn store_oauth_bytes(service: &str, account_id: &str, value: &[u8]) -> Result<()
     }
     #[cfg(not(all(debug_assertions, target_os = "macos")))]
     {
-        use security_framework::passwords::{set_generic_password_options, PasswordOptions};
+        use security_framework::passwords::set_generic_password_options;
         delete_generic_password_all_variants(service, account_id);
-        let mut options = PasswordOptions::new_generic_password(service, account_id);
-        configure_password_options(&mut options, true, true);
-        options.set_label("GalMail OAuth authorization");
-        options.set_description("Provider OAuth tokens; never synchronized");
-        set_generic_password_options(value, options).map_err(|error| {
-            keychain_status_message("cannot store OAuth credentials in Keychain", error.code())
-        })
+        let mut last_code = None;
+        for mut options in generic_password_variants(service, account_id, true) {
+            options.set_label("GalMail OAuth authorization");
+            options.set_description("Provider OAuth tokens; never synchronized");
+            match set_generic_password_options(value, options) {
+                Ok(()) => return Ok(()),
+                Err(error) if keychain_soft_miss(error.code()) => {
+                    last_code = Some(error.code());
+                    continue;
+                }
+                Err(error) => {
+                    let hint = if error.code() == -34018 {
+                        " (Keychain access group missing team prefix or entitlement)"
+                    } else {
+                        ""
+                    };
+                    return Err(format!(
+                        "{}{hint}",
+                        keychain_status_message(
+                            "cannot store OAuth credentials in Keychain",
+                            error.code()
+                        )
+                    ));
+                }
+            }
+        }
+        let code = last_code.unwrap_or(-34018);
+        Err(format!(
+            "{} (Keychain access group missing team prefix or entitlement)",
+            keychain_status_message("cannot store OAuth credentials in Keychain", code)
+        ))
     }
 }
 

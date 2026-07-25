@@ -269,6 +269,43 @@ function ensureProject(buildNumber: string) {
       `→ Set DEVELOPMENT_TEAM=${TEAM_ID} in generated pbxproj (not source yml)`,
     );
   }
+  // Xcode has expanded $(AppIdentifierPrefix) to empty in Release Info.plist,
+  // which makes Rust/Swift write Keychain items without the team prefix and
+  // fail with -34018. Bake the concrete group before archive.
+  bakeKeychainAccessGroup();
+}
+
+const KEYCHAIN_ACCESS_GROUP = `${TEAM_ID}.com.galateacorp.mail.keychain`;
+const KEYCHAIN_ACCESS_GROUP_PLACEHOLDER =
+  "$(AppIdentifierPrefix)com.galateacorp.mail.keychain";
+
+function bakeKeychainAccessGroup() {
+  const relatives = [
+    "galmail-tauri_iOS/Info.plist",
+    "galmail-tauri_iOS/galmail-tauri_iOS.entitlements",
+    "GalMailNotificationService/Info.plist",
+    "GalMailNotificationService/GalMailNotificationService.entitlements",
+    "GalMailShareExtension/Info.plist",
+    "GalMailShareExtension/GalMailShareExtension.entitlements",
+  ];
+  for (const relative of relatives) {
+    const path = join(appleDir, relative);
+    if (!existsSync(path)) continue;
+    const before = readFileSync(path, "utf8");
+    let next = before.replaceAll(
+      KEYCHAIN_ACCESS_GROUP_PLACEHOLDER,
+      KEYCHAIN_ACCESS_GROUP,
+    );
+    // Bare suffix left after empty AppIdentifierPrefix expansion.
+    next = next.replace(
+      /(<string>)com\.galateacorp\.mail\.keychain(<\/string>)/g,
+      `$1${KEYCHAIN_ACCESS_GROUP}$2`,
+    );
+    if (next !== before) {
+      writeFileSync(path, next);
+      console.log(`→ Baked Keychain access group into ${relative}`);
+    }
+  }
 }
 
 function uploadIpa(auth: AscAuth, ipaPath: string) {
@@ -354,6 +391,41 @@ function assertOAuthPresenterLinked(ipaPath: string) {
     console.log(
       `→ Verified OAuth bridge in IPA (${machos.length} Mach-O files; bridge v3 + GalMailOAuthPresenter)`,
     );
+  } finally {
+    rmSync(extractDir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Fail upload if Info.plist Keychain access group lacks the team prefix.
+ * Bare `com.galateacorp.mail.keychain` causes SecItemAdd -34018 on device.
+ */
+function assertKeychainAccessGroup(ipaPath: string) {
+  const extractDir = mkdtempSync(join(tmpdir(), "galmail-ipa-kc-"));
+  try {
+    run("unzip", ["-qo", ipaPath, "-d", extractDir]);
+    const infoPaths = execSync(
+      `find "${extractDir}/Payload" -name Info.plist -type f`,
+      { encoding: "utf8" },
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (infoPaths.length === 0) {
+      throw new Error(`No Info.plist inside IPA at ${ipaPath}`);
+    }
+    const expected = KEYCHAIN_ACCESS_GROUP;
+    for (const infoPath of infoPaths) {
+      const xml = readFileSync(infoPath, "utf8");
+      if (!xml.includes("GalMailKeychainAccessGroup")) continue;
+      if (!xml.includes(`<string>${expected}</string>`)) {
+        throw new Error(
+          `IPA Info.plist Keychain access group must be ${expected} (got bare/unprefixed value in ${infoPath}). ` +
+            "SecItemAdd fails with -34018 without the team prefix.",
+        );
+      }
+    }
+    console.log(`→ Verified Keychain access group in IPA (${expected})`);
   } finally {
     rmSync(extractDir, { recursive: true, force: true });
   }
@@ -679,6 +751,7 @@ try {
   } else {
     const ipaPath = existsSync(tauriIpa) ? tauriIpa : findIpa(exportDir);
     assertOAuthPresenterLinked(ipaPath);
+    assertKeychainAccessGroup(ipaPath);
     // Must fail the job if ASC rejects the upload (e.g. duplicate build number).
     // Previously this was swallowed, so CI went green with no new TestFlight build.
     uploadIpa(auth, ipaPath);
