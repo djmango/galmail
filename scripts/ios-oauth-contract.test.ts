@@ -1,8 +1,9 @@
 /**
  * iOS OAuth presenter contract.
  *
- * Catches Release failures where `-fvisibility=hidden` makes Swift @_cdecl
- * symbols invisible to dlsym, and drift in Google/Microsoft URL schemes.
+ * Release builds use `-fvisibility=hidden`, so Rust cannot dlsym Swift @_cdecl
+ * symbols. The working bridge is: Swift bootstrap registers into main.mm, Rust
+ * calls main.mm's invoke trampoline.
  *
  * Runs on every `bun test` / js CI job (Ubuntu).
  */
@@ -17,20 +18,23 @@ const GOOGLE_SCHEME =
 const MICROSOFT_SCHEME = "msauth.com.galateacorp.mail";
 
 describe("ios oauth contract", () => {
-  it("registers the Swift presenter into Rust at bootstrap (not dlsym-only)", async () => {
-    const [rust, plugin, main] = await Promise.all([
-      file("apps/web/src-tauri/src/ios_oauth.rs"),
-      file("swift/GalMailApple/Sources/GalMailApplePlugin.swift"),
+  it("keeps the OAuth trampoline in main.mm and registers from Swift bootstrap", async () => {
+    const [main, plugin, rust] = await Promise.all([
       file("apps/web/src-tauri/gen/apple/Sources/galmail-tauri/main.mm"),
+      file("swift/GalMailApple/Sources/GalMailApplePlugin.swift"),
+      file("apps/web/src-tauri/src/ios_oauth.rs"),
     ]);
-    expect(rust).toContain("galmail_ios_register_oauth_presenter");
-    expect(rust).toContain("PRESENT_FN");
-    expect(rust).toContain("resolve_present_fn");
+    expect(main).toContain("galmail_ios_register_oauth_presenter");
+    expect(main).toContain("galmail_ios_invoke_oauth_presenter");
+    expect(main).toContain("g_galmail_ios_present");
+    expect(main).toContain('visibility("default")');
+    expect(main).toContain("oauthRetain");
     expect(plugin).toContain("galmail_ios_register_oauth_presenter");
     expect(plugin).toContain("galmailIosPresentOAuth");
-    expect(main).toContain("galmail_apple_bootstrap");
-    expect(main).toContain("oauthRetain");
-    expect(main).toMatch(/&\s*galmail_ios_present_oauth/);
+    expect(rust).toContain("galmail_ios_invoke_oauth_presenter");
+    expect(rust).toContain("extern \"C\"");
+    // Must not look up the Swift cdecl at runtime (hidden visibility).
+    expect(rust).not.toMatch(/\bfn dlsym\b/);
   });
 
   it("marks OAuth cdecls @_used and exposes the presenter type", async () => {
@@ -77,7 +81,7 @@ describe("ios oauth contract", () => {
     expect(msUi).toContain("VITE_MICROSOFT_CLIENT_ID");
     expect(msUi).toContain("microsoft_oauth_begin");
     expect(archive).toContain("assertOAuthPresenterLinked");
-    expect(archive).toContain("galmail_ios_register_oauth_presenter");
+    expect(archive).toContain("galmail_ios_invoke_oauth_presenter");
   });
 
   it("bakes both provider client IDs into TestFlight CI", async () => {
