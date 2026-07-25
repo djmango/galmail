@@ -44,6 +44,8 @@
     "bench": "bun run --filter @galmail/core-api bench",
     "relay:dev": "bun run --filter @galmail/blind-relay dev",
     "homelab:dev": "bun run --filter @galmail/homelab-api dev",
+    "mcp:stdio": "bun run --filter @galmail/mcp stdio",
+    "mcp:serve": "bun run --filter @galmail/mcp serve",
     "tauri:dev": "bun scripts/with-sops.ts -- bun scripts/run-web.ts tauri:dev",
     "tauri:dev:fixture": "bun scripts/run-web.ts tauri:dev",
     "tauri:build": "bun scripts/run-web.ts tauri:build",

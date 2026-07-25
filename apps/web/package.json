@@ -18,6 +18,7 @@
     "@galmail/browser-adapters": "workspace:*",
     "@galmail/core-api": "workspace:*",
     "@galmail/keyboard": "workspace:*",
+    "@galmail/mcp": "workspace:*",
     "@galmail/notifications": "workspace:*",
     "@galmail/providers": "workspace:*",
     "@galmail/remote-opt-in": "workspace:*",

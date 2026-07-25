@@ -2238,6 +2238,59 @@ select:focus-visible {
   word-break: break-word;
 }
 
+.settings-mono {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg0);
+  color: var(--muted-strong);
+  font: 0.72rem/1.45 var(--mono);
+  word-break: break-all;
+}
+
+.settings-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.mcp-approval-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg1) 88%, var(--accent) 12%);
+}
+
+.mcp-approval-copy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.mcp-approval-copy strong {
+  font-size: 0.85rem;
+}
+
+.mcp-approval-copy span {
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+}
+
+.mcp-approval-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
 .palette-item {
   width: 100%;
   padding: 0.5rem;

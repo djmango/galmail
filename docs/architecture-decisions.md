@@ -42,6 +42,13 @@ relay handles opaque authenticated hints, encrypted sync stores ciphertext and
 non-content indexes, and remote processing is disabled by default and isolated
 per account.
 
+## MCP access
+
+AI clients reach GalMail through a local MCP server (`docs/mcp.md`). Execution
+stays on a vault-holding device; the blind relay is not a plaintext MCP host.
+Approvals surface in the GalMail app (notification can open the app to decrypt
+and decide). Self-host Tunnel/Tailscale relays are optional later.
+
 ## Diagnostics
 
 Operational metrics are content-free by default. Mail bodies, subjects,

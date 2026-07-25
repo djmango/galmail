@@ -1,11 +1,25 @@
 import { describe, expect, it, mock } from "bun:test";
 import { asAccountId } from "@galmail/core-api";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createDefaultMcpPolicy } from "../lib/mcp-settings";
 import { ActionButton } from "./ActionButton";
-import { SettingsPanel } from "./SettingsPanel";
-import { SafeMailBody } from "./SafeMailBody";
 import { ComposeModal } from "./ComposeModal";
+import { SafeMailBody } from "./SafeMailBody";
+import { SettingsPanel } from "./SettingsPanel";
 import { StatusBar } from "./StatusBar";
+
+const mcpTestProps = {
+  mcpPolicy: createDefaultMcpPolicy(),
+  mcpCreatedToken: null as string | null,
+  mcpCursorConfig: null as string | null,
+  mcpBridgeUrl: null as string | null,
+  mcpBridgeRunning: false,
+  onMcpPolicyChange: mock(),
+  onCreateMcpClient: mock(),
+  onRevokeMcpClient: mock(),
+  onStartMcpBridge: mock(),
+  onStopMcpBridge: mock(),
+};
 
 describe("current UI baseline", () => {
   it("keeps command buttons accessible and discoverable", () => {
@@ -86,6 +100,7 @@ describe("current UI baseline", () => {
         onConnectGmail={mock()}
         onConnectMicrosoft={mock()}
         onDisconnectAccount={mock()}
+        {...mcpTestProps}
       />,
     );
     expect(html).toContain("Add Google account");
@@ -134,6 +149,7 @@ describe("current UI baseline", () => {
         onLinkDevice={mock()}
         onConnectGmail={mock()}
         onConnectMicrosoft={mock()}
+        {...mcpTestProps}
       />,
     );
 
@@ -148,6 +164,8 @@ describe("current UI baseline", () => {
     expect(html).toContain("Request read receipts");
     expect(html).toContain("Load remote images");
     expect(html).toContain("Trash after unsubscribe");
+    expect(html).toContain("MCP");
+    expect(html).toContain("Enable MCP access");
     expect(html).toContain('role="switch"');
     expect(html).toContain("Light");
     expect(html).toContain("Dark");
