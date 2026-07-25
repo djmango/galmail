@@ -50,32 +50,49 @@ describe("keychain contract", () => {
     );
   });
 
-  it("forbids SecAccessControl on the Rust generic-password write path", async () => {
+  it("uses Apple Prefer-Update SecItem store (identity query, no Add→Update fat query)", async () => {
     const rust = await file("apps/web/src-tauri/src/secure_storage.rs");
-    // Writes must use kSecAttrAccessible (set_accessible_after_first_unlock).
-    expect(rust).toContain("fn set_accessible_after_first_unlock");
+    // Certified store path — security-framework set_generic_password_options is banned
+    // for release OAuth/vault because its Add→Update reuses accessible in the query
+    // and returns -25300 (errSecItemNotFound) on mismatched existing items.
+    expect(rust).toContain("fn store_app_private_generic_password");
+    expect(rust).toContain(
+      "GALMAIL_KEYCHAIN_STORE_V2_UPDATE_THEN_ADD_IDENTITY_QUERY",
+    );
+    expect(rust).toContain("SecItemUpdate");
+    expect(rust).toContain("SecItemAdd");
+    expect(rust).toContain("errSecItemNotFound");
+    expect(rust).toContain("errSecDuplicateItem");
+    expect(rust).toContain("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly");
     expect(rust).toContain("fn set_authentication_ui_skip");
     expect(rust).toContain("kSecUseAuthenticationUISkip");
 
-    const configure = rust.match(
-      /fn configure_password_options\([\s\S]*?\n\}/,
+    const storeFn = rust.match(
+      /fn store_app_private_generic_password\([\s\S]*?\n\}\n\n#\[cfg/,
     )?.[0];
-    expect(configure).toBeTruthy();
-    expect(configure).toContain("set_accessible_after_first_unlock");
-    expect(configure).toContain("set_authentication_ui_skip");
-    expect(configure).not.toContain("SecAccessControl");
-    expect(configure).not.toContain("set_access_control");
-    // Shared access group is never part of the default write config.
-    expect(configure).not.toContain("set_access_group");
+    expect(storeFn).toBeTruthy();
+    // Identity query must not filter on accessibility.
+    expect(storeFn).toMatch(
+      /kSecClass[\s\S]*?kSecAttrService[\s\S]*?kSecAttrAccount/,
+    );
+    expect(storeFn).not.toContain("set_generic_password_options");
+    expect(storeFn).not.toContain("SecAccessControl");
+    // OAuth/vault release writes go through the certified helper only.
+    expect(rust).toContain("store_app_private_generic_password(");
+    expect(rust).not.toMatch(
+      /fn store_oauth_bytes[\s\S]*?set_generic_password_options/,
+    );
   });
 
-  it("treats Keychain -25308 as a soft miss with retry", async () => {
+  it("treats Keychain -25308 as a soft miss with retry on reads", async () => {
     const rust = await file("apps/web/src-tauri/src/secure_storage.rs");
     expect(rust).toContain("fn keychain_soft_miss");
     expect(rust).toMatch(/code == -25308/);
     expect(rust).toMatch(/code == -25300/);
     expect(rust).toMatch(/code == -34018/);
     expect(rust).toContain("load_generic_password_bytes");
+    expect(rust).toContain("read_password_variants");
+    expect(rust).toContain("identity_password_options");
     expect(rust).toMatch(/for attempt in 0\.\.4/);
   });
 
@@ -147,11 +164,8 @@ describe("keychain contract", () => {
     // SecTask* are non-public; ASC rejects IPAs that link them (altool code 11).
     expect(rust).not.toContain("SecTaskCreateFromSelf");
     expect(rust).not.toContain("SecTaskCopyValueForEntitlement");
-    // OAuth + device vault are app-private — writes must not set access group.
-    expect(rust).toContain("App-private write only — no kSecAttrAccessGroup");
-    expect(rust).toContain(
-      "// App-private: never use the extension shared access group.",
-    );
+    // OAuth + device vault are app-private — shared group only for migration delete.
+    expect(rust).toContain("fn store_app_private_generic_password");
     expect(rust).not.toContain("missing team prefix or entitlement");
     expect(policy).toContain("normalizedAccessGroup");
     expect(policy).toContain('appleTeamIdentifier = "A95F4H2423"');
@@ -161,21 +175,31 @@ describe("keychain contract", () => {
     expect(tests).toContain("testNormalizedAccessGroupRepairsBareSuffix");
   });
 
-  it("keeps Swift Keychain helpers on kSecAttrAccessible (not AccessControl)", async () => {
+  it("keeps Swift Keychain helpers on Prefer-Update with identity queries", async () => {
     const bridge = await file(
       "swift/GalMailApple/Sources/NotificationBridge.swift",
     );
     expect(bridge).toContain("GalMailKeychainPolicy.extensionVaultService");
     expect(bridge).toContain("GalMailKeychainPolicy.accessible");
     expect(bridge).not.toMatch(/SecAccessControlCreateWithFlags/);
-    // Store/load must not invent a second accessibility constant.
     const storeBlock = bridge.match(
-      /public enum GalMailKeychain \{[\s\S]*?public static func store\(_ data: Data[\s\S]*?guard status == errSecSuccess/,
+      /public static func store\(_ data: Data[\s\S]*?throw GalMailAppleError\.keychain\(addStatus\)/,
     )?.[0];
     expect(storeBlock).toBeTruthy();
-    expect(storeBlock).toContain("kSecAttrAccessible");
+    expect(storeBlock).toContain("SecItemUpdate");
+    expect(storeBlock).toContain("SecItemAdd");
+    expect(storeBlock).toContain("errSecItemNotFound");
     expect(storeBlock).toContain("GalMailKeychainPolicy.accessible");
     expect(storeBlock).not.toContain("kSecAttrAccessControl");
+    // Accessible must not be in the identity/delete query.
+    expect(storeBlock).toMatch(
+      /let identity: \[String: Any\] = \[[\s\S]*?kSecAttrAccessGroup[\s\S]*?\]/,
+    );
+    const identityBlock = storeBlock.match(
+      /let identity: \[String: Any\] = \[[\s\S]*?\]/,
+    )?.[0];
+    expect(identityBlock).toBeTruthy();
+    expect(identityBlock).not.toContain("kSecAttrAccessible");
   });
 
   it("mirrors OAuth service names through GalMailOAuthPresenter", async () => {

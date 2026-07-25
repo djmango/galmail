@@ -270,18 +270,35 @@ public enum GalMailKeychain {
     }
 
     public static func store(_ data: Data, account: String) throws {
-        let query: [String: Any] = [
+        // Identity-only query (class + service + account + access group).
+        // Never put kSecAttrAccessible in Update/Delete queries — that filters
+        // the match and yields errSecDuplicateItem then errSecItemNotFound (-25300).
+        let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: GalMailKeychainPolicy.extensionVaultService,
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: GalMailAppleBridge.keychainAccessGroup,
+        ]
+        let attrs: [String: Any] = [
+            kSecValueData as String: data,
             kSecAttrAccessible as String: GalMailKeychainPolicy.accessible,
         ]
-        SecItemDelete(query as CFDictionary)
-        var item = query
-        item[kSecValueData as String] = data
-        let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else { throw GalMailAppleError.keychain(status) }
+        let updateStatus = SecItemUpdate(identity as CFDictionary, attrs as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        if updateStatus != errSecItemNotFound {
+            throw GalMailAppleError.keychain(updateStatus)
+        }
+        var add = identity
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = GalMailKeychainPolicy.accessible
+        let addStatus = SecItemAdd(add as CFDictionary, nil)
+        if addStatus == errSecSuccess { return }
+        if addStatus == errSecDuplicateItem {
+            let retry = SecItemUpdate(identity as CFDictionary, attrs as CFDictionary)
+            guard retry == errSecSuccess else { throw GalMailAppleError.keychain(retry) }
+            return
+        }
+        throw GalMailAppleError.keychain(addStatus)
     }
 
     public static func load(account: String) throws -> Data? {
