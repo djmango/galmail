@@ -9,6 +9,10 @@ import { createFixtureMcpHost } from "../fixture-host.js";
 import { loadStandaloneMcpPolicy } from "../runtime-policy.js";
 import { createGalMailMcpServer } from "../server.js";
 
+function logStderr(message: string): void {
+  process.stderr.write(`${message}\n`);
+}
+
 async function main() {
   const allowFixture = process.env.GALMAIL_MCP_ALLOW_FIXTURE === "1";
   const bridgeUrl = await resolveLiveBridgeUrl(
@@ -17,7 +21,7 @@ async function main() {
   const { policy, token, minted } = loadStandaloneMcpPolicy();
 
   if (!bridgeUrl && !allowFixture) {
-    console.error(
+    logStderr(
       "[galmail-mcp] Live bridge not reachable at http://127.0.0.1:8675.\n" +
         "Open GalMail desktop, enable MCP in Settings, create a client, then retry.\n" +
         "For fixture demos only: GALMAIL_MCP_ALLOW_FIXTURE=1",
@@ -26,9 +30,7 @@ async function main() {
   }
 
   if (minted && !bridgeUrl) {
-    console.error(
-      `[galmail-mcp] fixture token:\n${token}`,
-    );
+    logStderr(`[galmail-mcp] fixture token:\n${token}`);
   }
 
   const bridge = bridgeUrl
@@ -50,9 +52,9 @@ async function main() {
   });
 
   if (bridgeUrl) {
-    console.error(`[galmail-mcp] live bridge ${bridgeUrl}`);
+    logStderr(`[galmail-mcp] live bridge ${bridgeUrl}`);
   } else {
-    console.error("[galmail-mcp] fixture mode (GALMAIL_MCP_ALLOW_FIXTURE=1)");
+    logStderr("[galmail-mcp] fixture mode (GALMAIL_MCP_ALLOW_FIXTURE=1)");
   }
 
   const transport = new StdioServerTransport();
@@ -60,9 +62,8 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(
-    "[galmail-mcp]",
-    error instanceof Error ? error.message : error,
+  logStderr(
+    `[galmail-mcp] ${error instanceof Error ? error.message : String(error)}`,
   );
   process.exit(1);
 });

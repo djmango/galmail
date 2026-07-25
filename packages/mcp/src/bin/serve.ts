@@ -11,6 +11,10 @@ import { createGalMailMcpServer } from "../server.js";
 
 const DEFAULT_PORT = 8676;
 
+function logStderr(message: string): void {
+  process.stderr.write(`${message}\n`);
+}
+
 function bearerToken(request: Request): string | null {
   const header = request.headers.get("authorization");
   if (!header) return null;
@@ -26,7 +30,7 @@ async function main() {
     process.env.GALMAIL_MCP_BRIDGE_URL,
   );
   if (!bridgeUrl && !allowFixture) {
-    console.error(
+    logStderr(
       "[galmail-mcp] Live bridge not reachable. Open GalMail and enable MCP.",
     );
     process.exit(1);
@@ -34,7 +38,7 @@ async function main() {
 
   const { policy, token, minted } = loadStandaloneMcpPolicy();
   if (minted) {
-    console.error(`[galmail-mcp] token:\n${token}`);
+    logStderr(`[galmail-mcp] token:\n${token}`);
   }
 
   const bridge = bridgeUrl
@@ -45,8 +49,8 @@ async function main() {
     : undefined;
   const host = await createFixtureMcpHost();
 
-  console.error(
-    `[galmail-mcp] listening on http://127.0.0.1:${port}/mcp (${bridgeUrl ? `live→${bridgeUrl}` : "fixture"})`,
+  logStderr(
+    `[galmail-mcp] listening on http://127.0.0.1:${port}/mcp (${bridgeUrl ? `live->${bridgeUrl}` : "fixture"})`,
   );
 
   Bun.serve({
@@ -94,9 +98,8 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(
-    "[galmail-mcp]",
-    error instanceof Error ? error.message : error,
+  logStderr(
+    `[galmail-mcp] ${error instanceof Error ? error.message : String(error)}`,
   );
   process.exit(1);
 });
