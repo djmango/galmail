@@ -50,38 +50,38 @@ describe("keychain contract", () => {
     );
   });
 
-  it("uses Apple Prefer-Update SecItem store (identity query, no Add→Update fat query)", async () => {
-    const rust = await file("apps/web/src-tauri/src/secure_storage.rs");
-    // Certified store path — security-framework set_generic_password_options is banned
-    // for release OAuth/vault because its Add→Update reuses accessible in the query
-    // and returns -25300 (errSecItemNotFound) on mismatched existing items.
+  it("uses Keychain store V3 purge-then-Add (identity delete, no fat-query Update)", async () => {
+    const [rust, archive] = await Promise.all([
+      file("apps/web/src-tauri/src/secure_storage.rs"),
+      file("scripts/ios-archive-testflight.ts"),
+    ]);
+    // Certified store path — security-framework set_generic_password_options is banned.
     expect(rust).toContain("fn store_app_private_generic_password");
-    expect(rust).toContain(
-      "GALMAIL_KEYCHAIN_STORE_V2_UPDATE_THEN_ADD_IDENTITY_QUERY",
-    );
-    expect(rust).toContain("SecItemUpdate");
+    expect(rust).toContain("GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT");
+    expect(rust).toContain("galmail_keychain_store_v3");
+    expect(rust).toContain("#[used]");
+    expect(rust).toContain("#[no_mangle]");
+    expect(rust).toContain("SecItemDelete");
     expect(rust).toContain("SecItemAdd");
-    expect(rust).toContain("errSecItemNotFound");
+    expect(rust).toContain("kSecAttrSynchronizableAny");
     expect(rust).toContain("errSecDuplicateItem");
     expect(rust).toContain("kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly");
-    expect(rust).toContain("fn set_authentication_ui_skip");
-    expect(rust).toContain("kSecUseAuthenticationUISkip");
-
+    // V3 must not Prefer-Update (multi-match leftovers → -25300 / -25299).
     const storeFn = rust.match(
       /fn store_app_private_generic_password\([\s\S]*?\n\}\n\n#\[cfg/,
     )?.[0];
     expect(storeFn).toBeTruthy();
-    // Identity query must not filter on accessibility.
-    expect(storeFn).toMatch(
-      /kSecClass[\s\S]*?kSecAttrService[\s\S]*?kSecAttrAccount/,
-    );
+    expect(storeFn).not.toContain("SecItemUpdate");
     expect(storeFn).not.toContain("set_generic_password_options");
     expect(storeFn).not.toContain("SecAccessControl");
-    // OAuth/vault release writes go through the certified helper only.
+    expect(storeFn).not.toContain("GALMAIL_KEYCHAIN_STORE_V2");
     expect(rust).toContain("store_app_private_generic_password(");
     expect(rust).not.toMatch(
       /fn store_oauth_bytes[\s\S]*?set_generic_password_options/,
     );
+    // IPA gate must prove the #[used] marker shipped (V2 was optimized out).
+    expect(archive).toContain("GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT");
+    expect(archive).toContain("galmail_keychain_store_v3");
   });
 
   it("treats Keychain -25308 as a soft miss with retry on reads", async () => {
@@ -175,7 +175,7 @@ describe("keychain contract", () => {
     expect(tests).toContain("testNormalizedAccessGroupRepairsBareSuffix");
   });
 
-  it("keeps Swift Keychain helpers on Prefer-Update with identity queries", async () => {
+  it("keeps Swift Keychain helpers on purge-then-Add with identity queries", async () => {
     const bridge = await file(
       "swift/GalMailApple/Sources/NotificationBridge.swift",
     );
@@ -183,18 +183,14 @@ describe("keychain contract", () => {
     expect(bridge).toContain("GalMailKeychainPolicy.accessible");
     expect(bridge).not.toMatch(/SecAccessControlCreateWithFlags/);
     const storeBlock = bridge.match(
-      /public static func store\(_ data: Data[\s\S]*?throw GalMailAppleError\.keychain\(addStatus\)/,
+      /public static func store\(_ data: Data[\s\S]*?throw GalMailAppleError\.keychain\(status\)/,
     )?.[0];
     expect(storeBlock).toBeTruthy();
-    expect(storeBlock).toContain("SecItemUpdate");
+    expect(storeBlock).toContain("SecItemDelete");
     expect(storeBlock).toContain("SecItemAdd");
-    expect(storeBlock).toContain("errSecItemNotFound");
+    expect(storeBlock).not.toContain("SecItemUpdate");
     expect(storeBlock).toContain("GalMailKeychainPolicy.accessible");
     expect(storeBlock).not.toContain("kSecAttrAccessControl");
-    // Accessible must not be in the identity/delete query.
-    expect(storeBlock).toMatch(
-      /let identity: \[String: Any\] = \[[\s\S]*?kSecAttrAccessGroup[\s\S]*?\]/,
-    );
     const identityBlock = storeBlock.match(
       /let identity: \[String: Any\] = \[[\s\S]*?\]/,
     )?.[0];

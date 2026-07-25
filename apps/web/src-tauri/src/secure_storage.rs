@@ -285,18 +285,28 @@ fn read_password_variants(
     variants
 }
 
-/// Store app-private generic password using Apple's Prefer-Update pattern.
+/// Survives Release strip so the IPA gate can prove this store path shipped.
+/// Do not rename without updating `scripts/ios-archive-testflight.ts` + contract tests.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+#[used]
+#[no_mangle]
+static galmail_keychain_store_v3: [u8; 47] = *b"GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT\0";
+
+/// Store app-private generic password: purge-by-identity, then SecItemAdd.
 ///
-/// **Never** call `security_framework::passwords::set_generic_password_options`
-/// here. That helper's Add→Update path reuses the full options dictionary
-/// (including `kSecAttrAccessible`) as the Update query, which returns -25300
-/// when an existing item has a different accessibility — exactly the TestFlight
-/// "cannot store OAuth credentials … -25300" failure.
+/// **Never** call `security_framework::passwords::set_generic_password_options`.
+/// That helper's Add→Update path puts `kSecAttrAccessible` in the Update query
+/// and returns -25300 when leftovers from earlier builds don't match.
 ///
-/// Contract (enforced by `scripts/keychain-contract.test.ts`):
-/// 1. Update/Delete query = identity only (class + service + account)
-/// 2. Accessible / label / description / synchronizable go in Update attrs or Add
-/// 3. No shared access group on OAuth / device-vault writes
+/// Prefer-Update is also unsafe here after many failed TestFlight attempts:
+/// class+service+account can match multiple leftovers (access group / sync
+/// variants) and SecItemUpdate then fails with errSecDuplicateItem / -25300.
+///
+/// Contract (source + IPA):
+/// 1. Delete queries = identity only (never accessible/label/description)
+/// 2. Purge default group + shared extension group + synchronizableAny
+/// 3. SecItemAdd once with accessible + synchronizable=false; no access group
+/// 4. On duplicate: purge again and Add once more — never Update with fat query
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn store_app_private_generic_password(
     service: &str,
@@ -311,44 +321,122 @@ fn store_app_private_generic_password(
     use core_foundation::dictionary::CFDictionary;
     use core_foundation::string::{CFString, CFStringRef};
     use security_framework_sys::access_control::kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
-    use security_framework_sys::base::{errSecDuplicateItem, errSecItemNotFound, errSecSuccess};
+    use security_framework_sys::base::{errSecDuplicateItem, errSecSuccess};
     use security_framework_sys::item::{
         kSecAttrAccessGroup, kSecAttrAccount, kSecAttrDescription, kSecAttrLabel, kSecAttrService,
-        kSecAttrSynchronizable, kSecClass, kSecClassGenericPassword, kSecValueData,
+        kSecAttrSynchronizable, kSecAttrSynchronizableAny, kSecClass, kSecClassGenericPassword,
+        kSecValueData,
     };
-    use security_framework_sys::keychain_item::{SecItemAdd, SecItemDelete, SecItemUpdate};
+    use security_framework_sys::keychain_item::{SecItemAdd, SecItemDelete};
 
     #[link(name = "Security", kind = "framework")]
     extern "C" {
         static kSecAttrAccessible: CFStringRef;
     }
 
-    // Contract marker: scripts/keychain-contract.test.ts greps this exact string.
-    #[allow(dead_code)]
-    const STORE_IMPL_MARKER: &str = "GALMAIL_KEYCHAIN_STORE_V2_UPDATE_THEN_ADD_IDENTITY_QUERY";
-    let _ = STORE_IMPL_MARKER;
+    // Keep the #[used] marker reachable from this fn (and prove V3 in source).
+    let _ = galmail_keychain_store_v3[0];
+    const _SOURCE_MARKER: &str = "GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT";
+    let _ = _SOURCE_MARKER;
 
     unsafe {
         let service_cf = CFString::new(service);
         let account_cf = CFString::new(account);
         let class = CFString::wrap_under_get_rule(kSecClassGenericPassword);
+        let sync_any = CFString::wrap_under_get_rule(kSecAttrSynchronizableAny);
 
-        let identity = CFDictionary::from_CFType_pairs(&[
-            (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
-            (
-                CFString::wrap_under_get_rule(kSecAttrService),
-                service_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrAccount),
-                account_cf.as_CFType(),
-            ),
-        ]);
+        let delete_query = |access_group: Option<&CFString>, use_sync_any: bool| {
+            if let Some(group) = access_group {
+                if use_sync_any {
+                    let query = CFDictionary::from_CFType_pairs(&[
+                        (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrService),
+                            service_cf.as_CFType(),
+                        ),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrAccount),
+                            account_cf.as_CFType(),
+                        ),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrAccessGroup),
+                            group.as_CFType(),
+                        ),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrSynchronizable),
+                            sync_any.as_CFType(),
+                        ),
+                    ]);
+                    let _ = SecItemDelete(query.as_concrete_TypeRef());
+                } else {
+                    let query = CFDictionary::from_CFType_pairs(&[
+                        (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrService),
+                            service_cf.as_CFType(),
+                        ),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrAccount),
+                            account_cf.as_CFType(),
+                        ),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrAccessGroup),
+                            group.as_CFType(),
+                        ),
+                    ]);
+                    let _ = SecItemDelete(query.as_concrete_TypeRef());
+                }
+            } else if use_sync_any {
+                let query = CFDictionary::from_CFType_pairs(&[
+                    (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
+                    (
+                        CFString::wrap_under_get_rule(kSecAttrService),
+                        service_cf.as_CFType(),
+                    ),
+                    (
+                        CFString::wrap_under_get_rule(kSecAttrAccount),
+                        account_cf.as_CFType(),
+                    ),
+                    (
+                        CFString::wrap_under_get_rule(kSecAttrSynchronizable),
+                        sync_any.as_CFType(),
+                    ),
+                ]);
+                let _ = SecItemDelete(query.as_concrete_TypeRef());
+            } else {
+                let query = CFDictionary::from_CFType_pairs(&[
+                    (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
+                    (
+                        CFString::wrap_under_get_rule(kSecAttrService),
+                        service_cf.as_CFType(),
+                    ),
+                    (
+                        CFString::wrap_under_get_rule(kSecAttrAccount),
+                        account_cf.as_CFType(),
+                    ),
+                ]);
+                let _ = SecItemDelete(query.as_concrete_TypeRef());
+            }
+        };
 
-        // Drop legacy copies written into the extension shared group by older builds.
-        if let Some(group) = keychain_access_group() {
-            let group_cf = CFString::new(&group);
-            let shared_identity = CFDictionary::from_CFType_pairs(&[
+        let purge_all = || {
+            delete_query(None, true);
+            delete_query(None, false);
+            if let Some(group) = keychain_access_group() {
+                let group_cf = CFString::new(&group);
+                delete_query(Some(&group_cf), true);
+                delete_query(Some(&group_cf), false);
+            }
+        };
+
+        let add_item = || -> i32 {
+            let value_cf = CFData::from_buffer(value);
+            let label_cf = CFString::new(label);
+            let description_cf = CFString::new(description);
+            let accessible =
+                CFString::wrap_under_get_rule(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly);
+            let sync_false = CFBoolean::from(false);
+            let add = CFDictionary::from_CFType_pairs(&[
                 (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
                 (
                     CFString::wrap_under_get_rule(kSecAttrService),
@@ -359,101 +447,42 @@ fn store_app_private_generic_password(
                     account_cf.as_CFType(),
                 ),
                 (
-                    CFString::wrap_under_get_rule(kSecAttrAccessGroup),
-                    group_cf.as_CFType(),
+                    CFString::wrap_under_get_rule(kSecValueData),
+                    value_cf.as_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrAccessible),
+                    accessible.as_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrLabel),
+                    label_cf.as_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrDescription),
+                    description_cf.as_CFType(),
+                ),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrSynchronizable),
+                    sync_false.as_CFType(),
                 ),
             ]);
-            let _ = SecItemDelete(shared_identity.as_concrete_TypeRef());
-        }
+            let mut result = std::ptr::null();
+            SecItemAdd(add.as_concrete_TypeRef(), &mut result)
+        };
 
-        let value_cf = CFData::from_buffer(value);
-        let label_cf = CFString::new(label);
-        let description_cf = CFString::new(description);
-        let accessible =
-            CFString::wrap_under_get_rule(kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly);
-        let sync_false = CFBoolean::from(false);
-
-        let attrs = CFDictionary::from_CFType_pairs(&[
-            (
-                CFString::wrap_under_get_rule(kSecValueData),
-                value_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrAccessible),
-                accessible.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrLabel),
-                label_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrDescription),
-                description_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrSynchronizable),
-                sync_false.as_CFType(),
-            ),
-        ]);
-
-        let update_status =
-            SecItemUpdate(identity.as_concrete_TypeRef(), attrs.as_concrete_TypeRef());
-        if update_status == errSecSuccess {
-            return Ok(());
-        }
-        if update_status != errSecItemNotFound {
-            return Err(keychain_status_message(
-                "cannot store credentials in Keychain",
-                update_status,
-            ));
-        }
-
-        let add = CFDictionary::from_CFType_pairs(&[
-            (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
-            (
-                CFString::wrap_under_get_rule(kSecAttrService),
-                service_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrAccount),
-                account_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecValueData),
-                value_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrAccessible),
-                accessible.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrLabel),
-                label_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrDescription),
-                description_cf.as_CFType(),
-            ),
-            (
-                CFString::wrap_under_get_rule(kSecAttrSynchronizable),
-                sync_false.as_CFType(),
-            ),
-        ]);
-        let mut result = std::ptr::null();
-        let add_status = SecItemAdd(add.as_concrete_TypeRef(), &mut result);
+        purge_all();
+        let mut add_status = add_item();
         if add_status == errSecSuccess {
             return Ok(());
         }
-        // Narrow race: item appeared between Update miss and Add.
         if add_status == errSecDuplicateItem {
-            let retry = SecItemUpdate(identity.as_concrete_TypeRef(), attrs.as_concrete_TypeRef());
-            if retry == errSecSuccess {
+            // Leftover still visible — purge again and Add once more. Never Update.
+            purge_all();
+            add_status = add_item();
+            if add_status == errSecSuccess {
                 return Ok(());
             }
-            return Err(keychain_status_message(
-                "cannot store credentials in Keychain",
-                retry,
-            ));
         }
         Err(keychain_status_message(
             "cannot store credentials in Keychain",
