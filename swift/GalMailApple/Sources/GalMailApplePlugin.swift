@@ -3,8 +3,20 @@ import Foundation
 import UIKit
 import UserNotifications
 
+@_silgen_name("galmail_ios_register_oauth_presenter")
+func galmail_ios_register_oauth_presenter(
+    _ present: (@convention(c) (
+        UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?
+    ) -> Bool)?
+)
+
 @_cdecl("galmail_apple_bootstrap")
 public func galmailAppleBootstrap() {
+    // Register before any UI can start OAuth. Release builds use
+    // -fvisibility=hidden, so Rust cannot dlsym the Swift @_cdecl.
+    galmail_ios_register_oauth_presenter(galmailIosPresentOAuth)
     GalMailApplePlugin.bootstrap()
 }
 

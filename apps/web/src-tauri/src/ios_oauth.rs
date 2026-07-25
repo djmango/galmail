@@ -77,13 +77,23 @@ pub fn parse_callback_query(callback_url: &str) -> Result<HashMap<String, String
 #[cfg(target_os = "ios")]
 mod bridge {
     use super::*;
-    use std::ffi::{CStr, CString};
+    use std::ffi::{c_void, CStr, CString};
     use std::os::raw::c_char;
+    use std::sync::atomic::{AtomicPtr, Ordering};
     use std::sync::OnceLock;
+
+    type PresentFn = unsafe extern "C" fn(
+        url: *const c_char,
+        callback_scheme: *const c_char,
+        attempt_id: *const c_char,
+    ) -> bool;
 
     type WaiterMap = HashMap<String, oneshot::Sender<Result<String, String>>>;
 
     static WAITERS: OnceLock<Mutex<WaiterMap>> = OnceLock::new();
+    /// Set once from Swift bootstrap. Prefer this over dlsym: Release iOS builds
+    /// use `-fvisibility=hidden`, so Swift @_cdecl symbols are not dlsym-visible.
+    static PRESENT_FN: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
     fn waiters() -> &'static Mutex<WaiterMap> {
         WAITERS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -115,38 +125,47 @@ mod bridge {
         deliver(attempt_id, Err("OAuth presentation was cancelled".into()));
     }
 
-    /// Start ASWebAuthenticationSession on the main thread (non-blocking).
-    ///
-    /// Looks up the Swift `@_cdecl` at runtime — cargo links the Rust lib
-    /// before the app binary provides that symbol.
-    pub fn present(
-        authorization_url: &str,
-        callback_scheme: &str,
-        attempt_id: &str,
-    ) -> Result<(), String> {
-        type PresentFn = unsafe extern "C" fn(
-            url: *const c_char,
-            callback_scheme: *const c_char,
-            attempt_id: *const c_char,
-        ) -> bool;
+    /// Called from Swift `galmail_apple_bootstrap` with the ASWeb presenter entry point.
+    #[no_mangle]
+    pub unsafe extern "C" fn galmail_ios_register_oauth_presenter(present: Option<PresentFn>) {
+        let ptr = present
+            .map(|function| function as *mut c_void)
+            .unwrap_or(std::ptr::null_mut());
+        PRESENT_FN.store(ptr, Ordering::SeqCst);
+    }
 
-        // Apple: RTLD_DEFAULT == (void *)-2 — search the process image list.
+    fn resolve_present_fn() -> Option<PresentFn> {
+        let registered = PRESENT_FN.load(Ordering::SeqCst);
+        if !registered.is_null() {
+            return Some(unsafe { std::mem::transmute::<*mut c_void, PresentFn>(registered) });
+        }
+
+        // Fallback for older hosts that never called register (still fails under
+        // -fvisibility=hidden, but keeps debug/simulator builds working if needed).
         extern "C" {
             fn dlsym(handle: *mut std::ffi::c_void, symbol: *const c_char)
                 -> *mut std::ffi::c_void;
         }
         const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
+        let symbol = unsafe { dlsym(RTLD_DEFAULT, c"galmail_ios_present_oauth".as_ptr()) };
+        if symbol.is_null() {
+            None
+        } else {
+            Some(unsafe { std::mem::transmute(symbol) })
+        }
+    }
 
-        let present_fn: PresentFn = unsafe {
-            let symbol = dlsym(RTLD_DEFAULT, c"galmail_ios_present_oauth".as_ptr());
-            if symbol.is_null() {
-                cancel_waiter(attempt_id);
-                return Err("iOS OAuth presenter is unavailable in this build \
-                     (Swift galmail_ios_present_oauth was stripped; \
-                     main.mm must retain the symbol)"
-                    .into());
-            }
-            std::mem::transmute(symbol)
+    /// Start ASWebAuthenticationSession on the main thread (non-blocking).
+    pub fn present(
+        authorization_url: &str,
+        callback_scheme: &str,
+        attempt_id: &str,
+    ) -> Result<(), String> {
+        let Some(present_fn) = resolve_present_fn() else {
+            cancel_waiter(attempt_id);
+            return Err("iOS OAuth presenter is unavailable in this build \
+                 (Swift never registered galmail_ios_present_oauth at bootstrap)"
+                .into());
         };
 
         let url = CString::new(authorization_url)
