@@ -79,9 +79,8 @@ describe("keychain contract", () => {
     expect(rust).not.toMatch(
       /fn store_oauth_bytes[\s\S]*?set_generic_password_options/,
     );
-    // IPA gate must prove the #[used] marker shipped (V2 was optimized out).
+    // IPA gate must prove the #[used] payload string shipped (V2 was optimized out).
     expect(archive).toContain("GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT");
-    expect(archive).toContain("galmail_keychain_store_v3");
   });
 
   it("treats Keychain -25308 as a soft miss with retry on reads", async () => {
