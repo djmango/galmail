@@ -99,7 +99,7 @@ mod bridge {
     /// `assertOAuthPresenterLinked` and `ios-oauth-contract.test.ts`.
     #[used]
     #[no_mangle]
-    static GALMAIL_IOS_OAUTH_BRIDGE_MARKER: [u8; 27] = *b"galmail_ios_oauth_bridge_v3\0";
+    static GALMAIL_IOS_OAUTH_BRIDGE_MARKER: &[u8] = b"galmail_ios_oauth_bridge_v3\0";
 
     /// Keep the register export alive under `-Wl,-dead_strip` (nothing in Rust
     /// calls it; only Swift bootstrap does).
@@ -141,7 +141,7 @@ mod bridge {
     #[no_mangle]
     pub unsafe extern "C" fn galmail_ios_register_oauth_presenter(present: Option<PresentFn>) {
         // Touch marker so LLVM cannot drop it as unused-with-side-effect-free.
-        let _ = std::ptr::read_volatile(&GALMAIL_IOS_OAUTH_BRIDGE_MARKER[0]);
+        let _ = std::ptr::read_volatile(GALMAIL_IOS_OAUTH_BRIDGE_MARKER.as_ptr());
         let _ = GALMAIL_IOS_REGISTER_RETAIN as usize;
         let ptr = present
             .map(|function| function as *mut c_void)
