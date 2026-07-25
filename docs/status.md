@@ -48,7 +48,7 @@
 | On-device ML classifier                 | Rules + corrections only                                                                                                                       |
 | Receipt pixels / standard receipts      | Honest optional compose UI and local status contract; no production callback service                                                           |
 | Remote AI processor                     | Consent boundary and rules processing are implemented; no external AI vendor is selected or enabled                                            |
-| MCP (AI client access)                  | Live desktop bridge on `127.0.0.1:8675`, Settings tokens/approvals, read/draft/send/calendar tools; self-host Tunnel relay later                 |
+| MCP (AI client access)                  | Live desktop bridge on `127.0.0.1:8675`, Settings tokens/approvals, read/draft/send/calendar tools; self-host Tunnel relay later               |
 | Hardware performance evidence           | Deterministic browser/bundle proxies are gated; packaged launch, 100k-message memory, and search need a pinned reference Mac                   |
 
 ## Blockers / risks

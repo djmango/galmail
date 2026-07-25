@@ -1,8 +1,5 @@
 import type { RemoteProcessingConsent } from "@galmail/core-api";
-import type {
-  McpApprovalMode,
-  McpPolicy,
-} from "../lib/mcp-settings";
+import type { McpApprovalMode, McpPolicy } from "../lib/mcp-settings";
 import type { ThemePreference } from "../lib/themes";
 import { ActionButton } from "./ActionButton";
 import { Icons } from "./Icons";
@@ -376,7 +373,7 @@ export function SettingsPanel(props: {
                   <strong>Live bridge</strong>
                   <span>
                     {props.mcpBridgeRunning
-                      ? props.mcpBridgeUrl ?? "Running"
+                      ? (props.mcpBridgeUrl ?? "Running")
                       : "Stopped - start after creating a client"}
                   </span>
                 </div>
@@ -395,9 +392,7 @@ export function SettingsPanel(props: {
               <div className="settings-row settings-row-stack">
                 <div className="settings-row-text">
                   <strong id="mcp-approval-label">Approval mode</strong>
-                  <span>
-                    Writes always prompt unless set to Allowlisted
-                  </span>
+                  <span>Writes always prompt unless set to Allowlisted</span>
                 </div>
                 <div
                   className="settings-segment"
@@ -409,9 +404,7 @@ export function SettingsPanel(props: {
                       key={option.id}
                       type="button"
                       className="settings-segment-option"
-                      aria-pressed={
-                        props.mcpPolicy.approvalMode === option.id
-                      }
+                      aria-pressed={props.mcpPolicy.approvalMode === option.id}
                       onClick={() =>
                         props.onMcpPolicyChange({ approvalMode: option.id })
                       }
@@ -426,8 +419,9 @@ export function SettingsPanel(props: {
                   <strong>AI clients</strong>
                   <span>
                     {
-                      props.mcpPolicy.clients.filter((client) => !client.revokedAt)
-                        .length
+                      props.mcpPolicy.clients.filter(
+                        (client) => !client.revokedAt,
+                      ).length
                     }{" "}
                     active
                   </span>
@@ -464,9 +458,7 @@ export function SettingsPanel(props: {
                 <div className="settings-row settings-row-stack">
                   <div className="settings-row-text">
                     <strong>Cursor snippet</strong>
-                    <span>
-                      Keep GalMail open with the live bridge running
-                    </span>
+                    <span>Keep GalMail open with the live bridge running</span>
                   </div>
                   <pre className="settings-mono settings-pre">
                     {props.mcpCursorConfig}
