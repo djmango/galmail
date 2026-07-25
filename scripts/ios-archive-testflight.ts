@@ -377,9 +377,9 @@ function assertOAuthPresenterLinked(ipaPath: string) {
       // Swift ASWeb presenter (may appear only as a local/hidden symbol).
       "galmail_ios_present_oauth",
       "GalMailOAuthPresenter",
-      // Keychain store V3 — purge-then-Add identity path (not fat-query Update).
+      // Keychain store V3 payload string (#[used] byte array). Symbol name may
+      // be stripped from nm; the payload must remain in `strings`.
       "GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT",
-      "galmail_keychain_store_v3",
     ];
     const missing = required.filter(
       (name) => !haystack.includes(`_${name}`) && !haystack.includes(name),
@@ -388,7 +388,7 @@ function assertOAuthPresenterLinked(ipaPath: string) {
       throw new Error(
         `IPA is missing OAuth/Keychain markers (${missing.join(", ")}) ` +
           `across ${machos.length} Mach-O file(s). ` +
-          "Rust must keep galmail_ios_oauth_bridge_v3 + galmail_keychain_store_v3; " +
+          "Rust must keep galmail_ios_oauth_bridge_v3 + GALMAIL_KEYCHAIN_STORE_V3_*; " +
           "Swift bootstrap must register the presenter.",
       );
     }
