@@ -15,6 +15,9 @@ public final class GalMailApplePlugin: NSObject, UNUserNotificationCenterDelegat
     @objc public static let shared = GalMailApplePlugin()
 
     @objc public static func bootstrap() {
+        // Touch the OAuth presenter so its @_cdecl entry points stay linked for
+        // Rust dlsym(RTLD_DEFAULT). main.mm also retains the C symbols.
+        _ = GalMailOAuthPresenter.shared
         try? GalMailKeychain.initializeExtensionKeysIfNeeded()
         GalMailAppleBridge.registerNotificationCategories()
         UNUserNotificationCenter.current().delegate = shared

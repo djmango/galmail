@@ -301,6 +301,47 @@ function findIpa(dir: string) {
   return ipa;
 }
 
+/**
+ * Fail the upload if Release dead-code stripping removed the Swift OAuth
+ * cdecls. Rust looks them up with dlsym; missing symbols surface as
+ * "iOS OAuth presenter is unavailable in this build".
+ */
+function assertOAuthPresenterLinked(ipaPath: string) {
+  const extractDir = mkdtempSync(join(tmpdir(), "galmail-ipa-nm-"));
+  try {
+    run("unzip", ["-qo", ipaPath, "-d", extractDir]);
+    const binary = execSync(
+      `find "${extractDir}/Payload" -name GalMail -type f | head -1`,
+      { encoding: "utf8" },
+    ).trim();
+    if (!binary) {
+      throw new Error(`No GalMail binary inside IPA at ${ipaPath}`);
+    }
+    const symbols = execSync(`nm -gU "${binary}" 2>/dev/null || true`, {
+      encoding: "utf8",
+    });
+    const required = [
+      "galmail_ios_present_oauth",
+      "galmail_ios_open_oauth_url",
+    ];
+    const missing = required.filter(
+      (name) => !symbols.includes(`_${name}`) && !symbols.includes(name),
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `IPA is missing OAuth presenter symbols (${missing.join(", ")}). ` +
+          "main.mm must retain the Swift @_cdecl entry points or Release " +
+          "stripping will break Google/Microsoft sign-in.",
+      );
+    }
+    console.log(
+      "→ Verified OAuth presenter symbols in IPA (galmail_ios_present_oauth)",
+    );
+  } finally {
+    rmSync(extractDir, { recursive: true, force: true });
+  }
+}
+
 function ascJwt(auth: AscAuth): string {
   const now = Math.floor(Date.now() / 1000);
   // Apple rejects tokens that appear from the future (runner clock skew) and
@@ -620,6 +661,7 @@ try {
     console.log(`\nDone. IPA at ${tauriIpa}`);
   } else {
     const ipaPath = existsSync(tauriIpa) ? tauriIpa : findIpa(exportDir);
+    assertOAuthPresenterLinked(ipaPath);
     // Must fail the job if ASC rejects the upload (e.g. duplicate build number).
     // Previously this was swallowed, so CI went green with no new TestFlight build.
     uploadIpa(auth, ipaPath);
