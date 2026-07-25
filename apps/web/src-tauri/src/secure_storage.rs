@@ -325,8 +325,7 @@ fn store_app_private_generic_password(
 
     // Contract marker: scripts/keychain-contract.test.ts greps this exact string.
     #[allow(dead_code)]
-    const STORE_IMPL_MARKER: &str =
-        "GALMAIL_KEYCHAIN_STORE_V2_UPDATE_THEN_ADD_IDENTITY_QUERY";
+    const STORE_IMPL_MARKER: &str = "GALMAIL_KEYCHAIN_STORE_V2_UPDATE_THEN_ADD_IDENTITY_QUERY";
     let _ = STORE_IMPL_MARKER;
 
     unsafe {
@@ -335,10 +334,7 @@ fn store_app_private_generic_password(
         let class = CFString::wrap_under_get_rule(kSecClassGenericPassword);
 
         let identity = CFDictionary::from_CFType_pairs(&[
-            (
-                CFString::wrap_under_get_rule(kSecClass),
-                class.as_CFType(),
-            ),
+            (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
             (
                 CFString::wrap_under_get_rule(kSecAttrService),
                 service_cf.as_CFType(),
@@ -353,10 +349,7 @@ fn store_app_private_generic_password(
         if let Some(group) = keychain_access_group() {
             let group_cf = CFString::new(&group);
             let shared_identity = CFDictionary::from_CFType_pairs(&[
-                (
-                    CFString::wrap_under_get_rule(kSecClass),
-                    class.as_CFType(),
-                ),
+                (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
                 (
                     CFString::wrap_under_get_rule(kSecAttrService),
                     service_cf.as_CFType(),
@@ -416,10 +409,7 @@ fn store_app_private_generic_password(
         }
 
         let add = CFDictionary::from_CFType_pairs(&[
-            (
-                CFString::wrap_under_get_rule(kSecClass),
-                class.as_CFType(),
-            ),
+            (CFString::wrap_under_get_rule(kSecClass), class.as_CFType()),
             (
                 CFString::wrap_under_get_rule(kSecAttrService),
                 service_cf.as_CFType(),
