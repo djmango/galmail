@@ -270,35 +270,28 @@ public enum GalMailKeychain {
     }
 
     public static func store(_ data: Data, account: String) throws {
-        // Identity-only query (class + service + account + access group).
-        // Never put kSecAttrAccessible in Update/Delete queries — that filters
-        // the match and yields errSecDuplicateItem then errSecItemNotFound (-25300).
+        // Identity-only purge then Add. Never put kSecAttrAccessible in the
+        // delete query — that filters the match and leaves leftovers that make
+        // the next SecItemAdd return errSecDuplicateItem / -25300 on Update.
         let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: GalMailKeychainPolicy.extensionVaultService,
             kSecAttrAccount as String: account,
             kSecAttrAccessGroup as String: GalMailAppleBridge.keychainAccessGroup,
         ]
-        let attrs: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: GalMailKeychainPolicy.accessible,
-        ]
-        let updateStatus = SecItemUpdate(identity as CFDictionary, attrs as CFDictionary)
-        if updateStatus == errSecSuccess { return }
-        if updateStatus != errSecItemNotFound {
-            throw GalMailAppleError.keychain(updateStatus)
-        }
+        SecItemDelete(identity as CFDictionary)
         var add = identity
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = GalMailKeychainPolicy.accessible
-        let addStatus = SecItemAdd(add as CFDictionary, nil)
-        if addStatus == errSecSuccess { return }
-        if addStatus == errSecDuplicateItem {
-            let retry = SecItemUpdate(identity as CFDictionary, attrs as CFDictionary)
-            guard retry == errSecSuccess else { throw GalMailAppleError.keychain(retry) }
+        var status = SecItemAdd(add as CFDictionary, nil)
+        if status == errSecSuccess { return }
+        if status == errSecDuplicateItem {
+            SecItemDelete(identity as CFDictionary)
+            status = SecItemAdd(add as CFDictionary, nil)
+            guard status == errSecSuccess else { throw GalMailAppleError.keychain(status) }
             return
         }
-        throw GalMailAppleError.keychain(addStatus)
+        throw GalMailAppleError.keychain(status)
     }
 
     public static func load(account: String) throws -> Data? {

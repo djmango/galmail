@@ -377,15 +377,19 @@ function assertOAuthPresenterLinked(ipaPath: string) {
       // Swift ASWeb presenter (may appear only as a local/hidden symbol).
       "galmail_ios_present_oauth",
       "GalMailOAuthPresenter",
+      // Keychain store V3 — purge-then-Add identity path (not fat-query Update).
+      "GALMAIL_KEYCHAIN_STORE_V3_PURGE_THEN_ADD_IDENT",
+      "galmail_keychain_store_v3",
     ];
     const missing = required.filter(
       (name) => !haystack.includes(`_${name}`) && !haystack.includes(name),
     );
     if (missing.length > 0) {
       throw new Error(
-        `IPA is missing OAuth bridge markers (${missing.join(", ")}) ` +
+        `IPA is missing OAuth/Keychain markers (${missing.join(", ")}) ` +
           `across ${machos.length} Mach-O file(s). ` +
-          "Rust must keep galmail_ios_oauth_bridge_v3; Swift bootstrap must register the presenter.",
+          "Rust must keep galmail_ios_oauth_bridge_v3 + galmail_keychain_store_v3; " +
+          "Swift bootstrap must register the presenter.",
       );
     }
     // App Store Connect rejects these non-public Security symbols (altool code 11).
@@ -401,8 +405,14 @@ function assertOAuthPresenterLinked(ipaPath: string) {
           "Do not link SecTask*; use the baked Apple team ID for Keychain group repair.",
       );
     }
+    // Ban the broken security-framework Add→Update helper string path in release.
+    if (haystack.includes("GALMAIL_KEYCHAIN_STORE_V2_UPDATE_THEN_ADD")) {
+      throw new Error(
+        "IPA still contains Keychain store V2 (Prefer-Update). Ship V3 purge-then-Add only.",
+      );
+    }
     console.log(
-      `→ Verified OAuth bridge in IPA (${machos.length} Mach-O files; bridge v3 + GalMailOAuthPresenter)`,
+      `→ Verified OAuth bridge + Keychain store V3 in IPA (${machos.length} Mach-O files)`,
     );
   } finally {
     rmSync(extractDir, { recursive: true, force: true });
