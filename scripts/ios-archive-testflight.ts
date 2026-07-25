@@ -329,7 +329,10 @@ function assertOAuthPresenterLinked(ipaPath: string) {
     });
     const haystack = `${symbols}\n${strings}`;
     const required = [
+      // Owned by main.mm (same TU as main) — survives -fvisibility=hidden.
       "galmail_ios_register_oauth_presenter",
+      "galmail_ios_invoke_oauth_presenter",
+      // Swift ASWeb presenter.
       "galmail_ios_present_oauth",
       "GalMailOAuthPresenter",
     ];
@@ -339,11 +342,11 @@ function assertOAuthPresenterLinked(ipaPath: string) {
     if (missing.length > 0) {
       throw new Error(
         `IPA is missing OAuth bridge markers (${missing.join(", ")}). ` +
-          "Swift bootstrap must register galmail_ios_present_oauth into Rust.",
+          "main.mm must own register/invoke trampolines; Swift bootstrap must register the presenter.",
       );
     }
     console.log(
-      "→ Verified OAuth bridge in IPA (register + presenter + GalMailOAuthPresenter)",
+      "→ Verified OAuth bridge in IPA (main.mm trampoline + GalMailOAuthPresenter)",
     );
   } finally {
     rmSync(extractDir, { recursive: true, force: true });

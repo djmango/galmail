@@ -14,8 +14,9 @@ func galmail_ios_register_oauth_presenter(
 
 @_cdecl("galmail_apple_bootstrap")
 public func galmailAppleBootstrap() {
-    // Register before any UI can start OAuth. Release builds use
-    // -fvisibility=hidden, so Rust cannot dlsym the Swift @_cdecl.
+    // Register into main.mm before any UI can start OAuth. Release builds use
+    // -fvisibility=hidden, so Rust cannot dlsym the Swift @_cdecl; Rust calls
+    // main.mm's galmail_ios_invoke_oauth_presenter trampoline instead.
     galmail_ios_register_oauth_presenter(galmailIosPresentOAuth)
     GalMailApplePlugin.bootstrap()
 }
