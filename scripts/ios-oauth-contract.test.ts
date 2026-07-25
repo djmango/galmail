@@ -2,8 +2,9 @@
  * iOS OAuth presenter contract.
  *
  * Release builds use `-fvisibility=hidden`, so Rust cannot dlsym Swift @_cdecl
- * symbols. The working bridge is: Swift bootstrap registers into main.mm, Rust
- * calls main.mm's invoke trampoline.
+ * symbols. The working bridge is: Swift bootstrap registers into main.mm; Rust
+ * dlsyms main.mm's default-visibility invoke trampoline (cannot hard-link it —
+ * cargo builds the Rust dylib before Xcode compiles main.mm).
  *
  * Runs on every `bun test` / js CI job (Ubuntu).
  */
@@ -32,9 +33,10 @@ describe("ios oauth contract", () => {
     expect(plugin).toContain("galmail_ios_register_oauth_presenter");
     expect(plugin).toContain("galmailIosPresentOAuth");
     expect(rust).toContain("galmail_ios_invoke_oauth_presenter");
-    expect(rust).toContain('extern "C"');
-    // Must not look up the Swift cdecl at runtime (hidden visibility).
-    expect(rust).not.toMatch(/\bfn dlsym\b/);
+    expect(rust).toMatch(/\bfn dlsym\b/);
+    // Must resolve the main.mm trampoline, never the hidden Swift cdecl.
+    expect(rust).toContain('c"galmail_ios_invoke_oauth_presenter"');
+    expect(rust).not.toContain('c"galmail_ios_present_oauth"');
   });
 
   it("marks OAuth cdecls @_used and exposes the presenter type", async () => {

@@ -115,14 +115,31 @@ mod bridge {
         deliver(attempt_id, Err("OAuth presentation was cancelled".into()));
     }
 
-    // Provided by apps/web/src-tauri/gen/apple/Sources/galmail-tauri/main.mm.
-    // Resolved when Xcode links the app (not via dlsym; Release hides Swift cdecls).
-    extern "C" {
-        fn galmail_ios_invoke_oauth_presenter(
-            url: *const c_char,
-            callback_scheme: *const c_char,
-            attempt_id: *const c_char,
-        ) -> bool;
+    type InvokeFn = unsafe extern "C" fn(
+        url: *const c_char,
+        callback_scheme: *const c_char,
+        attempt_id: *const c_char,
+    ) -> bool;
+
+    /// Resolve main.mm's default-visibility trampoline.
+    ///
+    /// Cannot be a link-time `extern`: cargo builds `libgalmail_tauri_lib.dylib`
+    /// before Xcode compiles `main.mm`, so a hard undefined reference fails the
+    /// Rust link. `galmail_ios_invoke_oauth_presenter` is exported with
+    /// `visibility("default")` from main.mm, so dlsym works. Do not dlsym the
+    /// Swift `galmail_ios_present_oauth` cdecl (hidden under Release).
+    fn resolve_invoke_fn() -> Option<InvokeFn> {
+        extern "C" {
+            fn dlsym(handle: *mut std::ffi::c_void, symbol: *const c_char)
+                -> *mut std::ffi::c_void;
+        }
+        const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
+        let symbol = unsafe { dlsym(RTLD_DEFAULT, c"galmail_ios_invoke_oauth_presenter".as_ptr()) };
+        if symbol.is_null() {
+            None
+        } else {
+            Some(unsafe { std::mem::transmute::<*mut std::ffi::c_void, InvokeFn>(symbol) })
+        }
     }
 
     /// Start ASWebAuthenticationSession on the main thread (non-blocking).
@@ -131,6 +148,12 @@ mod bridge {
         callback_scheme: &str,
         attempt_id: &str,
     ) -> Result<(), String> {
+        let Some(invoke) = resolve_invoke_fn() else {
+            cancel_waiter(attempt_id);
+            return Err("iOS OAuth presenter is unavailable in this build \
+                 (main.mm trampoline galmail_ios_invoke_oauth_presenter not linked)"
+                .into());
+        };
         let url = CString::new(authorization_url)
             .map_err(|_| "OAuth URL contains an interior NUL".to_string())?;
         let scheme = CString::new(callback_scheme)
@@ -138,9 +161,7 @@ mod bridge {
         let attempt = CString::new(attempt_id)
             .map_err(|_| "OAuth attempt id contains an interior NUL".to_string())?;
         // SAFETY: pointers are valid C strings for the duration of the call.
-        let started = unsafe {
-            galmail_ios_invoke_oauth_presenter(url.as_ptr(), scheme.as_ptr(), attempt.as_ptr())
-        };
+        let started = unsafe { invoke(url.as_ptr(), scheme.as_ptr(), attempt.as_ptr()) };
         if started {
             Ok(())
         } else {
