@@ -255,23 +255,19 @@ fn set_authentication_ui_skip(options: &mut security_framework::passwords::Passw
     ));
 }
 
-/// Configure generic-password options the way GalMail Swift does on iOS:
-/// access group (when requested), device-local, after-first-unlock accessibility.
+/// Configure generic-password options: device-local, after-first-unlock.
 ///
-/// `include_access_group` is false for legacy reads/deletes of items written
-/// before shared-group bootstrap (default app access group).
+/// Rust OAuth tokens and the device vault wrap key are **app-private** — they
+/// must not set `kSecAttrAccessGroup`. The shared
+/// `com.galateacorp.mail.keychain` group is only for Swift extension keys
+/// (`GalMailKeychain` / NSE / Share). Passing that group on OAuth writes made
+/// TestFlight sign-in fail with confusing -34018/-25300 errors.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn configure_password_options(
     options: &mut security_framework::passwords::PasswordOptions,
     for_write: bool,
-    include_access_group: bool,
 ) {
     options.set_access_synchronized(Some(false));
-    if include_access_group {
-        if let Some(group) = keychain_access_group() {
-            options.set_access_group(&group);
-        }
-    }
     // Data Protection keychain is always on for iOS; keep the attribute explicit.
     #[cfg(not(target_os = "macos"))]
     options.use_protected_keychain();
@@ -287,22 +283,32 @@ fn keychain_status_message(action: &str, code: i32) -> String {
     // Common iOS failures: -34018 missing entitlement / access group,
     // -25308 interaction not allowed (locked / early launch AccessControl),
     // -25299 duplicate item, -25300 not found (handled by callers).
-    if code == -25308 {
-        return format!(
+    match code {
+        -25308 => format!(
             "{action} failed (Keychain status {code}: unlock the device and reopen GalMail)"
-        );
+        ),
+        -34018 => {
+            format!("{action} failed (Keychain status {code}: access group entitlement missing)")
+        }
+        -25300 => format!("{action} failed (Keychain status {code}: item not found)"),
+        _ => format!("{action} failed (Keychain status {code})"),
     }
-    format!("{action} failed (Keychain status {code})")
 }
 
-/// Soft Keychain misses: try the other access-group view / retry.
+/// Soft Keychain misses on **reads**: try another view / retry.
 ///
 /// -25300 not found, -34018 missing entitlement, -25308 interaction not allowed.
+/// Do **not** use this to swallow SecItemAdd failures on writes.
 #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
 fn keychain_soft_miss(code: i32) -> bool {
     code == -25300 || code == -34018 || code == -25308
 }
 
+/// Query variants for app-private Rust Keychain items (OAuth + device vault).
+///
+/// Writes: app-default only (no access group).
+/// Reads/deletes: app-default first, then the shared extension group (migration
+/// from older TestFlight builds that incorrectly wrote OAuth there), then bare.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn generic_password_variants(
     service: &str,
@@ -311,20 +317,22 @@ fn generic_password_variants(
 ) -> Vec<security_framework::passwords::PasswordOptions> {
     use security_framework::passwords::PasswordOptions;
     let mut variants = Vec::with_capacity(3);
-    if keychain_access_group().is_some() {
+    let mut app_default = PasswordOptions::new_generic_password(service, account);
+    configure_password_options(&mut app_default, for_write);
+    variants.push(app_default);
+    if for_write {
+        return variants;
+    }
+    // Migration read: older builds preferred the shared access group.
+    if let Some(group) = keychain_access_group() {
         let mut with_group = PasswordOptions::new_generic_password(service, account);
-        configure_password_options(&mut with_group, for_write, true);
+        configure_password_options(&mut with_group, false);
+        with_group.set_access_group(&group);
         variants.push(with_group);
     }
-    let mut legacy = PasswordOptions::new_generic_password(service, account);
-    configure_password_options(&mut legacy, for_write, false);
-    variants.push(legacy);
-    // Last-resort read: bare service/account (no sync/group flags).
-    if !for_write {
-        let mut bare = PasswordOptions::new_generic_password(service, account);
-        set_authentication_ui_skip(&mut bare);
-        variants.push(bare);
-    }
+    let mut bare = PasswordOptions::new_generic_password(service, account);
+    set_authentication_ui_skip(&mut bare);
+    variants.push(bare);
     variants
 }
 
@@ -337,7 +345,6 @@ fn load_generic_password_bytes(
     use std::thread;
     use std::time::Duration;
 
-    let prefer_group = keychain_access_group().is_some();
     let mut last_error: Option<i32> = None;
 
     // Retry: -25308 is common during early launch before Keychain is interactive.
@@ -346,7 +353,8 @@ fn load_generic_password_bytes(
             .into_iter()
             .enumerate()
         {
-            let used_shared_group = prefer_group && index == 0;
+            // index 0 = app-default; index 1 = shared group migration view.
+            let used_shared_group = index == 1 && keychain_access_group().is_some();
             match generic_password(options) {
                 Ok(bytes) => return Ok(Some((bytes, used_shared_group))),
                 Err(error) if keychain_soft_miss(error.code()) => {
@@ -505,27 +513,15 @@ impl DeviceKeyStore for MacOsKeychain {
         #[cfg(not(all(debug_assertions, target_os = "macos")))]
         {
             use security_framework::passwords::{set_generic_password_options, PasswordOptions};
-            // Clear both shared-group and legacy views so SecItemAdd cannot hit duplicates.
+            // Clear app-default + any legacy shared-group copies before SecItemAdd.
             delete_generic_password_all_variants(Self::SERVICE, Self::ACCOUNT);
             let mut options = PasswordOptions::new_generic_password(Self::SERVICE, Self::ACCOUNT);
-            configure_password_options(&mut options, true, true);
+            // App-private: never use the extension shared access group.
+            configure_password_options(&mut options, true);
             options.set_label("GalMail vault wrapping key");
             options.set_description("Wraps the local GalMail vault key; never synchronized");
             set_generic_password_options(key, options).map_err(|error| {
-                let hint = if keychain_access_group().is_none() {
-                    " (missing GalMailKeychainAccessGroup in Info.plist)"
-                } else if error.code() == -34018 {
-                    " (Keychain access group entitlement missing from the provisioning profile)"
-                } else {
-                    ""
-                };
-                format!(
-                    "{}{hint}",
-                    keychain_status_message(
-                        "cannot store vault wrapping key in Keychain",
-                        error.code()
-                    )
-                )
+                keychain_status_message("cannot store vault wrapping key in Keychain", error.code())
             })
         }
     }
@@ -570,39 +566,17 @@ fn store_oauth_bytes(service: &str, account_id: &str, value: &[u8]) -> Result<()
     }
     #[cfg(not(all(debug_assertions, target_os = "macos")))]
     {
-        use security_framework::passwords::set_generic_password_options;
+        use security_framework::passwords::{set_generic_password_options, PasswordOptions};
+        // Wipe app-default + any shared-group leftovers from older builds.
         delete_generic_password_all_variants(service, account_id);
-        let mut last_code = None;
-        for mut options in generic_password_variants(service, account_id, true) {
-            options.set_label("GalMail OAuth authorization");
-            options.set_description("Provider OAuth tokens; never synchronized");
-            match set_generic_password_options(value, options) {
-                Ok(()) => return Ok(()),
-                Err(error) if keychain_soft_miss(error.code()) => {
-                    last_code = Some(error.code());
-                    continue;
-                }
-                Err(error) => {
-                    let hint = if error.code() == -34018 {
-                        " (Keychain access group missing team prefix or entitlement)"
-                    } else {
-                        ""
-                    };
-                    return Err(format!(
-                        "{}{hint}",
-                        keychain_status_message(
-                            "cannot store OAuth credentials in Keychain",
-                            error.code()
-                        )
-                    ));
-                }
-            }
-        }
-        let code = last_code.unwrap_or(-34018);
-        Err(format!(
-            "{} (Keychain access group missing team prefix or entitlement)",
-            keychain_status_message("cannot store OAuth credentials in Keychain", code)
-        ))
+        // App-private write only — no kSecAttrAccessGroup.
+        let mut options = PasswordOptions::new_generic_password(service, account_id);
+        configure_password_options(&mut options, true);
+        options.set_label("GalMail OAuth authorization");
+        options.set_description("Provider OAuth tokens; never synchronized");
+        set_generic_password_options(value, options).map_err(|error| {
+            keychain_status_message("cannot store OAuth credentials in Keychain", error.code())
+        })
     }
 }
 
@@ -610,11 +584,12 @@ fn store_oauth_bytes(service: &str, account_id: &str, value: &[u8]) -> Result<()
 fn list_oauth_accounts_for_service(service: &str) -> Result<Vec<String>, String> {
     use security_framework::item::{ItemClass, ItemSearchOptions, Limit, SearchResult};
     let mut ids = Vec::new();
+    // App-default first; shared group second for migration from older builds.
     let mut group_filters: Vec<Option<String>> = Vec::with_capacity(2);
+    group_filters.push(None);
     if let Some(group) = keychain_access_group() {
         group_filters.push(Some(group));
     }
-    group_filters.push(None);
     for access_group in group_filters {
         let mut search = ItemSearchOptions::new();
         search

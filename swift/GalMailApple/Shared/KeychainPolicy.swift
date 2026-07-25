@@ -11,6 +11,7 @@ public enum GalMailKeychainPolicy {
     public static let accessGroupInfoKey = "GalMailKeychainAccessGroup"
 
     /// Entitlement / Info.plist suffix (team prefix applied by Xcode / archive bake).
+    /// Used only by Swift extension Keychain helpers — never by Rust OAuth/vault.
     public static let accessGroupSuffix = "com.galateacorp.mail.keychain"
 
     /// Apple Developer Team ID (must match `TEAM_ID` in `scripts/ios-archive-testflight.ts`).
@@ -18,15 +19,17 @@ public enum GalMailKeychainPolicy {
     public static let appleTeamIdentifier = "A95F4H2423"
 
     /// Extension-shared keys (notification index, share inbox, etc.).
+    /// These are the only items that belong in `accessGroupSuffix`.
     public static let extensionVaultService = "com.galateacorp.mail.vault"
 
     /// Rust device vault wrapping key service. Must stay distinct from the
-    /// extension vault service.
+    /// extension vault service. App-private (no shared access group).
     public static let rustDeviceVaultService = "com.galmail.app.vault"
 
     public static let rustDeviceVaultAccount = "device-wrap-key-v1"
 
     /// Provider-neutral OAuth token service (Gmail + Microsoft).
+    /// App-private (no shared access group); written only by Rust.
     public static let oauthService = "com.galmail.app.oauth"
 
     public static let oauthServiceLegacy = "com.galmail.app.gmail-oauth"

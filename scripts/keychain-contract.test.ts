@@ -65,6 +65,8 @@ describe("keychain contract", () => {
     expect(configure).toContain("set_authentication_ui_skip");
     expect(configure).not.toContain("SecAccessControl");
     expect(configure).not.toContain("set_access_control");
+    // Shared access group is never part of the default write config.
+    expect(configure).not.toContain("set_access_group");
   });
 
   it("treats Keychain -25308 as a soft miss with retry", async () => {
@@ -145,11 +147,15 @@ describe("keychain contract", () => {
     // SecTask* are non-public; ASC rejects IPAs that link them (altool code 11).
     expect(rust).not.toContain("SecTaskCreateFromSelf");
     expect(rust).not.toContain("SecTaskCopyValueForEntitlement");
+    // OAuth + device vault are app-private — writes must not set access group.
+    expect(rust).toContain("App-private write only — no kSecAttrAccessGroup");
     expect(rust).toContain(
-      "generic_password_variants(service, account_id, true)",
+      "// App-private: never use the extension shared access group.",
     );
+    expect(rust).not.toContain("missing team prefix or entitlement");
     expect(policy).toContain("normalizedAccessGroup");
     expect(policy).toContain('appleTeamIdentifier = "A95F4H2423"');
+    expect(policy).toContain("App-private (no shared access group)");
     expect(bridge).toContain("normalizedAccessGroup");
     expect(bridge).toContain("appleTeamIdentifier");
     expect(tests).toContain("testNormalizedAccessGroupRepairsBareSuffix");

@@ -12,7 +12,7 @@ import UserNotifications
 /// - APNs registration token → Tauri/Rust command
 /// - Actionable notification categories: archive, mark_read, delete, reply
 /// - Notification Service Extension enrichment via App Group encrypted index
-/// - Keychain access-group for vault wraps (extension keys; OAuth tokens live in Rust)
+/// - Keychain access-group for extension vault wraps only (OAuth + device vault are app-private in Rust)
 /// - ASWebAuthenticationSession OAuth callback delivery (see GalMailOAuthPresenter)
 
 public enum GalMailAppleBridge {
