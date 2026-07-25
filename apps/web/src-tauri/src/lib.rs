@@ -2,6 +2,8 @@
 
 mod gmail_oauth;
 mod ios_oauth;
+#[cfg(not(target_os = "ios"))]
+mod mcp_bridge;
 mod microsoft_oauth;
 #[cfg(not(target_os = "ios"))]
 mod oauth_callback_page;
@@ -710,6 +712,8 @@ fn initialize_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>
         startup_issue,
         startup_detail,
     });
+    #[cfg(not(target_os = "ios"))]
+    app.manage(mcp_bridge::McpBridgeState::default());
 
     #[cfg(target_os = "macos")]
     {
@@ -818,10 +822,89 @@ pub fn run() {
             check_for_update,
             install_update,
             unsubscribe::one_click_unsubscribe,
-            unsubscribe::open_external_url
+            unsubscribe::open_external_url,
+            mcp_bridge_start_cmd,
+            mcp_bridge_stop_cmd,
+            mcp_bridge_status_cmd,
+            mcp_bridge_update_tokens_cmd,
+            mcp_bridge_respond_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running GalMail");
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+async fn mcp_bridge_start_cmd(
+    app: tauri::AppHandle,
+    state: State<'_, mcp_bridge::McpBridgeState>,
+    request: mcp_bridge::McpBridgeStartRequest,
+) -> Result<mcp_bridge::McpBridgeStatus, String> {
+    mcp_bridge::mcp_bridge_start(app, state, request).await
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+async fn mcp_bridge_stop_cmd(
+    state: State<'_, mcp_bridge::McpBridgeState>,
+) -> Result<mcp_bridge::McpBridgeStatus, String> {
+    mcp_bridge::mcp_bridge_stop(state).await
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+fn mcp_bridge_status_cmd(
+    state: State<'_, mcp_bridge::McpBridgeState>,
+) -> mcp_bridge::McpBridgeStatus {
+    mcp_bridge::mcp_bridge_status(state)
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+fn mcp_bridge_update_tokens_cmd(
+    state: State<'_, mcp_bridge::McpBridgeState>,
+    request: mcp_bridge::McpBridgeTokensRequest,
+) -> Result<(), String> {
+    mcp_bridge::mcp_bridge_update_tokens(state, request)
+}
+
+#[cfg(not(target_os = "ios"))]
+#[tauri::command]
+fn mcp_bridge_respond_cmd(
+    state: State<'_, mcp_bridge::McpBridgeState>,
+    request: mcp_bridge::McpBridgeRespondRequest,
+) -> Result<(), String> {
+    mcp_bridge::mcp_bridge_respond(state, request)
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+async fn mcp_bridge_start_cmd(_request: Value) -> Result<serde_json::Value, String> {
+    Err("MCP bridge is available on desktop GalMail only".into())
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+async fn mcp_bridge_stop_cmd() -> Result<serde_json::Value, String> {
+    Err("MCP bridge is available on desktop GalMail only".into())
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn mcp_bridge_status_cmd() -> serde_json::Value {
+    serde_json::json!({ "running": false, "port": 0, "url": null })
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn mcp_bridge_update_tokens_cmd(_request: Value) -> Result<(), String> {
+    Err("MCP bridge is available on desktop GalMail only".into())
+}
+
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn mcp_bridge_respond_cmd(_request: Value) -> Result<(), String> {
+    Err("MCP bridge is available on desktop GalMail only".into())
 }
 
 #[cfg(test)]

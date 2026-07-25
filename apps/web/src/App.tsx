@@ -95,6 +95,17 @@ import { RemoteOptInModal } from "./components/RemoteOptInModal";
 import { type SettingsState } from "./components/SettingsBar";
 import { ActionButton } from "./components/ActionButton";
 import { SettingsPanel } from "./components/SettingsPanel";
+import type { McpApprovalRequest } from "@galmail/mcp";
+import { McpApprovalBanner } from "./components/McpApprovalBanner";
+import {
+  addMcpClient,
+  cursorMcpConfigSnippet,
+  loadMcpPolicyFromLocalStorage,
+  persistMcpPolicyToLocalStorage,
+  revokeMcpClient,
+  type McpPolicy,
+} from "./lib/mcp-settings";
+import { LiveMcpSession } from "./lib/mcp-live";
 import { SafeMailBody } from "./components/SafeMailBody";
 import { SignInScreen } from "./components/SignInScreen";
 import { StatusBar, type EditorMode } from "./components/StatusBar";
@@ -356,6 +367,15 @@ export function App() {
     loadRemoteImages: loadPersistedLoadRemoteImages(),
     trashAfterUnsubscribe: loadPersistedTrashAfterUnsubscribe(),
   }));
+  const [mcpPolicy, setMcpPolicy] = useState<McpPolicy>(() =>
+    loadMcpPolicyFromLocalStorage(),
+  );
+  const [mcpCreatedToken, setMcpCreatedToken] = useState<string | null>(null);
+  const [mcpCursorConfig, setMcpCursorConfig] = useState<string | null>(null);
+  const [mcpBridgeUrl, setMcpBridgeUrl] = useState<string | null>(null);
+  const [mcpBridgeRunning, setMcpBridgeRunning] = useState(false);
+  const [mcpPending, setMcpPending] = useState<McpApprovalRequest[]>([]);
+  const mcpSessionRef = useRef<LiveMcpSession | null>(null);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() =>
     getSystemTheme(),
   );
@@ -456,6 +476,50 @@ export function App() {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    const session = new LiveMcpSession(runtime, mcpPolicy);
+    session.onPendingChange = setMcpPending;
+    mcpSessionRef.current = session;
+    void session.ensureListener().catch(() => {
+      // Browser / non-Tauri shells have no MCP bridge.
+    });
+    return () => {
+      session.dispose();
+      if (mcpSessionRef.current === session) mcpSessionRef.current = null;
+    };
+    // Recreate when runtime identity changes; policy is synced below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime]);
+
+  useEffect(() => {
+    const session = mcpSessionRef.current;
+    if (!session) return;
+    session.setPolicy(mcpPolicy);
+    void session.syncTokens().catch(() => {
+      // Bridge may be stopped.
+    });
+  }, [mcpPolicy]);
+
+  useEffect(() => {
+    const session = mcpSessionRef.current;
+    if (!session || !mcpPolicy.enabled || !runtime) return;
+    if (session.activeTokens().length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const status = await session.startBridge();
+        if (cancelled) return;
+        setMcpBridgeRunning(status.running);
+        setMcpBridgeUrl(status.url);
+      } catch {
+        // User can start manually from Settings.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mcpPolicy.enabled, mcpPolicy.clients, runtime]);
 
   const hydrateRuntime = async (rt: GalMailRuntime) => {
     setRuntime(rt);
@@ -1854,6 +1918,17 @@ export function App() {
       data-mobile-surface={mobileSurface}
       data-mobile-nav={mobileNavOpen ? "open" : "closed"}
     >
+      <McpApprovalBanner
+        pending={mcpPending}
+        onApprove={(id) => {
+          mcpSessionRef.current?.decide(id, "approved");
+          setMcpPending(mcpSessionRef.current?.pending() ?? []);
+        }}
+        onDeny={(id) => {
+          mcpSessionRef.current?.decide(id, "denied");
+          setMcpPending(mcpSessionRef.current?.pending() ?? []);
+        }}
+      />
       <div className="shell">
         {isMobile && mobileNavOpen ? (
           <button
@@ -2730,6 +2805,71 @@ export function App() {
           }}
           onConnectGmail={() => void connectGmail()}
           onConnectMicrosoft={() => void connectMicrosoft()}
+          mcpPolicy={mcpPolicy}
+          mcpCreatedToken={mcpCreatedToken}
+          mcpCursorConfig={mcpCursorConfig}
+          mcpBridgeUrl={mcpBridgeUrl}
+          mcpBridgeRunning={mcpBridgeRunning}
+          onMcpPolicyChange={(next) => {
+            setMcpPolicy((prev) => {
+              const updated = { ...prev, ...next };
+              persistMcpPolicyToLocalStorage(updated);
+              if (next.enabled === false) {
+                void mcpSessionRef.current?.stopBridge().then((status) => {
+                  setMcpBridgeRunning(status.running);
+                  setMcpBridgeUrl(status.url);
+                });
+              }
+              return updated;
+            });
+          }}
+          onCreateMcpClient={() => {
+            setMcpPolicy((prev) => {
+              const { policy, client } = addMcpClient(
+                { ...prev, enabled: true },
+                "AI client",
+              );
+              persistMcpPolicyToLocalStorage(policy);
+              setMcpCreatedToken(client.token);
+              setMcpCursorConfig(cursorMcpConfigSnippet(client.token));
+              return policy;
+            });
+          }}
+          onRevokeMcpClient={(clientId) => {
+            setMcpPolicy((prev) => {
+              const updated = revokeMcpClient(prev, clientId);
+              persistMcpPolicyToLocalStorage(updated);
+              return updated;
+            });
+            setMcpCreatedToken(null);
+            setMcpCursorConfig(null);
+          }}
+          onStartMcpBridge={() => {
+            void (async () => {
+              try {
+                const status = await mcpSessionRef.current?.startBridge();
+                if (!status) return;
+                setMcpBridgeRunning(status.running);
+                setMcpBridgeUrl(status.url);
+                toast.success("MCP bridge listening", {
+                  description: status.url ?? undefined,
+                });
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not start MCP bridge",
+                );
+              }
+            })();
+          }}
+          onStopMcpBridge={() => {
+            void (async () => {
+              const status = await mcpSessionRef.current?.stopBridge();
+              setMcpBridgeRunning(status?.running ?? false);
+              setMcpBridgeUrl(status?.url ?? null);
+            })();
+          }}
           onDisconnectAccount={
             runtime.providerMode === "live"
               ? async (accountId) => {

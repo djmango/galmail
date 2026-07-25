@@ -16,6 +16,7 @@
         "@galmail/browser-adapters": "workspace:*",
         "@galmail/core-api": "workspace:*",
         "@galmail/keyboard": "workspace:*",
+        "@galmail/mcp": "workspace:*",
         "@galmail/notifications": "workspace:*",
         "@galmail/providers": "workspace:*",
         "@galmail/remote-opt-in": "workspace:*",
@@ -58,6 +59,20 @@
     "packages/keyboard": {
       "name": "@galmail/keyboard",
       "version": "0.1.0",
+      "devDependencies": {
+        "typescript": "^5.7.2",
+      },
+    },
+    "packages/mcp": {
+      "name": "@galmail/mcp",
+      "version": "0.1.0",
+      "bin": {
+        "galmail-mcp": "./src/bin/stdio.ts",
+      },
+      "dependencies": {
+        "@galmail/core-api": "workspace:*",
+        "@galmail/providers": "workspace:*",
+      },
       "devDependencies": {
         "typescript": "^5.7.2",
       },
@@ -266,6 +281,8 @@
     "@galmail/homelab-api": ["@galmail/homelab-api@workspace:services/homelab-api"],
 
     "@galmail/keyboard": ["@galmail/keyboard@workspace:packages/keyboard"],
+
+    "@galmail/mcp": ["@galmail/mcp@workspace:packages/mcp"],
 
     "@galmail/notifications": ["@galmail/notifications@workspace:packages/notifications"],
 

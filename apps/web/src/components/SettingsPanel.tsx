@@ -1,8 +1,15 @@
 import type { RemoteProcessingConsent } from "@galmail/core-api";
+import type { McpApprovalMode, McpPolicy } from "../lib/mcp-settings";
 import type { ThemePreference } from "../lib/themes";
 import { ActionButton } from "./ActionButton";
 import { Icons } from "./Icons";
 import { SettingsBar, type SettingsState } from "./SettingsBar";
+
+const MCP_APPROVAL_OPTIONS: { id: McpApprovalMode; label: string }[] = [
+  { id: "ask_writes", label: "Ask on writes" },
+  { id: "ask", label: "Ask every time" },
+  { id: "allowlisted", label: "Allowlisted" },
+];
 
 export type SettingsAccount = {
   accountId: string;
@@ -41,6 +48,16 @@ export function SettingsPanel(props: {
   onDisconnectGmail?: () => void;
   /** @deprecated Prefer onDisconnectAccount */
   onDisconnectMicrosoft?: () => void;
+  mcpPolicy: McpPolicy;
+  mcpCreatedToken: string | null;
+  mcpCursorConfig: string | null;
+  mcpBridgeUrl: string | null;
+  mcpBridgeRunning: boolean;
+  onMcpPolicyChange: (next: Partial<McpPolicy>) => void;
+  onCreateMcpClient: () => void;
+  onRevokeMcpClient: (clientId: string) => void;
+  onStartMcpBridge: () => void;
+  onStopMcpBridge: () => void;
 }) {
   const connecting = props.gmailConnecting || props.microsoftConnecting;
   const liveAccounts = props.accounts.filter((account) => account.live);
@@ -323,6 +340,131 @@ export function SettingsPanel(props: {
                   <span className="ios-switch-track" aria-hidden />
                 </label>
               </div>
+            </div>
+          </section>
+
+          <section className="settings-section">
+            <h3 className="settings-section-title">MCP</h3>
+            <p className="settings-copy">
+              Let AI clients search your live local inbox over MCP while GalMail
+              is open. Approvals appear in-app; mail stays on this device.
+            </p>
+            <div className="settings-group">
+              <div className="settings-row settings-switch-row">
+                <div className="settings-row-text">
+                  <strong id="mcp-enabled-label">Enable MCP access</strong>
+                  <span>Issue client tokens and enforce scopes</span>
+                </div>
+                <label className="ios-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-labelledby="mcp-enabled-label"
+                    checked={props.mcpPolicy.enabled}
+                    onChange={(event) =>
+                      props.onMcpPolicyChange({ enabled: event.target.checked })
+                    }
+                  />
+                  <span className="ios-switch-track" aria-hidden />
+                </label>
+              </div>
+              <div className="settings-row">
+                <div className="settings-row-text">
+                  <strong>Live bridge</strong>
+                  <span>
+                    {props.mcpBridgeRunning
+                      ? (props.mcpBridgeUrl ?? "Running")
+                      : "Stopped - start after creating a client"}
+                  </span>
+                </div>
+                {props.mcpBridgeRunning ? (
+                  <ActionButton
+                    label="Stop bridge"
+                    onClick={props.onStopMcpBridge}
+                  />
+                ) : (
+                  <ActionButton
+                    label="Start bridge"
+                    onClick={props.onStartMcpBridge}
+                  />
+                )}
+              </div>
+              <div className="settings-row settings-row-stack">
+                <div className="settings-row-text">
+                  <strong id="mcp-approval-label">Approval mode</strong>
+                  <span>Writes always prompt unless set to Allowlisted</span>
+                </div>
+                <div
+                  className="settings-segment"
+                  role="group"
+                  aria-labelledby="mcp-approval-label"
+                >
+                  {MCP_APPROVAL_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="settings-segment-option"
+                      aria-pressed={props.mcpPolicy.approvalMode === option.id}
+                      onClick={() =>
+                        props.onMcpPolicyChange({ approvalMode: option.id })
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-row">
+                <div className="settings-row-text">
+                  <strong>AI clients</strong>
+                  <span>
+                    {
+                      props.mcpPolicy.clients.filter(
+                        (client) => !client.revokedAt,
+                      ).length
+                    }{" "}
+                    active
+                  </span>
+                </div>
+                <ActionButton
+                  label="Create client"
+                  onClick={props.onCreateMcpClient}
+                />
+              </div>
+              {props.mcpPolicy.clients
+                .filter((client) => !client.revokedAt)
+                .map((client) => (
+                  <div className="settings-row" key={client.id}>
+                    <div className="settings-row-text">
+                      <strong>{client.name}</strong>
+                      <span>{client.scopes.join(", ")}</span>
+                    </div>
+                    <ActionButton
+                      label="Revoke"
+                      onClick={() => props.onRevokeMcpClient(client.id)}
+                    />
+                  </div>
+                ))}
+              {props.mcpCreatedToken && (
+                <div className="settings-row settings-row-stack">
+                  <div className="settings-row-text">
+                    <strong>New client token</strong>
+                    <span>Copy now; it is not shown again</span>
+                  </div>
+                  <code className="settings-mono">{props.mcpCreatedToken}</code>
+                </div>
+              )}
+              {props.mcpCursorConfig && (
+                <div className="settings-row settings-row-stack">
+                  <div className="settings-row-text">
+                    <strong>Cursor snippet</strong>
+                    <span>Keep GalMail open with the live bridge running</span>
+                  </div>
+                  <pre className="settings-mono settings-pre">
+                    {props.mcpCursorConfig}
+                  </pre>
+                </div>
+              )}
             </div>
           </section>
 
