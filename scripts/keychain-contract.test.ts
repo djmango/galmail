@@ -78,24 +78,33 @@ describe("keychain contract", () => {
   });
 
   it("requires shared Keychain access group on app and both extensions", async () => {
-    const [project, appEnt, nseEnt, shareEnt, appInfo, nseInfo, shareInfo] =
-      await Promise.all([
-        file("apps/web/src-tauri/gen/apple/project.yml"),
-        file(
-          "apps/web/src-tauri/gen/apple/galmail-tauri_iOS/galmail-tauri_iOS.entitlements",
-        ),
-        file(
-          "apps/web/src-tauri/gen/apple/GalMailNotificationService/GalMailNotificationService.entitlements",
-        ),
-        file(
-          "apps/web/src-tauri/gen/apple/GalMailShareExtension/GalMailShareExtension.entitlements",
-        ),
-        file("apps/web/src-tauri/gen/apple/galmail-tauri_iOS/Info.plist"),
-        file(
-          "apps/web/src-tauri/gen/apple/GalMailNotificationService/Info.plist",
-        ),
-        file("apps/web/src-tauri/gen/apple/GalMailShareExtension/Info.plist"),
-      ]);
+    const [
+      project,
+      appEnt,
+      nseEnt,
+      shareEnt,
+      appInfo,
+      nseInfo,
+      shareInfo,
+      archive,
+    ] = await Promise.all([
+      file("apps/web/src-tauri/gen/apple/project.yml"),
+      file(
+        "apps/web/src-tauri/gen/apple/galmail-tauri_iOS/galmail-tauri_iOS.entitlements",
+      ),
+      file(
+        "apps/web/src-tauri/gen/apple/GalMailNotificationService/GalMailNotificationService.entitlements",
+      ),
+      file(
+        "apps/web/src-tauri/gen/apple/GalMailShareExtension/GalMailShareExtension.entitlements",
+      ),
+      file("apps/web/src-tauri/gen/apple/galmail-tauri_iOS/Info.plist"),
+      file(
+        "apps/web/src-tauri/gen/apple/GalMailNotificationService/Info.plist",
+      ),
+      file("apps/web/src-tauri/gen/apple/GalMailShareExtension/Info.plist"),
+      file("scripts/ios-archive-testflight.ts"),
+    ]);
 
     for (const body of [project, appEnt, nseEnt, shareEnt]) {
       expect(body).toContain(`com.galateacorp.mail.keychain`);
@@ -111,6 +120,30 @@ describe("keychain contract", () => {
     expect(project).toMatch(
       /GalMailShareExtension:[\s\S]*?GalMailApple\/Shared/,
     );
+    // Archive must bake TEAMID.suffix (empty AppIdentifierPrefix caused -34018).
+    expect(archive).toContain("bakeKeychainAccessGroup");
+    expect(archive).toContain("assertKeychainAccessGroup");
+    expect(archive).toContain("A95F4H2423.com.galateacorp.mail.keychain");
+  });
+
+  it("normalizes bare Keychain access-group suffixes in Rust and Swift", async () => {
+    const [rust, bridge, policy, tests] = await Promise.all([
+      file("apps/web/src-tauri/src/secure_storage.rs"),
+      file("swift/GalMailApple/Sources/NotificationBridge.swift"),
+      file("swift/GalMailApple/Shared/KeychainPolicy.swift"),
+      file("swift/GalMailApple/Tests/KeychainPolicyTests.swift"),
+    ]);
+    expect(rust).toContain("fn normalize_keychain_access_group");
+    expect(rust).toContain("fn team_identifier");
+    expect(rust).toContain("com.apple.developer.team-identifier");
+    expect(rust).toContain(
+      "generic_password_variants(service, account_id, true)",
+    );
+    expect(policy).toContain("normalizedAccessGroup");
+    expect(bridge).toContain("normalizedAccessGroup");
+    expect(bridge).toContain("teamIdentifier");
+    expect(bridge).toContain("com.apple.developer.team-identifier");
+    expect(tests).toContain("testNormalizedAccessGroupRepairsBareSuffix");
   });
 
   it("keeps Swift Keychain helpers on kSecAttrAccessible (not AccessControl)", async () => {

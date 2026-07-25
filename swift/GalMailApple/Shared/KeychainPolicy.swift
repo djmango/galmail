@@ -33,4 +33,35 @@ public enum GalMailKeychainPolicy {
     public static let accessible: CFString = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
     public static let accessibleAttributeName = "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly"
+
+    /// Ensure `TEAMID.com.galateacorp.mail.keychain`. Bare suffixes (empty
+    /// `$(AppIdentifierPrefix)` expansion) are repaired when `teamIdentifier` is set.
+    public static func normalizedAccessGroup(
+        _ raw: String,
+        teamIdentifier: String?
+    ) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.contains("$(") {
+            if let team = teamIdentifier, isTeamIdentifier(team) {
+                return "\(team).\(accessGroupSuffix)"
+            }
+            return accessGroupSuffix
+        }
+        let parts = trimmed.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        if parts.count == 2 {
+            let team = String(parts[0])
+            if isTeamIdentifier(team) {
+                return trimmed
+            }
+        }
+        if let team = teamIdentifier, isTeamIdentifier(team) {
+            return "\(team).\(accessGroupSuffix)"
+        }
+        return trimmed
+    }
+
+    private static func isTeamIdentifier(_ value: String) -> Bool {
+        value.count == 10
+            && value.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) }
+    }
 }
