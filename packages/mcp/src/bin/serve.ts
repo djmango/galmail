@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { AutoApproveGate } from "../approval.js";
 import {
   GalMailMcpBridgeClient,
   resolveLiveBridgeUrl,
 } from "../bridge-client.js";
 import { createFixtureMcpHost } from "../fixture-host.js";
+import { handleJsonRpc, type JsonRpcRequest } from "../protocol.js";
 import { loadStandaloneMcpPolicy } from "../runtime-policy.js";
 import { createGalMailMcpServer } from "../server.js";
 
@@ -41,12 +41,6 @@ async function main() {
     logStderr(`[galmail-mcp] token:\n${token}`);
   }
 
-  const bridge = bridgeUrl
-    ? new GalMailMcpBridgeClient(
-        bridgeUrl,
-        process.env.GALMAIL_MCP_TOKEN ?? token,
-      )
-    : undefined;
   const host = await createFixtureMcpHost();
 
   logStderr(
@@ -66,7 +60,7 @@ async function main() {
           bridgeUrl: bridgeUrl ?? null,
         });
       }
-      if (url.pathname !== "/mcp") {
+      if (url.pathname !== "/mcp" || request.method !== "POST") {
         return new Response("Not found", { status: 404 });
       }
 
@@ -78,7 +72,9 @@ async function main() {
       const liveBridge =
         bridgeUrl && presented
           ? new GalMailMcpBridgeClient(bridgeUrl, presented)
-          : bridge;
+          : bridgeUrl
+            ? new GalMailMcpBridgeClient(bridgeUrl, token)
+            : undefined;
 
       const server = createGalMailMcpServer({
         policy,
@@ -88,11 +84,11 @@ async function main() {
         autoApprove: true,
         bridge: liveBridge,
       });
-      const transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      await server.connect(transport);
-      return transport.handleRequest(request);
+
+      const message = (await request.json()) as JsonRpcRequest;
+      const response = await handleJsonRpc(server, message);
+      if (!response) return new Response(null, { status: 204 });
+      return Response.json(response);
     },
   });
 }

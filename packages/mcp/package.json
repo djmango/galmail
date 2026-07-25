@@ -23,9 +23,7 @@
   },
   "dependencies": {
     "@galmail/core-api": "workspace:*",
-    "@galmail/providers": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.4.3"
+    "@galmail/providers": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

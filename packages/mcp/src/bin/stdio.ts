@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AutoApproveGate } from "../approval.js";
 import {
   GalMailMcpBridgeClient,
   resolveLiveBridgeUrl,
 } from "../bridge-client.js";
 import { createFixtureMcpHost } from "../fixture-host.js";
+import { runStdioServer } from "../protocol.js";
 import { loadStandaloneMcpPolicy } from "../runtime-policy.js";
 import { createGalMailMcpServer } from "../server.js";
 
@@ -39,7 +39,6 @@ async function main() {
         process.env.GALMAIL_MCP_TOKEN ?? token,
       )
     : undefined;
-  // Local host used only for fixture mode; live mode proxies via bridge.
   const host = await createFixtureMcpHost();
 
   const server = createGalMailMcpServer({
@@ -57,8 +56,7 @@ async function main() {
     logStderr("[galmail-mcp] fixture mode (GALMAIL_MCP_ALLOW_FIXTURE=1)");
   }
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await runStdioServer(server);
 }
 
 main().catch((error) => {

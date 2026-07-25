@@ -1,35 +1,28 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import * as z from "zod/v4";
 import type { McpApprovalGate } from "./approval.js";
 import type { GalMailMcpBridgeClient } from "./bridge-client.js";
 import type { GalMailMcpHost } from "./host.js";
 import type { McpPolicy } from "./policy.js";
+import {
+  createProtocolServer,
+  registerTool,
+  type GalMailMcpProtocolServer,
+} from "./protocol.js";
 import { executeMcpTool, McpToolError } from "./tools.js";
 
 export type CreateGalMailMcpServerOptions = {
   policy: McpPolicy;
   host: GalMailMcpHost;
   approval: McpApprovalGate;
-  /** Resolves the active client token per request (HTTP) or once (stdio). */
   getToken: () => string | null;
   autoApprove?: boolean;
   serverName?: string;
   serverVersion?: string;
-  /**
-   * When set, tool handlers proxy to the live GalMail desktop bridge
-   * (policy + approval run inside the app).
-   */
   bridge?: GalMailMcpBridgeClient;
 };
 
 function textResult(data: unknown) {
   return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(data, null, 2),
-      },
-    ],
+    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
   };
 }
 
@@ -46,10 +39,16 @@ function errorResult(error: unknown) {
   };
 }
 
+const objectSchema = {
+  type: "object",
+  properties: {},
+  additionalProperties: false,
+} as const;
+
 export function createGalMailMcpServer(
   options: CreateGalMailMcpServerOptions,
-): McpServer {
-  const server = new McpServer({
+): GalMailMcpProtocolServer {
+  const server = createProtocolServer({
     name: options.serverName ?? "galmail",
     version: options.serverVersion ?? "0.1.0",
   });
@@ -76,105 +75,137 @@ export function createGalMailMcpServer(
     }
   };
 
-  server.registerTool(
-    "list_accounts",
+  registerTool(
+    server,
     {
+      name: "list_accounts",
       description:
         "List GalMail accounts available to this MCP client (id, email, provider).",
-      inputSchema: {},
+      inputSchema: { ...objectSchema },
     },
     async () => run("list_accounts"),
   );
 
-  server.registerTool(
-    "search_mail",
+  registerTool(
+    server,
     {
+      name: "search_mail",
       description:
         "Search local mail with GalMail query syntax (from:, to:, after:, before:, subject:, label:/in:, has:attachment, is:unread|starred, free text). Returns snippets, not full bodies.",
       inputSchema: {
-        query: z.string().describe("GalMail search query"),
-        accountIds: z
-          .array(z.string())
-          .optional()
-          .describe("Limit to these account ids; omit for all allowlisted"),
-        limit: z.number().int().min(1).max(100).optional(),
-        cursor: z.string().optional().describe("Opaque pagination cursor"),
+        type: "object",
+        properties: {
+          query: { type: "string", description: "GalMail search query" },
+          accountIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "Limit to these account ids; omit for all allowlisted",
+          },
+          limit: { type: "integer", minimum: 1, maximum: 100 },
+          cursor: { type: "string", description: "Opaque pagination cursor" },
+        },
+        required: ["query"],
+        additionalProperties: false,
       },
     },
     async (args) => run("search_mail", args),
   );
 
-  server.registerTool(
-    "get_message",
+  registerTool(
+    server,
     {
+      name: "get_message",
       description:
         "Fetch one message by account and id. Use includeBody only when you need the full text (requires mail:read).",
       inputSchema: {
-        accountId: z.string(),
-        messageId: z.string(),
-        includeBody: z.boolean().optional(),
+        type: "object",
+        properties: {
+          accountId: { type: "string" },
+          messageId: { type: "string" },
+          includeBody: { type: "boolean" },
+        },
+        required: ["accountId", "messageId"],
+        additionalProperties: false,
       },
     },
     async (args) => run("get_message", args),
   );
 
-  server.registerTool(
-    "get_mcp_policy",
+  registerTool(
+    server,
     {
+      name: "get_mcp_policy",
       description:
         "Return the effective MCP policy for this client (scopes, approval mode, account allowlist). Does not include secrets.",
-      inputSchema: {},
+      inputSchema: { ...objectSchema },
     },
     async () => run("get_mcp_policy"),
   );
 
-  server.registerTool(
-    "save_draft",
+  registerTool(
+    server,
     {
+      name: "save_draft",
       description:
         "Save a draft in GalMail (requires mail:draft). Does not send.",
       inputSchema: {
-        accountId: z.string(),
-        to: z.array(z.string()).min(1),
-        cc: z.array(z.string()).optional(),
-        bcc: z.array(z.string()).optional(),
-        subject: z.string(),
-        bodyText: z.string(),
-        draftId: z.string().optional(),
+        type: "object",
+        properties: {
+          accountId: { type: "string" },
+          to: { type: "array", items: { type: "string" }, minItems: 1 },
+          cc: { type: "array", items: { type: "string" } },
+          bcc: { type: "array", items: { type: "string" } },
+          subject: { type: "string" },
+          bodyText: { type: "string" },
+          draftId: { type: "string" },
+        },
+        required: ["accountId", "to", "subject", "bodyText"],
+        additionalProperties: false,
       },
     },
     async (args) => run("save_draft", args),
   );
 
-  server.registerTool(
-    "send_draft",
+  registerTool(
+    server,
     {
+      name: "send_draft",
       description:
         "Send mail via GalMail (requires mail:send). Always prompts for approval in the GalMail app.",
       inputSchema: {
-        accountId: z.string(),
-        to: z.array(z.string()).min(1),
-        cc: z.array(z.string()).optional(),
-        bcc: z.array(z.string()).optional(),
-        subject: z.string(),
-        bodyText: z.string(),
-        draftId: z.string().optional(),
+        type: "object",
+        properties: {
+          accountId: { type: "string" },
+          to: { type: "array", items: { type: "string" }, minItems: 1 },
+          cc: { type: "array", items: { type: "string" } },
+          bcc: { type: "array", items: { type: "string" } },
+          subject: { type: "string" },
+          bodyText: { type: "string" },
+          draftId: { type: "string" },
+        },
+        required: ["accountId", "to", "subject", "bodyText"],
+        additionalProperties: false,
       },
     },
     async (args) => run("send_draft", args),
   );
 
-  server.registerTool(
-    "search_calendar",
+  registerTool(
+    server,
     {
+      name: "search_calendar",
       description:
         "Search calendar events across connected accounts (requires calendar:read).",
       inputSchema: {
-        accountIds: z.array(z.string()).optional(),
-        query: z.string().optional(),
-        start: z.string().optional().describe("ISO start bound"),
-        end: z.string().optional().describe("ISO end bound"),
-        limit: z.number().int().min(1).max(200).optional(),
+        type: "object",
+        properties: {
+          accountIds: { type: "array", items: { type: "string" } },
+          query: { type: "string" },
+          start: { type: "string", description: "ISO start bound" },
+          end: { type: "string", description: "ISO end bound" },
+          limit: { type: "integer", minimum: 1, maximum: 200 },
+        },
+        additionalProperties: false,
       },
     },
     async (args) => run("search_calendar", args),

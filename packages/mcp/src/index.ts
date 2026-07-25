@@ -2,6 +2,7 @@ export * from "./approval.js";
 export * from "./bridge-client.js";
 export * from "./host.js";
 export * from "./policy.js";
+export * from "./protocol.js";
 export * from "./scopes.js";
 export * from "./server.js";
 export * from "./tools.js";
