@@ -67,9 +67,9 @@ Fixture mode is opt-in only: `GALMAIL_MCP_ALLOW_FIXTURE=1`.
 
 ## Package / bridge
 
-- `@galmail/mcp` — protocol server, policy, tools, bridge client
-- `apps/web/src-tauri/src/mcp_bridge.rs` — loopback HTTP bridge
-- `apps/web/src/lib/mcp-live.ts` — live host + approval session
+- `@galmail/mcp` - minimal MCP JSON-RPC (no upstream SDK), policy, tools, bridge client
+- `apps/web/src-tauri/src/mcp_bridge.rs` - loopback HTTP bridge
+- `apps/web/src/lib/mcp-live.ts` - live host + approval session
 
 ## Phases
 
