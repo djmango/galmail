@@ -123,7 +123,10 @@ describe("keychain contract", () => {
     // Archive must bake TEAMID.suffix (empty AppIdentifierPrefix caused -34018).
     expect(archive).toContain("bakeKeychainAccessGroup");
     expect(archive).toContain("assertKeychainAccessGroup");
-    expect(archive).toContain("A95F4H2423.com.galateacorp.mail.keychain");
+    expect(archive).toContain('const TEAM_ID = "A95F4H2423"');
+    expect(archive).toContain(
+      "const KEYCHAIN_ACCESS_GROUP = `${TEAM_ID}.com.galateacorp.mail.keychain`",
+    );
   });
 
   it("normalizes bare Keychain access-group suffixes in Rust and Swift", async () => {
