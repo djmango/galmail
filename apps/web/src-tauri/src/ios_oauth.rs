@@ -137,9 +137,7 @@ mod bridge {
     fn resolve_present_fn() -> Option<PresentFn> {
         let registered = PRESENT_FN.load(Ordering::SeqCst);
         if !registered.is_null() {
-            return Some(unsafe {
-                std::mem::transmute::<*mut c_void, PresentFn>(registered)
-            });
+            return Some(unsafe { std::mem::transmute::<*mut c_void, PresentFn>(registered) });
         }
 
         // Fallback for older hosts that never called register (still fails under
@@ -165,11 +163,9 @@ mod bridge {
     ) -> Result<(), String> {
         let Some(present_fn) = resolve_present_fn() else {
             cancel_waiter(attempt_id);
-            return Err(
-                "iOS OAuth presenter is unavailable in this build \
+            return Err("iOS OAuth presenter is unavailable in this build \
                  (Swift never registered galmail_ios_present_oauth at bootstrap)"
-                    .into(),
-            );
+                .into());
         };
 
         let url = CString::new(authorization_url)
