@@ -6,8 +6,9 @@ extern "C" bool galmail_ios_present_oauth(const char *, const char *, const char
 extern "C" bool galmail_ios_open_oauth_url(const char *);
 
 // Release iOS builds use -fvisibility=hidden, so Rust cannot dlsym Swift @_cdecl
-// symbols. Store the presenter here (same TU as main) and expose a trampoline
-// Rust calls via a normal linker-resolved extern.
+// symbols. Store the presenter here (same TU as main) and expose a default-
+// visibility trampoline. Rust resolves invoke via dlsym at runtime (cargo
+// links the Rust dylib before this TU exists, so a hard extern fails).
 using galmail_ios_present_fn = bool (*)(const char *, const char *, const char *);
 static galmail_ios_present_fn g_galmail_ios_present = nullptr;
 
