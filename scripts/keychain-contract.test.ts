@@ -123,6 +123,9 @@ describe("keychain contract", () => {
     // Archive must bake TEAMID.suffix (empty AppIdentifierPrefix caused -34018).
     expect(archive).toContain("bakeKeychainAccessGroup");
     expect(archive).toContain("assertKeychainAccessGroup");
+    // IPA Info.plists are binary — gate must plutil-convert, not grep XML tags.
+    expect(archive).toContain("infoPlistAsXml");
+    expect(archive).toContain('plutil');
     expect(archive).toContain('const TEAM_ID = "A95F4H2423"');
     expect(archive).toContain(
       "const KEYCHAIN_ACCESS_GROUP = `${TEAM_ID}.com.galateacorp.mail.keychain`",
