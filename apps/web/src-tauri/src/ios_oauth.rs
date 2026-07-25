@@ -77,13 +77,35 @@ pub fn parse_callback_query(callback_url: &str) -> Result<HashMap<String, String
 #[cfg(target_os = "ios")]
 mod bridge {
     use super::*;
-    use std::ffi::{CStr, CString};
+    use std::ffi::{c_void, CStr, CString};
     use std::os::raw::c_char;
+    use std::sync::atomic::{AtomicPtr, Ordering};
     use std::sync::OnceLock;
+
+    type PresentFn = unsafe extern "C" fn(
+        url: *const c_char,
+        callback_scheme: *const c_char,
+        attempt_id: *const c_char,
+    ) -> bool;
 
     type WaiterMap = HashMap<String, oneshot::Sender<Result<String, String>>>;
 
     static WAITERS: OnceLock<Mutex<WaiterMap>> = OnceLock::new();
+    /// Set once from Swift bootstrap. Prefer this over dlsym: Release iOS builds
+    /// use `-fvisibility=hidden`, so Swift @_cdecl symbols are not dlsym-visible.
+    static PRESENT_FN: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+    /// Survives IPA `strings` / dead-strip checks. Do not rename without updating
+    /// `assertOAuthPresenterLinked` and `ios-oauth-contract.test.ts`.
+    #[used]
+    #[no_mangle]
+    static GALMAIL_IOS_OAUTH_BRIDGE_MARKER: &[u8] = b"galmail_ios_oauth_bridge_v3\0";
+
+    /// Keep the register export alive under `-Wl,-dead_strip` (nothing in Rust
+    /// calls it; only Swift bootstrap does).
+    #[used]
+    static GALMAIL_IOS_REGISTER_RETAIN: unsafe extern "C" fn(Option<PresentFn>) =
+        galmail_ios_register_oauth_presenter;
 
     fn waiters() -> &'static Mutex<WaiterMap> {
         WAITERS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -115,30 +137,24 @@ mod bridge {
         deliver(attempt_id, Err("OAuth presentation was cancelled".into()));
     }
 
-    type InvokeFn = unsafe extern "C" fn(
-        url: *const c_char,
-        callback_scheme: *const c_char,
-        attempt_id: *const c_char,
-    ) -> bool;
+    /// Called from Swift `galmail_apple_bootstrap` with the ASWeb presenter entry point.
+    #[no_mangle]
+    pub unsafe extern "C" fn galmail_ios_register_oauth_presenter(present: Option<PresentFn>) {
+        // Touch marker so LLVM cannot drop it as unused-with-side-effect-free.
+        let _ = std::ptr::read_volatile(GALMAIL_IOS_OAUTH_BRIDGE_MARKER.as_ptr());
+        let _ = GALMAIL_IOS_REGISTER_RETAIN as usize;
+        let ptr = present
+            .map(|function| function as *mut c_void)
+            .unwrap_or(std::ptr::null_mut());
+        PRESENT_FN.store(ptr, Ordering::SeqCst);
+    }
 
-    /// Resolve main.mm's default-visibility trampoline.
-    ///
-    /// Cannot be a link-time `extern`: cargo builds `libgalmail_tauri_lib.dylib`
-    /// before Xcode compiles `main.mm`, so a hard undefined reference fails the
-    /// Rust link. `galmail_ios_invoke_oauth_presenter` is exported with
-    /// `visibility("default")` from main.mm, so dlsym works. Do not dlsym the
-    /// Swift `galmail_ios_present_oauth` cdecl (hidden under Release).
-    fn resolve_invoke_fn() -> Option<InvokeFn> {
-        extern "C" {
-            fn dlsym(handle: *mut std::ffi::c_void, symbol: *const c_char)
-                -> *mut std::ffi::c_void;
-        }
-        const RTLD_DEFAULT: *mut std::ffi::c_void = -2isize as *mut std::ffi::c_void;
-        let symbol = unsafe { dlsym(RTLD_DEFAULT, c"galmail_ios_invoke_oauth_presenter".as_ptr()) };
-        if symbol.is_null() {
+    fn resolve_present_fn() -> Option<PresentFn> {
+        let registered = PRESENT_FN.load(Ordering::SeqCst);
+        if registered.is_null() {
             None
         } else {
-            Some(unsafe { std::mem::transmute::<*mut std::ffi::c_void, InvokeFn>(symbol) })
+            Some(unsafe { std::mem::transmute::<*mut c_void, PresentFn>(registered) })
         }
     }
 
@@ -148,10 +164,10 @@ mod bridge {
         callback_scheme: &str,
         attempt_id: &str,
     ) -> Result<(), String> {
-        let Some(invoke) = resolve_invoke_fn() else {
+        let Some(present_fn) = resolve_present_fn() else {
             cancel_waiter(attempt_id);
             return Err("iOS OAuth presenter is unavailable in this build \
-                 (main.mm trampoline galmail_ios_invoke_oauth_presenter not linked)"
+                 (Swift never registered galmail_ios_present_oauth at bootstrap)"
                 .into());
         };
         let url = CString::new(authorization_url)
@@ -161,14 +177,12 @@ mod bridge {
         let attempt = CString::new(attempt_id)
             .map_err(|_| "OAuth attempt id contains an interior NUL".to_string())?;
         // SAFETY: pointers are valid C strings for the duration of the call.
-        let started = unsafe { invoke(url.as_ptr(), scheme.as_ptr(), attempt.as_ptr()) };
+        let started = unsafe { present_fn(url.as_ptr(), scheme.as_ptr(), attempt.as_ptr()) };
         if started {
             Ok(())
         } else {
             cancel_waiter(attempt_id);
-            Err("iOS OAuth presenter is unavailable in this build \
-                 (bootstrap never registered galmail_ios_present_oauth)"
-                .into())
+            Err("cannot start the iOS OAuth session".into())
         }
     }
 
