@@ -32,7 +32,7 @@ describe("ios oauth contract", () => {
     expect(plugin).toContain("galmail_ios_register_oauth_presenter");
     expect(plugin).toContain("galmailIosPresentOAuth");
     expect(rust).toContain("galmail_ios_invoke_oauth_presenter");
-    expect(rust).toContain("extern \"C\"");
+    expect(rust).toContain('extern "C"');
     // Must not look up the Swift cdecl at runtime (hidden visibility).
     expect(rust).not.toMatch(/\bfn dlsym\b/);
   });
