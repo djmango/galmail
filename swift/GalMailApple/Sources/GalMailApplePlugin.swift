@@ -14,9 +14,8 @@ func galmail_ios_register_oauth_presenter(
 
 @_cdecl("galmail_apple_bootstrap")
 public func galmailAppleBootstrap() {
-    // Register into main.mm before any UI can start OAuth. Release builds use
-    // -fvisibility=hidden, so Rust cannot dlsym the Swift @_cdecl; Rust dlsyms
-    // main.mm's default-visibility galmail_ios_invoke_oauth_presenter instead.
+    // Register into Rust before any UI can start OAuth. Release builds use
+    // -fvisibility=hidden, so Rust cannot dlsym the Swift @_cdecl.
     galmail_ios_register_oauth_presenter(galmailIosPresentOAuth)
     GalMailApplePlugin.bootstrap()
 }
@@ -29,7 +28,7 @@ public final class GalMailApplePlugin: NSObject, UNUserNotificationCenterDelegat
 
     @objc public static func bootstrap() {
         // Touch the OAuth presenter so its @_cdecl entry points stay linked.
-        // main.mm retains the C symbols; Rust talks to main.mm's trampoline.
+        // main.mm also retains the C symbols; Rust holds the registered pointer.
         _ = GalMailOAuthPresenter.shared
         try? GalMailKeychain.initializeExtensionKeysIfNeeded()
         GalMailAppleBridge.registerNotificationCategories()

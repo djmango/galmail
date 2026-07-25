@@ -2,9 +2,8 @@
  * iOS OAuth presenter contract.
  *
  * Release builds use `-fvisibility=hidden`, so Rust cannot dlsym Swift @_cdecl
- * symbols. The working bridge is: Swift bootstrap registers into main.mm; Rust
- * dlsyms main.mm's default-visibility invoke trampoline (cannot hard-link it —
- * cargo builds the Rust dylib before Xcode compiles main.mm).
+ * symbols. The working bridge is: Swift bootstrap registers the presenter
+ * function pointer into Rust; Rust calls that pointer (no dlsym of Swift).
  *
  * Runs on every `bun test` / js CI job (Ubuntu).
  */
@@ -19,24 +18,24 @@ const GOOGLE_SCHEME =
 const MICROSOFT_SCHEME = "msauth.com.galateacorp.mail";
 
 describe("ios oauth contract", () => {
-  it("keeps the OAuth trampoline in main.mm and registers from Swift bootstrap", async () => {
+  it("keeps the Rust register bridge and Swift bootstrap wiring", async () => {
     const [main, plugin, rust] = await Promise.all([
       file("apps/web/src-tauri/gen/apple/Sources/galmail-tauri/main.mm"),
       file("swift/GalMailApple/Sources/GalMailApplePlugin.swift"),
       file("apps/web/src-tauri/src/ios_oauth.rs"),
     ]);
-    expect(main).toContain("galmail_ios_register_oauth_presenter");
-    expect(main).toContain("galmail_ios_invoke_oauth_presenter");
-    expect(main).toContain("g_galmail_ios_present");
-    expect(main).toContain('visibility("default")');
-    expect(main).toContain("oauthRetain");
+    expect(rust).toContain("galmail_ios_register_oauth_presenter");
+    expect(rust).toContain("galmail_ios_oauth_bridge_v3");
+    expect(rust).toContain("GALMAIL_IOS_REGISTER_RETAIN");
+    expect(rust).toContain("PRESENT_FN");
+    expect(rust).not.toContain('c"galmail_ios_present_oauth"');
     expect(plugin).toContain("galmail_ios_register_oauth_presenter");
     expect(plugin).toContain("galmailIosPresentOAuth");
-    expect(rust).toContain("galmail_ios_invoke_oauth_presenter");
-    expect(rust).toMatch(/\bfn dlsym\b/);
-    // Must resolve the main.mm trampoline, never the hidden Swift cdecl.
-    expect(rust).toContain('c"galmail_ios_invoke_oauth_presenter"');
-    expect(rust).not.toContain('c"galmail_ios_present_oauth"');
+    expect(main).toContain("oauthRetain");
+    expect(main).toMatch(/&\s*galmail_ios_present_oauth/);
+    // Trampoline-in-main.mm was a dead end (cargo links before main.mm).
+    expect(main).not.toContain("galmail_ios_invoke_oauth_presenter");
+    expect(main).not.toContain("g_galmail_ios_present");
   });
 
   it("marks OAuth cdecls @_used and exposes the presenter type", async () => {
@@ -83,7 +82,7 @@ describe("ios oauth contract", () => {
     expect(msUi).toContain("VITE_MICROSOFT_CLIENT_ID");
     expect(msUi).toContain("microsoft_oauth_begin");
     expect(archive).toContain("assertOAuthPresenterLinked");
-    expect(archive).toContain("galmail_ios_invoke_oauth_presenter");
+    expect(archive).toContain("galmail_ios_oauth_bridge_v3");
   });
 
   it("bakes both provider client IDs into TestFlight CI", async () => {

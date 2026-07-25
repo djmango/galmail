@@ -305,34 +305,39 @@ function findIpa(dir: string) {
  * Fail the upload if the OAuth bridge is missing from the IPA.
  *
  * Release uses `-fvisibility=hidden`, so `nm -gU` will not show Swift cdecls.
- * We require the Rust registration export (always linked) and the presenter
- * symbol in the full symbol table / binary strings.
+ * Rust may live in the main executable and/or nested dylibs — scan every Mach-O
+ * under Payload. Prefer the stable bridge marker over fragile symbol names.
  */
 function assertOAuthPresenterLinked(ipaPath: string) {
   const extractDir = mkdtempSync(join(tmpdir(), "galmail-ipa-nm-"));
   try {
     run("unzip", ["-qo", ipaPath, "-d", extractDir]);
-    const binary = execSync(
-      `find "${extractDir}/Payload" -name GalMail -type f | head -1`,
+    const payload = join(extractDir, "Payload");
+    const machos = execSync(
+      `find "${payload}" -type f \\( -perm -111 -o -name "*.dylib" -o -name "*.so" \\) 2>/dev/null | while read -r f; do file "$f" 2>/dev/null | grep -q Mach-O && echo "$f"; done`,
       { encoding: "utf8" },
-    ).trim();
-    if (!binary) {
-      throw new Error(`No GalMail binary inside IPA at ${ipaPath}`);
+    )
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (machos.length === 0) {
+      throw new Error(`No Mach-O binaries inside IPA at ${ipaPath}`);
     }
-    // Include non-global symbols: Release hides exports with -fvisibility=hidden.
-    const symbols = execSync(
-      `nm -a "${binary}" 2>/dev/null || nm "${binary}" 2>/dev/null || true`,
-      { encoding: "utf8" },
-    );
-    const strings = execSync(`strings "${binary}" 2>/dev/null || true`, {
-      encoding: "utf8",
-    });
-    const haystack = `${symbols}\n${strings}`;
+    let haystack = "";
+    for (const binary of machos) {
+      const symbols = execSync(
+        `nm -a "${binary}" 2>/dev/null || nm "${binary}" 2>/dev/null || true`,
+        { encoding: "utf8" },
+      );
+      const strings = execSync(`strings "${binary}" 2>/dev/null || true`, {
+        encoding: "utf8",
+      });
+      haystack += `\n${symbols}\n${strings}`;
+    }
     const required = [
-      // Owned by main.mm (same TU as main) — survives -fvisibility=hidden.
-      "galmail_ios_register_oauth_presenter",
-      "galmail_ios_invoke_oauth_presenter",
-      // Swift ASWeb presenter.
+      // Rust #[used] marker — reliable under strip / nested dylibs.
+      "galmail_ios_oauth_bridge_v3",
+      // Swift ASWeb presenter (may appear only as a local/hidden symbol).
       "galmail_ios_present_oauth",
       "GalMailOAuthPresenter",
     ];
@@ -341,12 +346,13 @@ function assertOAuthPresenterLinked(ipaPath: string) {
     );
     if (missing.length > 0) {
       throw new Error(
-        `IPA is missing OAuth bridge markers (${missing.join(", ")}). ` +
-          "main.mm must own register/invoke trampolines; Swift bootstrap must register the presenter.",
+        `IPA is missing OAuth bridge markers (${missing.join(", ")}) ` +
+          `across ${machos.length} Mach-O file(s). ` +
+          "Rust must keep galmail_ios_oauth_bridge_v3; Swift bootstrap must register the presenter.",
       );
     }
     console.log(
-      "→ Verified OAuth bridge in IPA (main.mm trampoline + GalMailOAuthPresenter)",
+      `→ Verified OAuth bridge in IPA (${machos.length} Mach-O files; bridge v3 + GalMailOAuthPresenter)`,
     );
   } finally {
     rmSync(extractDir, { recursive: true, force: true });
