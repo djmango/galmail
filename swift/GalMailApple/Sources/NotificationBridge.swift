@@ -18,7 +18,7 @@ import UserNotifications
 public enum GalMailAppleBridge {
     public static let appGroupId = "group.com.galateacorp.mail"
     /// Team-prefixed Keychain access group. Bare suffixes (when
-    /// `$(AppIdentifierPrefix)` expands empty) are repaired from the signing team.
+    /// `$(AppIdentifierPrefix)` expands empty) are repaired with the known team ID.
     public static var keychainAccessGroup: String {
         let raw =
             Bundle.main.object(
@@ -27,26 +27,8 @@ public enum GalMailAppleBridge {
             ?? GalMailKeychainPolicy.accessGroupSuffix
         return GalMailKeychainPolicy.normalizedAccessGroup(
             raw,
-            teamIdentifier: teamIdentifier()
+            teamIdentifier: GalMailKeychainPolicy.appleTeamIdentifier
         )
-    }
-
-    private static func teamIdentifier() -> String? {
-        guard let task = SecTaskCreateFromSelf(nil) else { return nil }
-        defer { CFRelease(task) }
-        var error: Unmanaged<CFError>?
-        guard
-            let value = SecTaskCopyValueForEntitlement(
-                task,
-                "com.apple.developer.team-identifier" as CFString,
-                &error
-            ) as? String
-        else { return nil }
-        guard
-            value.count == 10,
-            value.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) })
-        else { return nil }
-        return value
     }
 
     public static let appRefreshTask = "com.galateacorp.mail.refresh"
