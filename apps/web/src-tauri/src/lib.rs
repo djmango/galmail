@@ -879,9 +879,7 @@ fn mcp_bridge_respond_cmd(
 
 #[cfg(target_os = "ios")]
 #[tauri::command]
-async fn mcp_bridge_start_cmd(
-    _request: Value,
-) -> Result<serde_json::Value, String> {
+async fn mcp_bridge_start_cmd(_request: Value) -> Result<serde_json::Value, String> {
     Err("MCP bridge is available on desktop GalMail only".into())
 }
 

@@ -128,11 +128,9 @@ pub async fn mcp_bridge_start(
     let preferred = request.port.unwrap_or(DEFAULT_PORT);
     let listener = match TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], preferred))).await {
         Ok(listener) => listener,
-        Err(_) if preferred != 0 => {
-            TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-                .await
-                .map_err(|error| format!("cannot bind MCP bridge: {error}"))?
-        }
+        Err(_) if preferred != 0 => TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .map_err(|error| format!("cannot bind MCP bridge: {error}"))?,
         Err(error) => return Err(format!("cannot bind MCP bridge: {error}")),
     };
     let port = listener
@@ -302,8 +300,8 @@ async fn handle_connection(
         return write_text(&mut stream, 401, "Unauthorized").await;
     }
 
-    let payload: Value = serde_json::from_slice(&body)
-        .map_err(|_| "invalid JSON body".to_string())?;
+    let payload: Value =
+        serde_json::from_slice(&body).map_err(|_| "invalid JSON body".to_string())?;
     let name = payload
         .get("name")
         .and_then(Value::as_str)
@@ -389,12 +387,14 @@ async fn handle_connection(
                 .await
             }
         }
-        Ok(Err(_)) => write_json(
-            &mut stream,
-            504,
-            &serde_json::json!({ "ok": false, "error": "bridge response channel closed" }),
-        )
-        .await,
+        Ok(Err(_)) => {
+            write_json(
+                &mut stream,
+                504,
+                &serde_json::json!({ "ok": false, "error": "bridge response channel closed" }),
+            )
+            .await
+        }
         Err(_) => {
             if let Ok(mut pending) = state.pending.lock() {
                 pending.remove(&id);
@@ -418,7 +418,9 @@ fn token_allowed(state: &McpBridgeState, token: &str) -> bool {
 
 fn bearer_token(headers: &HashMap<String, String>) -> Option<String> {
     let value = headers.get("authorization")?;
-    let rest = value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer "))?;
+    let rest = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))?;
     let trimmed = rest.trim();
     if trimmed.is_empty() {
         None

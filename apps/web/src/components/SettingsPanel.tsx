@@ -377,7 +377,7 @@ export function SettingsPanel(props: {
                   <span>
                     {props.mcpBridgeRunning
                       ? props.mcpBridgeUrl ?? "Running"
-                      : "Stopped — start after creating a client"}
+                      : "Stopped - start after creating a client"}
                   </span>
                 </div>
                 {props.mcpBridgeRunning ? (
