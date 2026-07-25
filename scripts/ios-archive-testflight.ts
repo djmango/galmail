@@ -404,11 +404,9 @@ function assertOAuthPresenterLinked(ipaPath: string) {
  */
 function infoPlistAsXml(infoPath: string): string {
   try {
-    return execFileSync(
-      "plutil",
-      ["-convert", "xml1", "-o", "-", infoPath],
-      { encoding: "utf8" },
-    );
+    return execFileSync("plutil", ["-convert", "xml1", "-o", "-", infoPath], {
+      encoding: "utf8",
+    });
   } catch {
     // Non-macOS fallback: binary plists still embed ASCII string values.
     const bytes = readFileSync(infoPath);
