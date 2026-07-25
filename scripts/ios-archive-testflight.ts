@@ -399,7 +399,37 @@ function assertOAuthPresenterLinked(ipaPath: string) {
 /**
  * Fail upload if Info.plist Keychain access group lacks the team prefix.
  * Bare `com.galateacorp.mail.keychain` causes SecItemAdd -34018 on device.
+ *
+ * IPA Info.plists are binary (`bplist`); never grep for XML `<string>` tags.
  */
+function infoPlistAsXml(infoPath: string): string {
+  try {
+    return execFileSync("plutil", ["-convert", "xml1", "-o", "-", infoPath], {
+      encoding: "utf8",
+    });
+  } catch {
+    // Non-macOS fallback: binary plists still embed ASCII string values.
+    const bytes = readFileSync(infoPath);
+    const haystack = bytes.toString("latin1");
+    if (
+      haystack.includes("GalMailKeychainAccessGroup") &&
+      haystack.includes(KEYCHAIN_ACCESS_GROUP)
+    ) {
+      return (
+        "<key>GalMailKeychainAccessGroup</key>" +
+        `<string>${KEYCHAIN_ACCESS_GROUP}</string>`
+      );
+    }
+    if (haystack.includes("GalMailKeychainAccessGroup")) {
+      return (
+        "<key>GalMailKeychainAccessGroup</key>" +
+        "<string>com.galateacorp.mail.keychain</string>"
+      );
+    }
+    return haystack;
+  }
+}
+
 function assertKeychainAccessGroup(ipaPath: string) {
   const extractDir = mkdtempSync(join(tmpdir(), "galmail-ipa-kc-"));
   try {
@@ -415,17 +445,31 @@ function assertKeychainAccessGroup(ipaPath: string) {
       throw new Error(`No Info.plist inside IPA at ${ipaPath}`);
     }
     const expected = KEYCHAIN_ACCESS_GROUP;
+    let checked = 0;
     for (const infoPath of infoPaths) {
-      const xml = readFileSync(infoPath, "utf8");
+      const xml = infoPlistAsXml(infoPath);
       if (!xml.includes("GalMailKeychainAccessGroup")) continue;
-      if (!xml.includes(`<string>${expected}</string>`)) {
+      checked += 1;
+      const match = xml.match(
+        /<key>GalMailKeychainAccessGroup<\/key>\s*<string>([^<]*)<\/string>/,
+      );
+      const actual = match?.[1]?.trim() ?? "";
+      if (actual !== expected) {
         throw new Error(
-          `IPA Info.plist Keychain access group must be ${expected} (got bare/unprefixed value in ${infoPath}). ` +
+          `IPA Info.plist Keychain access group must be ${expected} ` +
+            `(got ${actual || "missing/unparsable"} in ${infoPath}). ` +
             "SecItemAdd fails with -34018 without the team prefix.",
         );
       }
     }
-    console.log(`→ Verified Keychain access group in IPA (${expected})`);
+    if (checked === 0) {
+      throw new Error(
+        `IPA has no GalMailKeychainAccessGroup in any Info.plist under ${ipaPath}`,
+      );
+    }
+    console.log(
+      `→ Verified Keychain access group in IPA (${expected}; ${checked} Info.plist)`,
+    );
   } finally {
     rmSync(extractDir, { recursive: true, force: true });
   }
