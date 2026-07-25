@@ -122,52 +122,19 @@ impl MacOsKeychain {
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 const KEYCHAIN_ACCESS_GROUP_SUFFIX: &str = "com.galateacorp.mail.keychain";
 
-/// Team ID from the running process entitlements (`A95F4H2423`), when present.
+/// Apple Developer Team ID. Must match `TEAM_ID` in
+/// `scripts/ios-archive-testflight.ts` and
+/// `GalMailKeychainPolicy.appleTeamIdentifier`.
+///
+/// Keep this a compile-time constant. Looking up the team via private Security
+/// task APIs links non-public symbols and App Store Connect rejects the IPA
+/// (`altool` code 11).
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-fn team_identifier() -> Option<String> {
-    use core_foundation::base::TCFType;
-    use core_foundation::string::{CFString, CFStringRef};
-    use std::os::raw::c_void;
+const APPLE_TEAM_IDENTIFIER: &str = "A95F4H2423";
 
-    #[link(name = "CoreFoundation", kind = "framework")]
-    extern "C" {
-        fn CFRelease(cf: *const c_void);
-    }
-
-    #[link(name = "Security", kind = "framework")]
-    extern "C" {
-        fn SecTaskCreateFromSelf(allocator: *const c_void) -> *mut c_void;
-        fn SecTaskCopyValueForEntitlement(
-            task: *mut c_void,
-            entitlement: CFStringRef,
-            error: *mut *mut c_void,
-        ) -> *const c_void;
-    }
-
-    unsafe {
-        let task = SecTaskCreateFromSelf(std::ptr::null());
-        if task.is_null() {
-            return None;
-        }
-        let key = CFString::new("com.apple.developer.team-identifier");
-        let value =
-            SecTaskCopyValueForEntitlement(task, key.as_concrete_TypeRef(), std::ptr::null_mut());
-        CFRelease(task as *const c_void);
-        if value.is_null() {
-            return None;
-        }
-        let cf_string = CFString::wrap_under_create_rule(value as CFStringRef);
-        let team = cf_string.to_string();
-        if team.len() == 10
-            && team
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric())
-        {
-            Some(team)
-        } else {
-            None
-        }
-    }
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn team_identifier() -> Option<&'static str> {
+    Some(APPLE_TEAM_IDENTIFIER)
 }
 
 /// Ensure Keychain access groups include the Apple team prefix.
