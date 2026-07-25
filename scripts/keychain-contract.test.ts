@@ -141,7 +141,10 @@ describe("keychain contract", () => {
     ]);
     expect(rust).toContain("fn normalize_keychain_access_group");
     expect(rust).toContain("fn team_identifier");
-    expect(rust).toContain("com.apple.developer.team-identifier");
+    expect(rust).toContain('APPLE_TEAM_IDENTIFIER: &str = "A95F4H2423"');
+    // SecTask* are non-public; ASC rejects IPAs that link them (altool code 11).
+    expect(rust).not.toContain("SecTaskCreateFromSelf");
+    expect(rust).not.toContain("SecTaskCopyValueForEntitlement");
     expect(rust).toContain(
       "generic_password_variants(service, account_id, true)",
     );

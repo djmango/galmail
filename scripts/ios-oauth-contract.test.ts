@@ -83,6 +83,9 @@ describe("ios oauth contract", () => {
     expect(msUi).toContain("microsoft_oauth_begin");
     expect(archive).toContain("assertOAuthPresenterLinked");
     expect(archive).toContain("galmail_ios_oauth_bridge_v3");
+    // ASC rejects SecTask* (altool code 11); IPA gate must forbid them.
+    expect(archive).toContain("SecTaskCreateFromSelf");
+    expect(archive).toContain("non-public Security symbols");
   });
 
   it("bakes both provider client IDs into TestFlight CI", async () => {

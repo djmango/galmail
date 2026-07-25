@@ -388,6 +388,19 @@ function assertOAuthPresenterLinked(ipaPath: string) {
           "Rust must keep galmail_ios_oauth_bridge_v3; Swift bootstrap must register the presenter.",
       );
     }
+    // App Store Connect rejects these non-public Security symbols (altool code 11).
+    const forbidden = [
+      "SecTaskCreateFromSelf",
+      "SecTaskCopyValueForEntitlement",
+    ].filter(
+      (name) => haystack.includes(`_${name}`) || haystack.includes(name),
+    );
+    if (forbidden.length > 0) {
+      throw new Error(
+        `IPA references non-public Security symbols (${forbidden.join(", ")}). ` +
+          "Do not link SecTask*; use the baked Apple team ID for Keychain group repair.",
+      );
+    }
     console.log(
       `→ Verified OAuth bridge in IPA (${machos.length} Mach-O files; bridge v3 + GalMailOAuthPresenter)`,
     );
