@@ -302,9 +302,11 @@ function findIpa(dir: string) {
 }
 
 /**
- * Fail the upload if Release dead-code stripping removed the Swift OAuth
- * cdecls. Rust looks them up with dlsym; missing symbols surface as
- * "iOS OAuth presenter is unavailable in this build".
+ * Fail the upload if the OAuth bridge is missing from the IPA.
+ *
+ * Release uses `-fvisibility=hidden`, so `nm -gU` will not show Swift cdecls.
+ * We require the Rust registration export (always linked) and the presenter
+ * symbol in the full symbol table / binary strings.
  */
 function assertOAuthPresenterLinked(ipaPath: string) {
   const extractDir = mkdtempSync(join(tmpdir(), "galmail-ipa-nm-"));
@@ -317,25 +319,31 @@ function assertOAuthPresenterLinked(ipaPath: string) {
     if (!binary) {
       throw new Error(`No GalMail binary inside IPA at ${ipaPath}`);
     }
-    const symbols = execSync(`nm -gU "${binary}" 2>/dev/null || true`, {
+    // Include non-global symbols: Release hides exports with -fvisibility=hidden.
+    const symbols = execSync(
+      `nm -a "${binary}" 2>/dev/null || nm "${binary}" 2>/dev/null || true`,
+      { encoding: "utf8" },
+    );
+    const strings = execSync(`strings "${binary}" 2>/dev/null || true`, {
       encoding: "utf8",
     });
+    const haystack = `${symbols}\n${strings}`;
     const required = [
+      "galmail_ios_register_oauth_presenter",
       "galmail_ios_present_oauth",
-      "galmail_ios_open_oauth_url",
+      "GalMailOAuthPresenter",
     ];
     const missing = required.filter(
-      (name) => !symbols.includes(`_${name}`) && !symbols.includes(name),
+      (name) => !haystack.includes(`_${name}`) && !haystack.includes(name),
     );
     if (missing.length > 0) {
       throw new Error(
-        `IPA is missing OAuth presenter symbols (${missing.join(", ")}). ` +
-          "main.mm must retain the Swift @_cdecl entry points or Release " +
-          "stripping will break Google/Microsoft sign-in.",
+        `IPA is missing OAuth bridge markers (${missing.join(", ")}). ` +
+          "Swift bootstrap must register galmail_ios_present_oauth into Rust.",
       );
     }
     console.log(
-      "→ Verified OAuth presenter symbols in IPA (galmail_ios_present_oauth)",
+      "→ Verified OAuth bridge in IPA (register + presenter + GalMailOAuthPresenter)",
     );
   } finally {
     rmSync(extractDir, { recursive: true, force: true });

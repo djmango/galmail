@@ -2,9 +2,9 @@
 #import <UIKit/UIKit.h>
 
 extern "C" void galmail_apple_bootstrap(void);
-// Swift @_cdecl entry points. Rust resolves these via dlsym(RTLD_DEFAULT).
-// Taking their addresses here keeps Release dead-code stripping from removing
-// them — without this, OAuth fails with "presenter is unavailable in this build".
+// Keep Swift OAuth cdecls from Release dead-code stripping. Bootstrap also
+// registers the presenter function pointer into Rust (dlsym cannot see hidden
+// visibility symbols under -fvisibility=hidden).
 extern "C" bool galmail_ios_present_oauth(const char *, const char *, const char *);
 extern "C" bool galmail_ios_open_oauth_url(const char *);
 
