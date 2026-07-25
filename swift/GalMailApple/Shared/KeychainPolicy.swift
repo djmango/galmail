@@ -10,8 +10,12 @@ public enum GalMailKeychainPolicy {
     /// Info.plist key resolved to `$(AppIdentifierPrefix)com.galateacorp.mail.keychain`.
     public static let accessGroupInfoKey = "GalMailKeychainAccessGroup"
 
-    /// Entitlement / Info.plist suffix (team prefix applied by Xcode).
+    /// Entitlement / Info.plist suffix (team prefix applied by Xcode / archive bake).
     public static let accessGroupSuffix = "com.galateacorp.mail.keychain"
+
+    /// Apple Developer Team ID (must match `TEAM_ID` in `scripts/ios-archive-testflight.ts`).
+    /// Used when Info.plist still has a bare suffix after empty `$(AppIdentifierPrefix)`.
+    public static let appleTeamIdentifier = "A95F4H2423"
 
     /// Extension-shared keys (notification index, share inbox, etc.).
     public static let extensionVaultService = "com.galateacorp.mail.vault"

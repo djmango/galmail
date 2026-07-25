@@ -143,9 +143,9 @@ describe("keychain contract", () => {
       "generic_password_variants(service, account_id, true)",
     );
     expect(policy).toContain("normalizedAccessGroup");
+    expect(policy).toContain('appleTeamIdentifier = "A95F4H2423"');
     expect(bridge).toContain("normalizedAccessGroup");
-    expect(bridge).toContain("teamIdentifier");
-    expect(bridge).toContain("com.apple.developer.team-identifier");
+    expect(bridge).toContain("appleTeamIdentifier");
     expect(tests).toContain("testNormalizedAccessGroupRepairsBareSuffix");
   });
 
