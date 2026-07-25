@@ -141,7 +141,10 @@ mod bridge {
             let symbol = dlsym(RTLD_DEFAULT, c"galmail_ios_present_oauth".as_ptr());
             if symbol.is_null() {
                 cancel_waiter(attempt_id);
-                return Err("iOS OAuth presenter is unavailable in this build".into());
+                return Err("iOS OAuth presenter is unavailable in this build \
+                     (Swift galmail_ios_present_oauth was stripped; \
+                     main.mm must retain the symbol)"
+                    .into());
             }
             std::mem::transmute(symbol)
         };

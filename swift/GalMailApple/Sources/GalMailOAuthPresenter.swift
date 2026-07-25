@@ -164,6 +164,7 @@ func galmail_ios_oauth_callback(
 )
 
 /// Present ASWebAuthenticationSession and deliver the redirect to Rust.
+@_used
 @_cdecl("galmail_ios_present_oauth")
 public func galmailIosPresentOAuth(
     _ url: UnsafePointer<CChar>?,
@@ -179,6 +180,7 @@ public func galmailIosPresentOAuth(
 }
 
 /// Legacy open-URL helper (no callback capture). Prefer `galmail_ios_present_oauth`.
+@_used
 @_cdecl("galmail_ios_open_oauth_url")
 public func galmailIosOpenOAuthUrl(_ url: UnsafePointer<CChar>?) -> Bool {
     guard let url else { return false }
