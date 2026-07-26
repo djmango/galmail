@@ -147,13 +147,16 @@ export function SafeMailBody(props: {
   theme?: MailColorScheme;
   /** Initial remote-image policy from Settings; per-view toggle can override. */
   loadRemoteImages?: boolean;
+  /** When true, start blocked and prompt once (Ask approval mode). */
+  askRemoteImages?: boolean;
 }) {
   const colorScheme: MailColorScheme =
     props.theme === "light" ? "light" : "dark";
   const [showHtml, setShowHtml] = useState(Boolean(props.html));
   const [allowRemoteImages, setAllowRemoteImages] = useState(
-    () => props.loadRemoteImages ?? true,
+    () => (props.askRemoteImages ? false : (props.loadRemoteImages ?? true)),
   );
+  const [asked, setAsked] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const document = useMemo(
     () =>
@@ -198,11 +201,27 @@ export function SafeMailBody(props: {
     </div>
   ) : null;
 
+  const askBanner =
+    props.askRemoteImages && !allowRemoteImages && !asked ? (
+      <div className="remote-image-ask" role="status">
+        <span>Remote images are blocked until you approve them.</span>
+        <ActionButton
+          label="Allow images"
+          variant="quiet"
+          onClick={() => {
+            setAllowRemoteImages(true);
+            setAsked(true);
+          }}
+        />
+      </div>
+    ) : null;
+
   if (!props.html || !showHtml) {
     const plain = splitQuotedHistory(props.text || "No readable body.");
     return (
       <div className="safe-mail-body" data-mail-scheme={colorScheme}>
         {overflowMenu}
+        {askBanner}
         <pre className="mail-plain-text">{plain.visible}</pre>
         {plain.quoted && (
           <details className="quoted-history">
@@ -217,6 +236,7 @@ export function SafeMailBody(props: {
   return (
     <div className="safe-mail-body" data-mail-scheme={colorScheme}>
       {overflowMenu}
+      {askBanner}
       <iframe
         ref={iframeRef}
         className="mail-html-frame"

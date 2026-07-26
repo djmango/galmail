@@ -295,4 +295,17 @@ export const Icons = {
       <path d="M7 17l10-10" />
     </Svg>
   ),
+  devices: (props: IconProps) => (
+    <Svg {...props}>
+      <rect x="3" y="5" width="11" height="14" rx="1.5" />
+      <rect x="16" y="9" width="5" height="10" rx="1" />
+      <path d="M7 16h3" />
+    </Svg>
+  ),
+  refresh: (props: IconProps) => (
+    <Svg {...props}>
+      <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+      <path d="M20 4v5h-5" />
+    </Svg>
+  ),
 };

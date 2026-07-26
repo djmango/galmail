@@ -74,7 +74,14 @@ describe("current UI baseline", () => {
           developerMode: false,
           requestReadReceipt: false,
           loadRemoteImages: true,
+          remoteImagePolicy: "allow",
           trashAfterUnsubscribe: false,
+          swipeActions: {
+            rightNear: "archive",
+            rightFar: "star",
+            leftNear: "trash",
+            leftFar: "spam",
+          },
         }}
         consent={null}
         diagnostics={[]}
@@ -103,8 +110,9 @@ describe("current UI baseline", () => {
         {...mcpTestProps}
       />,
     );
-    expect(html).toContain("Add Google account");
-    expect(html).toContain("Sign in with Microsoft");
+    expect(html).toContain("Add Google");
+    expect(html).toContain("Add Microsoft");
+    expect(html).toContain("Link device");
     expect(html).toContain("Disconnect");
     expect(html).toContain("one@example.com");
   });
@@ -118,7 +126,14 @@ describe("current UI baseline", () => {
           developerMode: true,
           requestReadReceipt: false,
           loadRemoteImages: true,
+          remoteImagePolicy: "allow",
           trashAfterUnsubscribe: true,
+          swipeActions: {
+            rightNear: "archive",
+            rightFar: "star",
+            leftNear: "trash",
+            leftFar: "spam",
+          },
         }}
         consent={{
           accountId: asAccountId("gmail-demo"),
@@ -155,14 +170,16 @@ describe("current UI baseline", () => {
 
     expect(html).toContain('role="dialog"');
     expect(html).toContain("demo@galmail.local");
-    expect(html).toContain("Sign in with Google");
-    expect(html).toContain("Sign in with Microsoft");
+    expect(html).toContain("Add Google");
+    expect(html).toContain("Add Microsoft");
+    expect(html).toContain("Link device");
     expect(html).not.toContain(
       "Sign-in buttons appear in the GalMail app when Google or",
     );
     expect(html).toContain("Remote processing");
     expect(html).toContain("Request read receipts");
-    expect(html).toContain("Load remote images");
+    expect(html).toContain("Remote images");
+    expect(html).toContain("Allow all");
     expect(html).toContain("Trash after unsubscribe");
     expect(html).toContain("MCP");
     expect(html).toContain("Enable MCP access");
@@ -172,6 +189,7 @@ describe("current UI baseline", () => {
     expect(html).toContain("Auto");
     expect(html).toContain("DEVICE-123");
     expect(html).toContain("Local thread count: 4");
+    expect(html).not.toContain(" · live");
   });
 
   it("renders mail HTML in a sandbox with overflow message controls", () => {

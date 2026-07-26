@@ -98,11 +98,20 @@ export const DEFAULT_SIDEBAR_COLLAPSED = false;
 export const DEFAULT_LOAD_REMOTE_IMAGES = true;
 export const DEFAULT_TRASH_AFTER_UNSUBSCRIBE = true;
 
+/** Remote-image approval policy for the reading pane. */
+export type RemoteImagePolicy = "never" | "ask" | "allow";
+export const DEFAULT_REMOTE_IMAGE_POLICY: RemoteImagePolicy = "allow";
+
 const THEME_STORAGE_KEY = "galmail.theme";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "galmail.sidebarCollapsed";
 const LOAD_REMOTE_IMAGES_STORAGE_KEY = "galmail.loadRemoteImages";
+const REMOTE_IMAGE_POLICY_STORAGE_KEY = "galmail.remoteImagePolicy";
 const TRASH_AFTER_UNSUBSCRIBE_STORAGE_KEY = "galmail.trashAfterUnsubscribe";
 const SYSTEM_DARK_QUERY = "(prefers-color-scheme: dark)";
+
+function isRemoteImagePolicy(value: string | null): value is RemoteImagePolicy {
+  return value === "never" || value === "ask" || value === "allow";
+}
 
 function isThemePreference(value: string | null): value is ThemePreference {
   return value === "dark" || value === "light" || value === "system";
@@ -167,17 +176,33 @@ export function persistSidebarCollapsed(collapsed: boolean): void {
 
 /** Load persisted remote-image default for the reading pane. */
 export function loadPersistedLoadRemoteImages(): boolean {
-  if (typeof localStorage === "undefined") return DEFAULT_LOAD_REMOTE_IMAGES;
-  const stored = localStorage.getItem(LOAD_REMOTE_IMAGES_STORAGE_KEY);
-  if (stored === "1" || stored === "true") return true;
-  if (stored === "0" || stored === "false") return false;
-  return DEFAULT_LOAD_REMOTE_IMAGES;
+  return loadPersistedRemoteImagePolicy() === "allow";
 }
 
 /** Persist whether remote images load by default in the reading pane. */
 export function persistLoadRemoteImages(enabled: boolean): void {
+  persistRemoteImagePolicy(enabled ? "allow" : "never");
+}
+
+/** Load remote-image approval policy (Never / Ask / Allow all). */
+export function loadPersistedRemoteImagePolicy(): RemoteImagePolicy {
+  if (typeof localStorage === "undefined") return DEFAULT_REMOTE_IMAGE_POLICY;
+  const policy = localStorage.getItem(REMOTE_IMAGE_POLICY_STORAGE_KEY);
+  if (isRemoteImagePolicy(policy)) return policy;
+  const legacy = localStorage.getItem(LOAD_REMOTE_IMAGES_STORAGE_KEY);
+  if (legacy === "1" || legacy === "true") return "allow";
+  if (legacy === "0" || legacy === "false") return "never";
+  return DEFAULT_REMOTE_IMAGE_POLICY;
+}
+
+/** Persist remote-image approval policy. */
+export function persistRemoteImagePolicy(policy: RemoteImagePolicy): void {
   if (typeof localStorage === "undefined") return;
-  localStorage.setItem(LOAD_REMOTE_IMAGES_STORAGE_KEY, enabled ? "1" : "0");
+  localStorage.setItem(REMOTE_IMAGE_POLICY_STORAGE_KEY, policy);
+  localStorage.setItem(
+    LOAD_REMOTE_IMAGES_STORAGE_KEY,
+    policy === "allow" ? "1" : "0",
+  );
 }
 
 /** Load persisted trash-after-unsubscribe preference (default on). */

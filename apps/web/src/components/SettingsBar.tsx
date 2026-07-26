@@ -1,8 +1,10 @@
 import {
   LAYOUTS,
   type LayoutMode,
+  type RemoteImagePolicy,
   type ThemePreference,
 } from "../lib/themes";
+import type { SwipeActionSettings } from "../lib/swipe-actions";
 import { Icons } from "./Icons";
 
 export interface SettingsState {
@@ -13,8 +15,12 @@ export interface SettingsState {
   requestReadReceipt: boolean;
   /** Load remote images in the reading pane by default. On by default. */
   loadRemoteImages: boolean;
+  /** Remote-image approval: never, ask per message, or allow all. */
+  remoteImagePolicy: RemoteImagePolicy;
   /** Move the message to Trash after a successful unsubscribe. On by default. */
   trashAfterUnsubscribe: boolean;
+  /** Mobile swipe gesture bindings for the thread list. */
+  swipeActions: SwipeActionSettings;
 }
 
 const layoutIcons = {
