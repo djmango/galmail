@@ -215,6 +215,46 @@ describe("MemorySyncEngine", () => {
     expect(saves).toBe(2);
   });
 
+  it("searchMailbox uses provider query and ingests remote threads", async () => {
+    const accountId = asAccountId("gmail:demo");
+    const remoteId = asMessageId("m-remote");
+    const remoteThread = asThreadId("t-remote");
+    const remote: MailMessage = {
+      id: remoteId,
+      threadId: remoteThread,
+      accountId,
+      provider: "gmail",
+      subject: "Invoice 42",
+      snippet: "Please pay",
+      from: { email: "billing@acme.com" },
+      to: [{ email: "me@example.com" }],
+      date: "2026-07-16T12:00:00Z",
+      unread: true,
+      starred: false,
+      labelIds: [asLabelId("INBOX")],
+      hasAttachments: false,
+      bodyText: "Please pay invoice 42",
+    };
+    const provider = fixtureProvider();
+    let seenQuery = "";
+    provider.searchMessages = async (_accountId, opts) => {
+      seenQuery = opts.query;
+      return { upserts: [remote] };
+    };
+    const sync = new MemorySyncEngine([provider]);
+    await sync.hydrateLocal(accountId);
+    const result = await sync.searchMailbox(
+      accountId,
+      "invoice from:billing@acme.com",
+    );
+    expect(seenQuery).toBe("from:billing@acme.com invoice");
+    expect(result.remoteHits).toBe(1);
+    expect(result.messageIds.map(String)).toContain("m-remote");
+    expect(sync.getMessages(accountId).some((m) => m.id === remoteId)).toBe(
+      true,
+    );
+  });
+
   it("is deterministic under an injected clock and id source", async () => {
     const now = new Date("2026-07-15T12:00:00.000Z");
     const ids = ["mutation-1", "mutation-2"];

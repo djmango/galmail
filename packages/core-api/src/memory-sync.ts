@@ -7,8 +7,13 @@ import type {
   OutboxMutation,
   SyncCursor,
 } from "./types.js";
+import { asThreadId } from "./types.js";
 import type { MailProvider } from "./capabilities.js";
-import { matchesMailSearch, parseMailSearch } from "./search.js";
+import {
+  matchesMailSearch,
+  parseMailSearch,
+  toProviderSearchQuery,
+} from "./search.js";
 
 function outboxErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -77,7 +82,8 @@ export class MemorySyncEngine implements SyncEngine {
       String(accountId).startsWith(p.kind),
     );
     const provider = byHint ?? byPrefix ?? this.byKind[0];
-    if (!provider) throw new Error(`No mail provider configured for ${accountId}`);
+    if (!provider)
+      throw new Error(`No mail provider configured for ${accountId}`);
     return provider;
   }
 
@@ -157,8 +163,7 @@ export class MemorySyncEngine implements SyncEngine {
         )
         .map((item) => {
           const draft = item.payload?.draft as
-            | { providerDraftId?: string }
-            | undefined;
+            { providerDraftId?: string } | undefined;
           return (
             draft?.providerDraftId ??
             (typeof item.payload?.providerDraftId === "string"
@@ -174,7 +179,10 @@ export class MemorySyncEngine implements SyncEngine {
         if (!draft || typeof draft !== "object" || !priorProviderDraftId) {
           return payload;
         }
-        if (typeof draft.providerDraftId === "string" && draft.providerDraftId) {
+        if (
+          typeof draft.providerDraftId === "string" &&
+          draft.providerDraftId
+        ) {
           return payload;
         }
         return {
@@ -324,6 +332,96 @@ export class MemorySyncEngine implements SyncEngine {
         return thread ? matchesMailSearch(message, thread, query) : false;
       })
       .map((message) => message.id);
+  }
+
+  async searchMailbox(accountId: AccountId, input: string) {
+    const parsed = parseMailSearch(input);
+    const providerQuery = toProviderSearchQuery(parsed);
+    const localIds = await this.searchLocal(accountId, input);
+    if (!providerQuery) {
+      return { messageIds: localIds, remoteHits: 0 };
+    }
+    const provider = this.providerFor(accountId);
+    const searchRemote = provider.searchMessages?.bind(provider);
+    if (!searchRemote) {
+      return { messageIds: localIds, remoteHits: 0 };
+    }
+    try {
+      const { upserts } = await searchRemote(accountId, {
+        query: providerQuery,
+        limit: 100,
+      });
+      for (const message of upserts) {
+        this.messages.set(`${accountId}:${message.id}`, message);
+      }
+      this.ingestSearchThreads(accountId, upserts);
+      const merged = new Set([
+        ...localIds,
+        ...upserts.map((message) => message.id),
+      ]);
+      return {
+        messageIds: [...merged],
+        remoteHits: upserts.length,
+      };
+    } catch {
+      return { messageIds: localIds, remoteHits: 0 };
+    }
+  }
+
+  /** Merge remote search hits into in-memory threads so list UI can open them. */
+  private ingestSearchThreads(accountId: AccountId, upserts: MailMessage[]) {
+    const byThread = new Map<string, MailMessage[]>();
+    for (const message of upserts) {
+      const key = String(message.threadId);
+      const bucket = byThread.get(key) ?? [];
+      bucket.push(message);
+      byThread.set(key, bucket);
+    }
+    for (const [threadId, items] of byThread) {
+      const mapKey = `${accountId}:${threadId}`;
+      const existing = this.threads.get(mapKey);
+      const ordered = [...items].sort((a, b) => a.date.localeCompare(b.date));
+      const latest = ordered.at(-1)!;
+      const messageIds = [
+        ...new Set([
+          ...(existing?.messageIds ?? []),
+          ...ordered.map((item) => item.id),
+        ]),
+      ];
+      const participants = new Map(
+        (existing?.participants ?? []).map((address) => [
+          address.email.toLowerCase(),
+          address,
+        ]),
+      );
+      for (const item of ordered) {
+        for (const address of [item.from, ...item.to, ...(item.cc ?? [])]) {
+          participants.set(address.email.toLowerCase(), address);
+        }
+      }
+      this.threads.set(mapKey, {
+        id: asThreadId(threadId),
+        accountId,
+        provider: latest.provider,
+        subject: latest.subject || existing?.subject || "(no subject)",
+        snippet: latest.snippet || existing?.snippet || "",
+        participants: [...participants.values()],
+        messageIds,
+        labelIds: [
+          ...new Set([
+            ...(existing?.labelIds ?? []),
+            ...ordered.flatMap((item) => item.labelIds),
+          ]),
+        ],
+        unreadCount:
+          (existing?.unreadCount ?? 0) +
+          ordered.filter((item) => item.unread).length,
+        lastMessageAt:
+          existing && existing.lastMessageAt > latest.date
+            ? existing.lastMessageAt
+            : latest.date,
+      });
+    }
   }
 
   /** Test helpers */

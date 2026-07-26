@@ -331,7 +331,11 @@ export function createMicrosoftLiveProvider(
 
   async function request<T>(
     pathOrUrl: string,
-    init: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
+    init: {
+      method?: "GET" | "POST" | "PATCH" | "DELETE";
+      body?: unknown;
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<T> {
     let refreshed = false;
     for (let attempt = 0; ; attempt += 1) {
@@ -348,6 +352,7 @@ export function createMicrosoftLiveProvider(
           accept: "application/json",
           ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...(init.body ? { "content-type": "application/json" } : {}),
+          ...init.headers,
         },
         body: init.body ? JSON.stringify(init.body) : undefined,
       });
@@ -626,6 +631,28 @@ export function createMicrosoftLiveProvider(
       }
       const page = await listMessages(accountId, `${root}?${query}`);
       return { upserts: page.items };
+    },
+    async searchMessages(accountId, opts) {
+      const needle = opts.query.trim();
+      if (!needle) return { upserts: [] };
+      const limit = Math.min(100, Math.max(1, opts.limit ?? 100));
+      // Graph $search requires quoting and ConsistencyLevel: eventual.
+      // Incompatible with $orderby, so rely on server ranking.
+      const escaped = needle.replace(/"/g, "");
+      const query = new URLSearchParams({
+        $select: MESSAGE_SELECT,
+        $top: String(limit),
+        $search: `"${escaped}"`,
+      });
+      const page = await request<GraphPage<GraphMessage>>(
+        `/v1.0/me/messages?${query}`,
+        { headers: { ConsistencyLevel: "eventual" } },
+      );
+      const items = (page.value ?? [])
+        .filter((item) => item.id && !item["@removed"])
+        .map((item) => toMessage(accountId, item));
+      cache(items);
+      return { upserts: items };
     },
     async hydrateBodies(accountId, messageIds) {
       return Promise.all(

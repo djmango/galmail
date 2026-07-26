@@ -112,6 +112,42 @@ describe("Gmail live provider contract", () => {
     ).toHaveLength(1);
   });
 
+  test("searchMessages queries the full mailbox with q=", async () => {
+    const { http, requests } = scripted((input) => {
+      const url = new URL(input.url);
+      if (url.pathname.endsWith("/profile")) {
+        return response(200, { historyId: "88" });
+      }
+      if (
+        url.pathname.endsWith("/messages") &&
+        !url.pathname.includes("/messages/")
+      ) {
+        expect(url.searchParams.get("q")).toBe("invoice from:billing@acme.com");
+        expect(url.searchParams.get("labelIds")).toBeNull();
+        return response(200, { messages: [{ id: "hit-1" }] });
+      }
+      if (url.pathname.endsWith("/messages/hit-1")) {
+        return response(200, {
+          ...message("hit-1"),
+          snippet: "Invoice attached",
+        });
+      }
+      throw new Error(`Unexpected request: ${input.url}`);
+    });
+    const provider = createGmailLiveProvider({ tokens, http });
+    const result = await provider.searchMessages!(accountId, {
+      query: "invoice from:billing@acme.com",
+      limit: 25,
+    });
+    expect(result.upserts.map((item) => item.id)).toEqual(["hit-1"]);
+    expect(
+      requests.some((item) => {
+        const url = new URL(item.url);
+        return url.searchParams.get("q") === "invoice from:billing@acme.com";
+      }),
+    ).toBe(true);
+  });
+
   test("fetchRecentMessages lists by labelIds and archive query", async () => {
     const { http, requests } = scripted((input) => {
       const url = new URL(input.url);

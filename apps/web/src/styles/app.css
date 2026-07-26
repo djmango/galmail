@@ -2205,6 +2205,7 @@ select:focus-visible {
   overflow: hidden;
   touch-action: pan-y;
   border-radius: 0 var(--radius) var(--radius) 0;
+  contain: layout style;
 }
 
 .swipe-row-content {
@@ -2212,10 +2213,26 @@ select:focus-visible {
   z-index: 1;
   background: var(--bg1);
   will-change: transform;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+}
+
+.swipe-row.is-dragging {
+  touch-action: none;
+  user-select: none;
 }
 
 .swipe-row.is-dragging .swipe-row-content {
   background: var(--bg1);
+  transition: none !important;
+}
+
+.swipe-row.is-exiting {
+  pointer-events: none;
+}
+
+.swipe-row.is-exiting .swipe-reveal {
+  transition: none;
 }
 
 .swipe-reveal {
@@ -3037,10 +3054,13 @@ select:focus-visible {
   display: none;
 }
 
-/* Keep the list (and search field) mounted while reading so Search can open the keyboard. */
+/* Keep the list (and search field) mounted while reading so Search can open the keyboard.
+   Pull it out of the single-column grid flow so the reading pane can fill the shell. */
 .app[data-mobile="true"][data-mobile-surface="thread"] .thread-list,
 .app[data-mobile="true"][data-mobile-surface="calendar"] .thread-list {
   position: fixed;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   margin: 0;
@@ -3048,6 +3068,21 @@ select:focus-visible {
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
+  /* Avoid occupying the only grid track (otherwise reading pane is pushed off-screen). */
+  grid-area: 1 / 1;
+  align-self: start;
+  justify-self: start;
+}
+
+.app[data-mobile="true"][data-mobile-surface="thread"] .reading-pane {
+  /* Override themes.css ≤900px rule that hides non-fullscreen reading panes. */
+  display: flex !important;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: auto;
+  height: auto;
+  max-height: none;
 }
 
 .app[data-mobile="true"] .thread-list.panel,
@@ -3068,7 +3103,8 @@ select:focus-visible {
     calc(0.2rem + var(--safe-left));
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: none;
+  touch-action: pan-y;
 }
 
 .app[data-mobile="true"] .thread-list-head {
@@ -3148,6 +3184,28 @@ select:focus-visible {
     0.5rem
     calc(0.65rem + var(--safe-left));
   overflow: hidden;
+  touch-action: pan-y;
+  transition: transform 180ms ease;
+  will-change: transform;
+  background: var(--bg1);
+}
+
+.app[data-mobile="true"] .reading-pane[data-swiping-back="true"] {
+  transition: none;
+  box-shadow: -10px 0 28px color-mix(in srgb, #000 22%, transparent);
+}
+
+.app[data-mobile="true"] .reading-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: flex-start;
+  padding-top: 0.35rem;
+}
+
+.app[data-mobile="true"] .reading-loading .mobile-back-row {
+  width: 100%;
+  margin-bottom: 0.35rem;
 }
 
 .app[data-mobile="true"] .reading-pane .conversation {

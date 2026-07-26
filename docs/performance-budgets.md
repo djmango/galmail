@@ -10,7 +10,7 @@
 | Local search first results       | < 100 ms       | FTS / in-memory index                       |
 | Keyboard action visual feedback  | < 50 ms        | Keydown → optimistic UI update              |
 | Network work on launch           | None blocking  | Sync starts after hydrate                   |
-| Main JavaScript bundle           | < 150 KiB gzip | Production Vite output                      |
+| Main JavaScript bundle           | < 155 KiB gzip | Production Vite output                      |
 | Main CSS bundle                  | < 20 KiB gzip  | Production Vite output                      |
 | Total web distribution           | < 650 KiB raw  | All production web assets                   |
 

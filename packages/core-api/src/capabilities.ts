@@ -59,6 +59,14 @@ export interface MailProvider {
     accountId: AccountId,
     opts: { labelId?: string; q?: string; limit?: number },
   ): Promise<{ upserts: MailMessage[] }>;
+  /**
+   * Optional mailbox-wide search (Gmail `q=` / Graph `$search`).
+   * Results may include messages outside the local recent cache.
+   */
+  searchMessages?(
+    accountId: AccountId,
+    opts: { query: string; limit?: number },
+  ): Promise<{ upserts: MailMessage[] }>;
 }
 
 export interface SyncEngine {
@@ -78,6 +86,14 @@ export interface SyncEngine {
   cancelOutbox(mutationId: string): Promise<boolean>;
   retryOutbox(mutationId: string): Promise<boolean>;
   searchLocal(accountId: AccountId, query: string): Promise<MessageId[]>;
+  /**
+   * Local FTS plus provider deep search when available. Provider hits are
+   * upserted into the encrypted store so results can open offline next time.
+   */
+  searchMailbox(
+    accountId: AccountId,
+    query: string,
+  ): Promise<{ messageIds: MessageId[]; remoteHits: number }>;
   observe(listener: (event: SyncEvent) => void): () => void;
 }
 
