@@ -666,6 +666,15 @@ export function createGmailLiveProvider(
       });
       return { upserts };
     },
+    async searchMessages(accountId, opts) {
+      const query = opts.query.trim();
+      if (!query) return { upserts: [] };
+      const { upserts } = await reconcileRecent(accountId, {
+        q: query,
+        limit: Math.min(100, Math.max(1, opts.limit ?? 100)),
+      });
+      return { upserts };
+    },
     async fetchDeltas(accountId, cursor: SyncCursor | null) {
       if (!cursor) {
         const bootstrapped = await reconcileRecent(accountId, {

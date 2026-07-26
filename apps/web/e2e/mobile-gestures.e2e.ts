@@ -85,9 +85,12 @@ test.describe("mobile gestures and chrome", () => {
         );
       };
       fire("touchstart", startY);
-      fire("touchmove", startY + 90);
+      // Resistance is ~0.55, so pull well past the 64px trigger threshold.
+      fire("touchmove", startY + 150);
     });
-    await expect(page.locator(".pull-refresh")).toContainText(/refresh/i);
+    await expect(page.locator(".pull-refresh")).toContainText(
+      /Release to refresh|Refreshing/i,
+    );
     await page.screenshot({
       path: path.join(ARTIFACT_DIR, "02-pull-to-refresh.png"),
       fullPage: true,
@@ -104,7 +107,7 @@ test.describe("mobile gestures and chrome", () => {
               identifier: 1,
               target,
               clientX: target.clientWidth / 2,
-              clientY: 170,
+              clientY: 230,
             }),
           ],
         }),
@@ -204,6 +207,91 @@ test.describe("mobile gestures and chrome", () => {
     });
     await page.screenshot({
       path: path.join(ARTIFACT_DIR, "10-settings-swipe-actions.png"),
+      fullPage: true,
+    });
+  });
+
+  test("opens thread with loading surface and swipe-back to inbox", async ({
+    page,
+  }) => {
+    const first = page.locator(".thread").first();
+    const subject =
+      (await first.locator(".thread-subject").textContent()) ?? "";
+    await first.click();
+    await expect(page.locator(".app")).toHaveAttribute(
+      "data-mobile-surface",
+      "thread",
+    );
+    const reading = page.getByLabel("Reading pane");
+    await expect(reading).toBeVisible();
+    await expect(
+      reading.getByRole("button", { name: /Back to inbox/i }),
+    ).toBeVisible();
+    // Fixture messages resolve quickly; assert body or loading, never the idle empty copy.
+    await expect(reading.getByText("No thread selected.")).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const loading = await reading
+          .getByText(/Loading email|Opening/i)
+          .count();
+        const heading = await reading.locator("h1").count();
+        return loading + heading;
+      })
+      .toBeGreaterThan(0);
+    if (subject.trim()) {
+      await expect
+        .poll(async () => {
+          const text = await reading.innerText();
+          return (
+            text.includes(subject.trim()) || /Loading email|Opening/i.test(text)
+          );
+        })
+        .toBeTruthy();
+    }
+    await page.screenshot({
+      path: path.join(ARTIFACT_DIR, "12-thread-open.png"),
+      fullPage: true,
+    });
+
+    await reading.evaluate((node) => {
+      const target = node as HTMLElement;
+      const fire = (type: string, clientX: number) => {
+        target.dispatchEvent(
+          new TouchEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            touches:
+              type === "touchend"
+                ? []
+                : [
+                    new Touch({
+                      identifier: 2,
+                      target,
+                      clientX,
+                      clientY: 120,
+                    }),
+                  ],
+            changedTouches: [
+              new Touch({
+                identifier: 2,
+                target,
+                clientX,
+                clientY: 120,
+              }),
+            ],
+          }),
+        );
+      };
+      fire("touchstart", 10);
+      fire("touchmove", 130);
+      fire("touchend", 130);
+    });
+    await expect(page.locator(".app")).toHaveAttribute(
+      "data-mobile-surface",
+      "list",
+    );
+    await page.screenshot({
+      path: path.join(ARTIFACT_DIR, "13-swipe-back-inbox.png"),
       fullPage: true,
     });
   });

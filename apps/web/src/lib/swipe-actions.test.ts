@@ -3,7 +3,9 @@ import {
   DEFAULT_SWIPE_ACTIONS,
   loadPersistedSwipeActions,
   persistSwipeActions,
+  resistSwipeOffset,
   resolveSwipeAction,
+  swipeActionDismisses,
   SWIPE_FAR_PX,
   SWIPE_NEAR_PX,
 } from "./swipe-actions";
@@ -54,5 +56,21 @@ describe("swipe actions", () => {
     };
     persistSwipeActions(next);
     expect(loadPersistedSwipeActions()).toEqual(next);
+  });
+
+  test("dismiss actions remove from inbox; star/read stay", () => {
+    expect(swipeActionDismisses("archive")).toBe(true);
+    expect(swipeActionDismisses("trash")).toBe(true);
+    expect(swipeActionDismisses("spam")).toBe(true);
+    expect(swipeActionDismisses("star")).toBe(false);
+    expect(swipeActionDismisses("mark_read")).toBe(false);
+  });
+
+  test("resistSwipeOffset eases past the far stop", () => {
+    expect(resistSwipeOffset(SWIPE_NEAR_PX)).toBe(SWIPE_NEAR_PX);
+    expect(resistSwipeOffset(SWIPE_FAR_PX)).toBe(SWIPE_FAR_PX);
+    expect(resistSwipeOffset(SWIPE_FAR_PX + 40)).toBeLessThan(SWIPE_FAR_PX + 40);
+    expect(resistSwipeOffset(SWIPE_FAR_PX + 40)).toBeGreaterThan(SWIPE_FAR_PX);
+    expect(resistSwipeOffset(-(SWIPE_FAR_PX + 40))).toBeLessThan(0);
   });
 });

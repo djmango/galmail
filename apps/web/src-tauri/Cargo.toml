@@ -33,6 +33,7 @@ tokio = { version = "1.52.3", features = ["net", "time", "io-util", "sync", "mac
 base64 = "0.22.1"
 sha2 = "0.11.0"
 url = "2.5.8"
+tauri-plugin-haptics = "2"
 
 [features]
 default = ["custom-protocol"]

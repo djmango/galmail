@@ -109,6 +109,49 @@ describe("Microsoft Graph live provider", () => {
     expect(message.starred).toBe(true);
   });
 
+  it("searchMessages uses Graph $search across the mailbox", async () => {
+    const seen: Array<{ url: string; headers: Record<string, string> }> = [];
+    const http: GraphHttpClient = {
+      async request(input) {
+        seen.push({ url: input.url, headers: input.headers });
+        return response(200, {
+          value: [
+            {
+              id: "hit-9",
+              conversationId: "c-9",
+              subject: "Quarterly invoice",
+              bodyPreview: "Please pay",
+              body: { contentType: "text", content: "Please pay" },
+              sender: { emailAddress: { address: "billing@acme.com" } },
+              toRecipients: [
+                { emailAddress: { address: "reader@example.com" } },
+              ],
+              receivedDateTime: "2026-07-15T10:00:00.000Z",
+              isRead: true,
+              flag: { flagStatus: "notFlagged" },
+              categories: [],
+              parentFolderId: "archive-id",
+              hasAttachments: true,
+            },
+          ],
+        });
+      },
+    };
+    const graph = provider(http);
+    const accountId = asAccountId("microsoft:reader@example.com");
+    const result = await graph.searchMessages!(accountId, {
+      query: "invoice from:billing@acme.com",
+      limit: 40,
+    });
+    expect(result.upserts.map((item) => item.id)).toEqual(["hit-9"]);
+    expect(seen[0]?.headers.ConsistencyLevel).toBe("eventual");
+    const searchUrl = new URL(seen[0]!.url);
+    expect(searchUrl.searchParams.get("$search")).toBe(
+      '"invoice from:billing@acme.com"',
+    );
+    expect(searchUrl.searchParams.has("$orderby")).toBe(false);
+  });
+
   it("bootstraps recent well-known folders without a full mailbox delta", async () => {
     const sleeps: number[] = [];
     let calls = 0;

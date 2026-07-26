@@ -123,3 +123,18 @@ export function swipeActionTone(
       return "neutral";
   }
 }
+
+/** Actions that remove the thread from the current inbox/list view. */
+export function swipeActionDismisses(action: SwipeMailAction): boolean {
+  return action === "archive" || action === "trash" || action === "spam";
+}
+
+/** Soft resistance past the far threshold so the drag doesn't feel stuck. */
+export function resistSwipeOffset(dx: number, max = SWIPE_FAR_PX + 48): number {
+  const sign = dx < 0 ? -1 : 1;
+  const abs = Math.abs(dx);
+  if (abs <= SWIPE_FAR_PX) return dx;
+  const over = abs - SWIPE_FAR_PX;
+  const eased = SWIPE_FAR_PX + over * 0.35;
+  return sign * Math.min(max, eased);
+}

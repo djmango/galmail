@@ -116,3 +116,48 @@ export function toFts5Query(query: MailSearchQuery): string {
     ...(query.subject ? [`subject:${escape(query.subject)}`] : []),
   ].join(" AND ");
 }
+
+function quoteProviderToken(value: string): string {
+  const cleaned = value.replace(/"/g, "").trim();
+  if (!cleaned) return "";
+  return /\s/.test(cleaned) ? `"${cleaned}"` : cleaned;
+}
+
+function formatProviderDate(date: Date): string {
+  return `${date.getUTCFullYear()}/${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
+}
+
+/**
+ * Map GalMail search operators to a Gmail `q=` / Graph `$search` string so
+ * deep search can hit the full mailbox, not only the local recent cache.
+ */
+export function toProviderSearchQuery(query: MailSearchQuery): string {
+  const parts: string[] = [];
+  if (query.from) {
+    const value = quoteProviderToken(query.from);
+    if (value) parts.push(`from:${value}`);
+  }
+  if (query.to) {
+    const value = quoteProviderToken(query.to);
+    if (value) parts.push(`to:${value}`);
+  }
+  if (query.subject) {
+    const value = quoteProviderToken(query.subject);
+    if (value) parts.push(`subject:${value}`);
+  }
+  if (query.label) {
+    const value = quoteProviderToken(query.label);
+    if (value) parts.push(`label:${value}`);
+  }
+  if (query.hasAttachment) parts.push("has:attachment");
+  if (query.isUnread === true) parts.push("is:unread");
+  if (query.isUnread === false) parts.push("is:read");
+  if (query.isStarred) parts.push("is:starred");
+  if (query.after) parts.push(`after:${formatProviderDate(query.after)}`);
+  if (query.before) parts.push(`before:${formatProviderDate(query.before)}`);
+  for (const term of query.text) {
+    const value = quoteProviderToken(term);
+    if (value) parts.push(value);
+  }
+  return parts.join(" ").trim();
+}

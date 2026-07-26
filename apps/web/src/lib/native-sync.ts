@@ -4,6 +4,7 @@ import {
   asMessageId,
   parseMailSearch,
   toFts5Query,
+  toProviderSearchQuery,
   type AccountId,
   type AttachmentMetadata,
   type ComposeDraft,
@@ -11,6 +12,7 @@ import {
   type MailMessage,
   type MailProvider,
   type MailThread,
+  type MessageId,
   type OutboxMutation,
   type SyncCursor,
   type SyncEngine,
@@ -673,9 +675,104 @@ export class NativeGmailSyncEngine implements SyncEngine {
   }
 
   async searchLocal(accountId: AccountId, query: string) {
-    return (
-      await this.store.search(accountId, toFts5Query(parseMailSearch(query)))
-    ).map(asMessageId);
+    const fts = toFts5Query(parseMailSearch(query));
+    if (!fts) return [];
+    return (await this.store.search(accountId, fts)).map(asMessageId);
+  }
+
+  /**
+   * Deep search: local FTS first, then provider mailbox search. Remote hits are
+   * ingested into the encrypted store/index so they show up in the thread list.
+   */
+  async searchMailbox(accountId: AccountId, query: string) {
+    const parsed = parseMailSearch(query);
+    const providerQuery = toProviderSearchQuery(parsed);
+    const localIds = await this.searchLocal(accountId, query);
+    if (!providerQuery) {
+      return { messageIds: localIds, remoteHits: 0 };
+    }
+    const provider = this.providerFor(accountId);
+    const searchRemote = provider.searchMessages?.bind(provider);
+    if (!searchRemote) {
+      return { messageIds: localIds, remoteHits: 0 };
+    }
+    try {
+      const { upserts } = await searchRemote(accountId, {
+        query: providerQuery,
+        limit: 100,
+      });
+      if (upserts.length) {
+        await this.ingestSearchUpserts(accountId, upserts);
+      }
+      const merged = new Set<MessageId>([
+        ...localIds,
+        ...upserts.map((message) => message.id),
+      ]);
+      return { messageIds: [...merged], remoteHits: upserts.length };
+    } catch (error) {
+      this.emit({
+        type: "error",
+        accountId,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Mailbox search failed; showing local results",
+      });
+      return { messageIds: localIds, remoteHits: 0 };
+    }
+  }
+
+  private async ingestSearchUpserts(
+    accountId: AccountId,
+    upserts: MailMessage[],
+  ): Promise<void> {
+    for (const message of upserts) {
+      this.messages.set(message.id, message);
+      for (const attachment of message.attachments ?? []) {
+        this.attachments.set(attachment.id, attachment);
+      }
+    }
+    const rebuiltThreads = this.rebuildThreads(accountId);
+    const provider = this.providerFor(accountId);
+    const cursor = this.cursors.get(accountId) ?? {
+      accountId,
+      provider: provider.kind,
+      token: "1",
+      updatedAt: new Date().toISOString(),
+    };
+    await this.store.applySyncBatch({
+      accountId,
+      upserts: [
+        ...upserts.map((value) => ({
+          kind: "message" as const,
+          objectId: value.id,
+          value,
+        })),
+        ...rebuiltThreads.map((value) => ({
+          kind: "thread" as const,
+          objectId: value.id,
+          value,
+        })),
+        ...upserts.flatMap((message) =>
+          (message.attachments ?? []).map((value) => ({
+            kind: "attachment" as const,
+            objectId: value.id,
+            value,
+          })),
+        ),
+      ],
+      deletes: [],
+      cursor,
+    });
+    for (const message of upserts) {
+      await this.store.indexMessage(message);
+    }
+    this.emit({
+      type: "delta",
+      accountId,
+      upserts: upserts.length,
+      deletes: 0,
+    });
   }
 
   localThreads(accountId: AccountId): MailThread[] {

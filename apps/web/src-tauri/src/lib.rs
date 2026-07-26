@@ -788,6 +788,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_haptics::init())
         .setup(initialize_app)
         .invoke_handler(tauri::generate_handler![
             core_version,

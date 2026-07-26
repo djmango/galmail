@@ -118,6 +118,22 @@ export function createMicrosoftFixtureProvider(): MailProvider {
     async *fetchAttachment() {
       yield new Uint8Array();
     },
+    async searchMessages(_a, opts) {
+      const needle = opts.query.trim().toLowerCase();
+      if (!needle) return { upserts: [] };
+      const limit = Math.min(100, opts.limit ?? 100);
+      const upserts = [...messages.values()]
+        .filter((message) => {
+          const haystack =
+            `${message.subject} ${message.snippet} ${message.bodyText ?? ""} ${message.from.email}`.toLowerCase();
+          return needle
+            .split(/\s+/)
+            .filter(Boolean)
+            .every((term) => haystack.includes(term.replace(/^[^:]+:/, "")));
+        })
+        .slice(0, limit);
+      return { upserts };
+    },
     async fetchDeltas(_a, cursor) {
       delta += 1;
       return {

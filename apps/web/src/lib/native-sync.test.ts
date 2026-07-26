@@ -143,9 +143,7 @@ function provider(
       }
       if (!labelId) return { upserts: all };
       return {
-        upserts: all.filter((item) =>
-          item.labelIds.includes(labelId as never),
-        ),
+        upserts: all.filter((item) => item.labelIds.includes(labelId as never)),
       };
     },
   };
@@ -196,10 +194,7 @@ describe("native Gmail sync restart contract", () => {
     const store = new MockNativeStore();
     const inbox = message("inbox-1", ["INBOX"]);
     const spam = message("spam-1", ["SPAM"]);
-    const sync = new NativeGmailSyncEngine(
-      provider([[inbox], [spam]]),
-      store,
-    );
+    const sync = new NativeGmailSyncEngine(provider([[inbox], [spam]]), store);
     await sync.pullDeltas(accountId);
     expect(sync.localThreads(accountId).map((item) => String(item.id))).toEqual(
       ["thread-inbox-1"],
@@ -237,6 +232,57 @@ describe("native Gmail sync restart contract", () => {
     expect(store.records.has("message:m1")).toBe(false);
   });
 
+  test("searchMailbox merges local FTS with remote ingest", async () => {
+    const store = new MockNativeStore();
+    const local = message("local-1", ["INBOX"]);
+    local.subject = "Team sync notes";
+    const remote = message("remote-1", ["INBOX"]);
+    remote.subject = "Ancient invoice";
+    remote.snippet = "Pay this old invoice";
+    let seenQuery = "";
+    const mail = provider([[local]]);
+    mail.searchMessages = async (_accountId, opts) => {
+      seenQuery = opts.query;
+      return { upserts: [remote] };
+    };
+    store.search = async () => ["local-1"];
+    const sync = new NativeGmailSyncEngine(mail, store);
+    await sync.pullDeltas(accountId);
+
+    const result = await sync.searchMailbox(
+      accountId,
+      "invoice from:billing@acme.com",
+    );
+    expect(seenQuery).toBe("from:billing@acme.com invoice");
+    expect(result.remoteHits).toBe(1);
+    expect(result.messageIds.map(String).sort()).toEqual([
+      "local-1",
+      "remote-1",
+    ]);
+    expect(
+      sync
+        .localThreads(accountId)
+        .map((item) => String(item.id))
+        .sort(),
+    ).toEqual(["thread-local-1", "thread-remote-1"]);
+    expect(store.records.has("message:remote-1")).toBe(true);
+  });
+
+  test("searchMailbox falls back to local results when provider search fails", async () => {
+    const store = new MockNativeStore();
+    const local = message("local-2", ["INBOX"]);
+    const mail = provider([[local]]);
+    mail.searchMessages = async () => {
+      throw new Error("provider down");
+    };
+    store.search = async () => ["local-2"];
+    const sync = new NativeGmailSyncEngine(mail, store);
+    await sync.pullDeltas(accountId);
+    const result = await sync.searchMailbox(accountId, "notes");
+    expect(result.remoteHits).toBe(0);
+    expect(result.messageIds.map(String)).toEqual(["local-2"]);
+  });
+
   test("restores and flushes a durable offline outbox", async () => {
     const store = new MockNativeStore();
     const first = new NativeGmailSyncEngine(provider([]), store);
@@ -261,7 +307,8 @@ describe("native Gmail sync restart contract", () => {
     const failing = provider([]);
     failing.saveDraft = async (_accountId, draft) => {
       saves += 1;
-      if (saves === 1) throw new Error("Gmail request failed (400): Invalid From");
+      if (saves === 1)
+        throw new Error("Gmail request failed (400): Invalid From");
       return draft.providerDraftId ?? "gmail-draft-9";
     };
     const sync = new NativeGmailSyncEngine(failing, store);

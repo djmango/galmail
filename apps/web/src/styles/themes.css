@@ -131,8 +131,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .app[data-layout] .sidebar,
-  .app[data-layout] .reading-pane:not([data-fullscreen="true"]) {
+  /* Mobile shell uses data-mobile-surface instead of this collapse. */
+  .app[data-layout]:not([data-mobile="true"]) .sidebar,
+  .app[data-layout]:not([data-mobile="true"])
+    .reading-pane:not([data-fullscreen="true"]) {
     display: none;
   }
 }

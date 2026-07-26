@@ -4,5 +4,12 @@
   "description": "GalMail iOS capability boundary",
   "windows": ["main"],
   "platforms": ["iOS"],
-  "permissions": ["core:default", "deep-link:default"]
+  "permissions": [
+    "core:default",
+    "deep-link:default",
+    "haptics:allow-impact-feedback",
+    "haptics:allow-notification-feedback",
+    "haptics:allow-selection-feedback",
+    "haptics:allow-vibrate"
+  ]
 }

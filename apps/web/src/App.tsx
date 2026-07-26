@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   useTransition,
-  type TouchEvent as ReactTouchEvent,
   type UIEvent as ReactUIEvent,
 } from "react";
 import { Toaster, toast } from "sonner";
@@ -21,6 +20,7 @@ import {
   matchesMailSearch,
   parseMailSearch,
   toFts5Query,
+  toProviderSearchQuery,
 } from "@galmail/core-api";
 import { REMOTE_OPT_IN_DISCLOSURE_VERSION } from "@galmail/remote-opt-in";
 import { isEditableTarget, resolveEscapeAction } from "@galmail/keyboard";
@@ -68,7 +68,19 @@ import {
   useIsMobileLayout,
 } from "./lib/mobile-layout";
 import { decodeHtmlEntities } from "./lib/decode-entities";
+import { haptic } from "./lib/haptics";
 import { nextListHeaderHidden } from "./lib/list-header-visibility";
+import {
+  canBeginPull,
+  pullDistanceFromDelta,
+  resolvePullAxis,
+  shouldTriggerRefresh,
+  PULL_TRIGGER_PX,
+} from "./lib/pull-to-refresh";
+import {
+  canBeginSwipeBack,
+  shouldCompleteSwipeBack,
+} from "./lib/swipe-back";
 import {
   loadPersistedSwipeActions,
   persistSwipeActions,
@@ -409,14 +421,20 @@ export function App() {
   const [listHeaderHidden, setListHeaderHidden] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [threadLoadError, setThreadLoadError] = useState<string | null>(null);
+  const [threadLoadNonce, setThreadLoadNonce] = useState(0);
+  const [backSwipeX, setBackSwipeX] = useState(0);
   const isMobile = useIsMobileLayout();
   const [, startTransition] = useTransition();
   const threadListRef = useRef<HTMLElement>(null);
+  const readingPaneRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastScrollTopRef = useRef(0);
-  const pullStartYRef = useRef<number | null>(null);
-  const pullActiveRef = useRef(false);
   const pullDistanceRef = useRef(0);
+  const pullArmedHapticRef = useRef(false);
+  const refreshingRef = useRef(false);
+  const backSwipeXRef = useRef(0);
   const undoRef = useRef<null | (() => Promise<void>)>(null);
   const inputModeRef = useRef<EditorMode>("normal");
   const selectedIdRef = useRef<string | null>(null);
@@ -436,6 +454,7 @@ export function App() {
   threadsRef.current = threads;
   isMobileRef.current = isMobile;
   mobileNavOpenRef.current = mobileNavOpen;
+  refreshingRef.current = refreshing;
   overlayRef.current = { paletteOpen, composeOpen, optInOpen, settingsOpen };
 
   useEffect(() => {
@@ -754,29 +773,68 @@ export function App() {
     };
   }, [runtime, activeLabel, labels, inboxAccountFilter]);
 
+  const openedFetchKey = useMemo(() => {
+    if (!openedId) return null;
+    const thread = threads.find((item) => item.id === openedId);
+    if (!thread) return openedId;
+    return `${openedId}|${thread.accountId}|${thread.messageIds.join(",")}`;
+  }, [openedId, threads]);
+
   useEffect(() => {
-    if (!runtime || !openedId) {
+    if (!runtime || !openedId || !openedFetchKey) {
       setMessage(null);
       setThreadMessages([]);
+      setThreadLoading(false);
+      setThreadLoadError(null);
       return;
     }
-    const thread = threads.find((t) => t.id === openedId);
+    const thread = threadsRef.current.find((item) => item.id === openedId);
     if (!thread) return;
     const account = runtime.accounts.find(
       (a) => a.accountId === thread.accountId,
     );
-    if (!account) return;
-    if (thread.messageIds.length === 0) return;
+    if (!account) {
+      setMessage(null);
+      setThreadMessages([]);
+      setThreadLoading(false);
+      setThreadLoadError("Account unavailable for this thread");
+      return;
+    }
+    if (thread.messageIds.length === 0) {
+      setMessage(null);
+      setThreadMessages([]);
+      setThreadLoading(false);
+      setThreadLoadError("No messages in this thread");
+      return;
+    }
+    let cancelled = false;
+    setThreadLoading(true);
+    setThreadLoadError(null);
+    setMessage(null);
+    setThreadMessages([]);
     Promise.all(
       thread.messageIds.map((id) =>
         account.provider.getMessage(thread.accountId, id),
       ),
-    ).then((messages) => {
-      const ordered = messages.sort((a, b) => a.date.localeCompare(b.date));
-      setThreadMessages(ordered);
-      setMessage(ordered.at(-1) ?? null);
-    });
-  }, [runtime, openedId, threads]);
+    )
+      .then((messages) => {
+        if (cancelled) return;
+        const ordered = messages.sort((a, b) => a.date.localeCompare(b.date));
+        setThreadMessages(ordered);
+        setMessage(ordered.at(-1) ?? null);
+        setThreadLoading(false);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const messageText = invokeErrorMessage(error, "Could not load message");
+        setThreadLoadError(messageText);
+        setThreadLoading(false);
+        toast.error(messageText);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runtime, openedId, openedFetchKey, threadLoadNonce]);
 
   // Opening a thread marks it read (click, Enter, or j/k while reading).
   useEffect(() => {
@@ -967,6 +1025,9 @@ export function App() {
         return;
       }
       if (openedId) {
+        haptic("selection");
+        setBackSwipeX(0);
+        backSwipeXRef.current = 0;
         setOpenedId(null);
         setStatus("Back to inbox");
         requestAnimationFrame(() => focusThreadList());
@@ -1219,9 +1280,11 @@ export function App() {
     setSettings((cur) => ({ ...cur, ...next }));
 
   const refreshInbox = async () => {
-    if (!runtime || refreshing) return;
+    if (!runtime || refreshingRef.current) return;
     setRefreshing(true);
+    refreshingRef.current = true;
     setStatus("Refreshing…");
+    haptic("impact-medium");
     try {
       const accountIds = [
         ...new Set(runtime.accounts.map((account) => account.accountId)),
@@ -1246,13 +1309,30 @@ export function App() {
         );
       }
       setStatus("Inbox refreshed");
+      haptic("success");
     } catch (error) {
       const messageText = invokeErrorMessage(error, "Refresh failed");
       setStatus(messageText);
       toast.error(messageText);
+      haptic("error");
     } finally {
       setRefreshing(false);
+      refreshingRef.current = false;
+      pullDistanceRef.current = 0;
+      pullArmedHapticRef.current = false;
       setPullDistance(0);
+    }
+  };
+
+  const closeReading = (opts?: { refocusList?: boolean; status?: string }) => {
+    const refocusList = opts?.refocusList !== false;
+    haptic("selection");
+    setBackSwipeX(0);
+    backSwipeXRef.current = 0;
+    setOpenedId(null);
+    setStatus(opts?.status ?? "Back to inbox");
+    if (refocusList) {
+      requestAnimationFrame(() => focusThreadList());
     }
   };
 
@@ -1350,6 +1430,15 @@ export function App() {
     }
 
     if (action === "spam") {
+      const snapshot = thread;
+      setThreads((items) =>
+        items.map((item) =>
+          item.id === thread.id
+            ? { ...item, labelIds: ["SPAM" as never] }
+            : item,
+        ),
+      );
+      setOpenedId((id) => (id === thread.id ? null : id));
       void runtime.sync
         .enqueue({
           accountId: thread.accountId,
@@ -1359,18 +1448,10 @@ export function App() {
           undoUntil,
         })
         .then((mutation) => {
-          setThreads((items) =>
-            items.map((item) =>
-              item.id === thread.id
-                ? { ...item, labelIds: ["SPAM" as never] }
-                : item,
-            ),
-          );
-          setOpenedId((id) => (id === thread.id ? null : id));
           undoRef.current = async () => {
             await runtime.sync.cancelOutbox(mutation.id);
             setThreads((items) =>
-              items.map((item) => (item.id === thread.id ? thread : item)),
+              items.map((item) => (item.id === thread.id ? snapshot : item)),
             );
             toast.success("Spam undone");
           };
@@ -1436,51 +1517,185 @@ export function App() {
     lastScrollTopRef.current = top;
   };
 
-  const beginPull = (clientY: number, scrollTop: number) => {
-    if (!isMobile || refreshing) return;
-    if (scrollTop > 0) {
-      pullStartYRef.current = null;
-      pullActiveRef.current = false;
-      return;
-    }
-    pullStartYRef.current = clientY;
-    pullActiveRef.current = true;
-  };
-
-  const movePull = (clientY: number, scrollTop: number) => {
-    if (!isMobile || !pullActiveRef.current || pullStartYRef.current == null) {
-      return;
-    }
-    if (scrollTop > 0) {
-      pullDistanceRef.current = 0;
-      setPullDistance(0);
-      return;
-    }
-    const distance = Math.max(0, Math.min(96, clientY - pullStartYRef.current));
-    pullDistanceRef.current = distance;
-    setPullDistance(distance);
-  };
-
-  const endPull = () => {
+  // Non-passive touchmove so we can preventDefault and own the pull gesture on iOS.
+  useEffect(() => {
     if (!isMobile) return;
-    const shouldRefresh = pullDistanceRef.current >= 64;
-    pullStartYRef.current = null;
-    pullActiveRef.current = false;
-    pullDistanceRef.current = 0;
-    if (shouldRefresh) {
-      void refreshInbox();
-    } else {
-      setPullDistance(0);
+    const el = threadListRef.current;
+    if (!el) return;
+
+    let startX = 0;
+    let startY = 0;
+    let active = false;
+    let pulling = false;
+    let axis: ReturnType<typeof resolvePullAxis> = "undecided";
+
+    const reset = () => {
+      active = false;
+      pulling = false;
+      axis = "undecided";
+    };
+
+    const onStart = (event: TouchEvent) => {
+      if (refreshingRef.current) return;
+      if (!canBeginPull(el.scrollTop)) {
+        reset();
+        return;
+      }
+      const touch = event.touches[0];
+      if (!touch) return;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      active = true;
+      pulling = false;
+      axis = "undecided";
+      pullArmedHapticRef.current = false;
+    };
+
+    const onMove = (event: TouchEvent) => {
+      if (!active || refreshingRef.current) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      axis = resolvePullAxis(dx, dy, axis);
+      if (axis === "undecided") return;
+      if (axis === "x" || dy < 0 || !canBeginPull(el.scrollTop)) {
+        if (pulling) {
+          pullDistanceRef.current = 0;
+          setPullDistance(0);
+        }
+        reset();
+        return;
+      }
+      pulling = true;
+      const distance = pullDistanceFromDelta(dy);
+      pullDistanceRef.current = distance;
+      setPullDistance(distance);
+      if (distance > 0) event.preventDefault();
+      if (
+        shouldTriggerRefresh(distance) &&
+        !pullArmedHapticRef.current
+      ) {
+        pullArmedHapticRef.current = true;
+        haptic("selection");
+      } else if (
+        !shouldTriggerRefresh(distance) &&
+        pullArmedHapticRef.current
+      ) {
+        pullArmedHapticRef.current = false;
+      }
+    };
+
+    const onEnd = () => {
+      if (!active && !pulling) return;
+      const shouldRefresh = pulling && shouldTriggerRefresh(pullDistanceRef.current);
+      reset();
+      if (shouldRefresh) {
+        void refreshInbox();
+      } else {
+        pullDistanceRef.current = 0;
+        pullArmedHapticRef.current = false;
+        setPullDistance(0);
+      }
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [isMobile, runtime, mainView, mobileSurface]);
+
+  // Edge swipe from the left edge of a thread → inbox.
+  useEffect(() => {
+    if (!isMobile || !openedId) {
+      setBackSwipeX(0);
+      backSwipeXRef.current = 0;
+      return;
     }
-  };
+    const el = readingPaneRef.current;
+    if (!el) return;
 
-  const onThreadListTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
-    beginPull(event.touches[0]?.clientY ?? 0, event.currentTarget.scrollTop);
-  };
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    let active = false;
+    let axis: "undecided" | "x" | "y" = "undecided";
+    let armedHaptic = false;
 
-  const onThreadListTouchMove = (event: ReactTouchEvent<HTMLElement>) => {
-    movePull(event.touches[0]?.clientY ?? 0, event.currentTarget.scrollTop);
-  };
+    const onStart = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      if (!touch) return;
+      if (!canBeginSwipeBack(touch.clientX, el.clientWidth)) {
+        active = false;
+        return;
+      }
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startTime = performance.now();
+      active = true;
+      axis = "undecided";
+      armedHaptic = false;
+    };
+
+    const onMove = (event: TouchEvent) => {
+      if (!active) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      if (axis === "undecided") {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+        if (axis === "y" || dx < 0) {
+          active = false;
+          return;
+        }
+      }
+      if (axis !== "x") return;
+      event.preventDefault();
+      const next = Math.max(0, Math.min(el.clientWidth * 0.92, dx));
+      backSwipeXRef.current = next;
+      setBackSwipeX(next);
+      if (shouldCompleteSwipeBack(next) && !armedHaptic) {
+        armedHaptic = true;
+        haptic("selection");
+      } else if (!shouldCompleteSwipeBack(next) && armedHaptic) {
+        armedHaptic = false;
+      }
+    };
+
+    const onEnd = () => {
+      if (!active && backSwipeXRef.current === 0) return;
+      const dx = backSwipeXRef.current;
+      const elapsed = Math.max(16, performance.now() - startTime);
+      const vx = dx / elapsed;
+      active = false;
+      axis = "undecided";
+      if (shouldCompleteSwipeBack(dx, vx)) {
+        closeReading();
+      } else {
+        backSwipeXRef.current = 0;
+        setBackSwipeX(0);
+      }
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
+  }, [isMobile, openedId]);
 
   const customLabels = useMemo(
     () =>
@@ -1510,45 +1725,44 @@ export function App() {
       inboxAccountFilter === "all"
         ? threads
         : threads.filter((thread) => thread.accountId === inboxAccountFilter);
-    const scoped =
-      activeLabel === "ALL"
-        ? byAccount
-        : activeLabel === "ARCHIVE"
-          ? byAccount.filter(
-              (thread) =>
-                !thread.labelIds.includes("INBOX" as never) &&
-                !thread.labelIds.includes("TRASH" as never) &&
-                !thread.labelIds.includes("SPAM" as never),
-            )
-          : byAccount.filter((thread) =>
-              thread.labelIds.includes(activeLabel as never),
-            );
-    if (!searchQuery.trim()) return scoped;
-    const query = parseMailSearch(searchQuery);
-    return scoped.filter((thread) => {
-      if (
-        searchMessageIds &&
-        !thread.messageIds.some((id) => searchMessageIds.has(id))
-      ) {
-        return false;
-      }
-      const synthetic: MailMessage = {
-        id: thread.messageIds[0]!,
-        threadId: thread.id,
-        accountId: thread.accountId,
-        provider: thread.provider,
-        subject: thread.subject,
-        snippet: thread.snippet,
-        from: thread.participants[0] ?? { email: "unknown@invalid" },
-        to: thread.participants.slice(1),
-        date: thread.lastMessageAt,
-        unread: thread.unreadCount > 0,
-        starred: thread.labelIds.includes("STARRED" as never),
-        labelIds: thread.labelIds,
-        hasAttachments: false,
-      };
-      return matchesMailSearch(synthetic, thread, query);
-    });
+    // Deep search spans the whole mailbox; don't keep results trapped in the
+    // active folder (inbox-only) after provider hits land in the local store.
+    if (searchQuery.trim()) {
+      const query = parseMailSearch(searchQuery);
+      return byAccount.filter((thread) => {
+        if (searchMessageIds) {
+          return thread.messageIds.some((id) => searchMessageIds.has(id));
+        }
+        const synthetic: MailMessage = {
+          id: thread.messageIds[0]!,
+          threadId: thread.id,
+          accountId: thread.accountId,
+          provider: thread.provider,
+          subject: thread.subject,
+          snippet: thread.snippet,
+          from: thread.participants[0] ?? { email: "unknown@invalid" },
+          to: thread.participants.slice(1),
+          date: thread.lastMessageAt,
+          unread: thread.unreadCount > 0,
+          starred: thread.labelIds.includes("STARRED" as never),
+          labelIds: thread.labelIds,
+          hasAttachments: false,
+        };
+        return matchesMailSearch(synthetic, thread, query);
+      });
+    }
+    if (activeLabel === "ALL") return byAccount;
+    if (activeLabel === "ARCHIVE") {
+      return byAccount.filter(
+        (thread) =>
+          !thread.labelIds.includes("INBOX" as never) &&
+          !thread.labelIds.includes("TRASH" as never) &&
+          !thread.labelIds.includes("SPAM" as never),
+      );
+    }
+    return byAccount.filter((thread) =>
+      thread.labelIds.includes(activeLabel as never),
+    );
   }, [
     threads,
     searchQuery,
@@ -1602,10 +1816,12 @@ export function App() {
       return;
     }
     const parsed = parseMailSearch(searchQuery);
-    if (!toFts5Query(parsed)) {
+    if (!toFts5Query(parsed) && !toProviderSearchQuery(parsed)) {
       setSearchMessageIds(null);
       return;
     }
+    // Drop prior hits immediately so typing never shows stale matches.
+    setSearchMessageIds(null);
     let cancelled = false;
     const searchAccounts =
       inboxAccountFilter === "all"
@@ -1613,15 +1829,47 @@ export function App() {
         : runtime.accounts.filter(
             (account) => account.accountId === inboxAccountFilter,
           );
-    Promise.all(
-      searchAccounts.map((account) =>
-        runtime.sync.searchLocal(account.accountId, searchQuery),
-      ),
-    ).then((ids) => {
-      if (!cancelled) setSearchMessageIds(new Set(ids.flat()));
-    });
+    // Debounce provider round-trips while typing.
+    const timer = window.setTimeout(() => {
+      setStatus("Searching mailbox…");
+      void Promise.all(
+        searchAccounts.map((account) =>
+          runtime.sync.searchMailbox(account.accountId, searchQuery),
+        ),
+      )
+        .then((results) => {
+          if (cancelled) return;
+          setSearchMessageIds(
+            new Set(results.flatMap((result) => result.messageIds)),
+          );
+          const nextThreads = threadsFromSync(runtime);
+          if (nextThreads.length) setThreads(nextThreads);
+          const remoteHits = results.reduce(
+            (sum, result) => sum + result.remoteHits,
+            0,
+          );
+          const total = results.reduce(
+            (sum, result) => sum + result.messageIds.length,
+            0,
+          );
+          setStatus(
+            remoteHits > 0
+              ? `Mailbox search · ${total} match${total === 1 ? "" : "es"}`
+              : total > 0
+                ? `Local search · ${total} match${total === 1 ? "" : "es"}`
+                : "No matches",
+          );
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          const messageText = invokeErrorMessage(error, "Search failed");
+          setStatus(messageText);
+          toast.error(messageText);
+        });
+    }, 280);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [runtime, searchQuery, inboxAccountFilter]);
 
@@ -2500,10 +2748,6 @@ export function App() {
           tabIndex={-1}
           ref={threadListRef}
           onScroll={onThreadListScroll}
-          onTouchStart={onThreadListTouchStart}
-          onTouchMove={onThreadListTouchMove}
-          onTouchEnd={endPull}
-          onTouchCancel={endPull}
           data-fullscreen={fullscreenList ? "true" : "false"}
           data-header-hidden={listHeaderHidden ? "true" : "false"}
         >
@@ -2532,8 +2776,8 @@ export function App() {
                   enterKeyHint="search"
                   placeholder={
                     isMobile
-                      ? "Search mail"
-                      : "Search · from: subject: label:"
+                      ? "Search all mail"
+                      : "Search all mail · from: subject: label:"
                   }
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
@@ -2552,7 +2796,7 @@ export function App() {
               <span>
                 {refreshing
                   ? "Refreshing…"
-                  : pullDistance >= 64
+                  : pullDistance >= PULL_TRIGGER_PX
                     ? "Release to refresh"
                     : "Pull to refresh"}
               </span>
@@ -2643,6 +2887,7 @@ export function App() {
                       }
                       setSelectedId(t.id);
                       setOpenedId(t.id);
+                      if (isMobile) haptic("selection");
                     }}
                   >
                     <div className="thread-row">
@@ -2686,8 +2931,20 @@ export function App() {
         <section
           className="reading-pane panel reading"
           aria-label="Reading pane"
+          ref={readingPaneRef}
           data-fullscreen={
-            layout === "fullscreen" && openedId ? "true" : "false"
+            Boolean(openedId) && (isMobile || layout === "fullscreen")
+              ? "true"
+              : "false"
+          }
+          data-swiping-back={backSwipeX > 0 ? "true" : "false"}
+          style={
+            isMobile && backSwipeX > 0
+              ? {
+                  transform: `translate3d(${backSwipeX}px, 0, 0)`,
+                  transition: "none",
+                }
+              : undefined
           }
         >
           {message ? (
@@ -2699,7 +2956,7 @@ export function App() {
                     label="Back to inbox"
                     icon={<Icons.back />}
                     command="back"
-                    onClick={() => setOpenedId(null)}
+                    onClick={() => closeReading()}
                   />
                 </div>
               )}
@@ -2840,6 +3097,44 @@ export function App() {
                 ))}
               </div>
             </>
+          ) : openedId ? (
+            <div className="reading-empty reading-loading">
+              {showReadingBack && (
+                <div className={isMobile ? "mobile-back-row" : undefined}>
+                  <ActionButton
+                    className="back-btn"
+                    label="Back to inbox"
+                    icon={<Icons.back />}
+                    command="back"
+                    onClick={() => closeReading()}
+                  />
+                </div>
+              )}
+              {threadLoadError ? (
+                <>
+                  <p className="meta">Could not load this email.</p>
+                  <p className="meta meta-hint">{threadLoadError}</p>
+                  <ActionButton
+                    label="Retry"
+                    icon={<Icons.refresh />}
+                    onClick={() => {
+                      setStatus("Retrying…");
+                      setThreadLoadNonce((value) => value + 1);
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="meta">
+                    {threadLoading ? "Loading email…" : "Opening…"}
+                  </p>
+                  <p className="meta meta-hint">
+                    {threads.find((item) => item.id === openedId)?.subject ??
+                      "Fetching message body"}
+                  </p>
+                </>
+              )}
+            </div>
           ) : (
             <div className="reading-empty">
               <p className="meta">No thread selected.</p>
@@ -2893,7 +3188,7 @@ export function App() {
               setMobileNavOpen(false);
               setMainView("mail");
               setActiveLabel("INBOX");
-              setOpenedId(null);
+              closeReading();
               setStatus("Inbox");
             }}
           >
@@ -2918,7 +3213,9 @@ export function App() {
             onClick={() => {
               setMobileNavOpen(false);
               setSettingsOpen(false);
-              if (openedId) setOpenedId(null);
+              if (openedId) {
+                closeReading({ refocusList: false, status: "Search" });
+              }
               setMainView("mail");
               setListHeaderHidden(false);
               setInputMode("insert");
