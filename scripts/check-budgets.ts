@@ -4,8 +4,9 @@ import { gzipSync } from "node:zlib";
 
 const dist = resolve(import.meta.dir, "../apps/web/dist");
 const limits = {
-  // Multi-account + calendar shell landed above the original 100 KiB target.
-  ".js": 150 * 1024,
+  // Multi-account + calendar shell landed above the original 100 KiB target;
+  // native mobile gestures / mailbox search landed above 150 KiB.
+  ".js": 155 * 1024,
   ".css": 20 * 1024,
 } as const;
 // Mobile gestures / settings shell landed above the original 600 KiB target.
