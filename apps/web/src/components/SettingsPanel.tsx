@@ -1,6 +1,11 @@
 import type { RemoteProcessingConsent } from "@galmail/core-api";
 import type { McpApprovalMode, McpPolicy } from "../lib/mcp-settings";
-import type { ThemePreference } from "../lib/themes";
+import type { RemoteImagePolicy, ThemePreference } from "../lib/themes";
+import {
+  SWIPE_ACTION_OPTIONS,
+  SWIPE_SLOT_LABELS,
+  type SwipeSlot,
+} from "../lib/swipe-actions";
 import { ActionButton } from "./ActionButton";
 import { Icons } from "./Icons";
 import { SettingsBar, type SettingsState } from "./SettingsBar";
@@ -8,7 +13,7 @@ import { SettingsBar, type SettingsState } from "./SettingsBar";
 const MCP_APPROVAL_OPTIONS: { id: McpApprovalMode; label: string }[] = [
   { id: "ask_writes", label: "Ask on writes" },
   { id: "ask", label: "Ask every time" },
-  { id: "allowlisted", label: "Allowlisted" },
+  { id: "allowlisted", label: "Allow all" },
 ];
 
 export type SettingsAccount = {
@@ -24,6 +29,19 @@ const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
   { id: "system", label: "Auto" },
 ];
 
+const REMOTE_IMAGE_OPTIONS: { id: RemoteImagePolicy; label: string }[] = [
+  { id: "never", label: "Never" },
+  { id: "ask", label: "Ask" },
+  { id: "allow", label: "Allow all" },
+];
+
+const SWIPE_SLOTS: SwipeSlot[] = [
+  "rightNear",
+  "rightFar",
+  "leftNear",
+  "leftFar",
+];
+
 export function SettingsPanel(props: {
   state: SettingsState;
   consent: RemoteProcessingConsent | null;
@@ -36,6 +54,7 @@ export function SettingsPanel(props: {
   gmailConnecting: boolean;
   microsoftConnecting: boolean;
   connectError: string | null;
+  isMobile?: boolean;
   onChange: (next: Partial<SettingsState>) => void;
   onClose: () => void;
   onOpenRemoteProcessing: () => void;
@@ -61,6 +80,8 @@ export function SettingsPanel(props: {
 }) {
   const connecting = props.gmailConnecting || props.microsoftConnecting;
   const liveAccounts = props.accounts.filter((account) => account.live);
+  const hasGmail = liveAccounts.some((a) => a.provider === "gmail");
+  const hasMicrosoft = liveAccounts.some((a) => a.provider === "microsoft");
 
   return (
     <div
@@ -108,15 +129,15 @@ export function SettingsPanel(props: {
                     <strong>{account.email}</strong>
                     <span>
                       {account.provider === "gmail"
-                        ? "Gmail"
+                        ? "Google"
                         : account.provider === "microsoft"
-                          ? "Microsoft 365"
-                          : "Fixture"}
-                      {account.live ? " · live" : " · demo"}
+                          ? "Microsoft"
+                          : "Demo"}
                     </span>
                   </div>
                   {account.live && props.onDisconnectAccount ? (
                     <ActionButton
+                      className="account-disconnect"
                       label="Disconnect"
                       onClick={() =>
                         props.onDisconnectAccount?.(account.accountId)
@@ -130,15 +151,20 @@ export function SettingsPanel(props: {
                 </div>
               ))}
             </div>
-            <div className="settings-actions">
+            <div
+              className="account-connect-grid"
+              role="group"
+              aria-label="Add accounts"
+            >
               {props.canConnectGmail && (
                 <ActionButton
+                  className="account-connect-tile"
                   label={
                     props.gmailConnecting
                       ? "Waiting for Google…"
-                      : liveAccounts.some((a) => a.provider === "gmail")
-                        ? "Add Google account"
-                        : "Sign in with Google"
+                      : hasGmail
+                        ? "Add Google"
+                        : "Add Google"
                   }
                   icon={<Icons.google />}
                   variant="primary"
@@ -150,47 +176,50 @@ export function SettingsPanel(props: {
               )}
               {props.canConnectMicrosoft && (
                 <ActionButton
+                  className="account-connect-tile"
                   label={
                     props.microsoftConnecting
                       ? "Waiting for Microsoft…"
-                      : liveAccounts.some((a) => a.provider === "microsoft")
-                        ? "Add Microsoft account"
-                        : "Sign in with Microsoft"
+                      : "Add Microsoft"
                   }
                   icon={<Icons.microsoft />}
-                  variant={
-                    props.canConnectGmail &&
-                    !liveAccounts.some((a) => a.provider === "gmail")
-                      ? "quiet"
-                      : "primary"
-                  }
+                  variant="primary"
                   reveal={false}
                   showShortcut={false}
                   disabled={connecting}
                   onClick={props.onConnectMicrosoft}
                 />
               )}
-              {!props.onDisconnectAccount &&
-                liveAccounts.some((a) => a.provider === "gmail") &&
-                props.onDisconnectGmail && (
+              <ActionButton
+                className="account-connect-tile"
+                label="Link device"
+                icon={<Icons.devices />}
+                variant="quiet"
+                reveal={false}
+                showShortcut={false}
+                onClick={props.onLinkDevice}
+              />
+            </div>
+            {!props.onDisconnectAccount &&
+              hasGmail &&
+              props.onDisconnectGmail && (
+                <div className="settings-actions">
                   <ActionButton
                     label="Disconnect Gmail"
                     onClick={props.onDisconnectGmail}
                   />
-                )}
-              {!props.onDisconnectAccount &&
-                liveAccounts.some((a) => a.provider === "microsoft") &&
-                props.onDisconnectMicrosoft && (
+                </div>
+              )}
+            {!props.onDisconnectAccount &&
+              hasMicrosoft &&
+              props.onDisconnectMicrosoft && (
+                <div className="settings-actions">
                   <ActionButton
                     label="Disconnect Microsoft"
                     onClick={props.onDisconnectMicrosoft}
                   />
-                )}
-              <ActionButton
-                label="Link another device"
-                onClick={props.onLinkDevice}
-              />
-            </div>
+                </div>
+              )}
             {!props.canConnectGmail && !props.canConnectMicrosoft && (
               <p className="settings-note" role="status">
                 Sign-in buttons appear in the GalMail app when Google or
@@ -236,13 +265,15 @@ export function SettingsPanel(props: {
                   ))}
                 </div>
               </div>
-              <div className="settings-row settings-row-stack">
-                <div className="settings-row-text">
-                  <strong id="layout-label">Inbox layout</strong>
-                  <span>How threads and reading panes are arranged</span>
+              {!props.isMobile ? (
+                <div className="settings-row settings-row-stack">
+                  <div className="settings-row-text">
+                    <strong id="layout-label">Inbox layout</strong>
+                    <span>How threads and reading panes are arranged</span>
+                  </div>
+                  <SettingsBar state={props.state} onChange={props.onChange} />
                 </div>
-                <SettingsBar state={props.state} onChange={props.onChange} />
-              </div>
+              ) : null}
             </div>
           </section>
 
@@ -273,33 +304,84 @@ export function SettingsPanel(props: {
                   <span className="ios-switch-track" aria-hidden />
                 </label>
               </div>
-              <div className="settings-row settings-switch-row">
+              <div className="settings-row settings-row-stack">
                 <div className="settings-row-text">
-                  <strong id="load-remote-images-label">
-                    Load remote images
-                  </strong>
+                  <strong id="remote-image-label">Remote images</strong>
                   <span>
-                    Allow images hosted off-device when opening mail; can still
-                    toggle per message
+                    Approval mode for images hosted off-device when opening mail
                   </span>
                 </div>
-                <label className="ios-switch">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    aria-labelledby="load-remote-images-label"
-                    checked={props.state.loadRemoteImages}
-                    onChange={(event) =>
-                      props.onChange({
-                        loadRemoteImages: event.target.checked,
-                      })
-                    }
-                  />
-                  <span className="ios-switch-track" aria-hidden />
-                </label>
+                <div
+                  className="settings-segment"
+                  role="group"
+                  aria-labelledby="remote-image-label"
+                >
+                  {REMOTE_IMAGE_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="settings-segment-option"
+                      aria-pressed={props.state.remoteImagePolicy === option.id}
+                      onClick={() =>
+                        props.onChange({
+                          remoteImagePolicy: option.id,
+                          loadRemoteImages: option.id === "allow",
+                        })
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </section>
+
+          {props.isMobile ? (
+            <section className="settings-section">
+              <h3 className="settings-section-title">Swipe actions</h3>
+              <p className="settings-copy">
+                Near and far stops for each direction. Defaults: right archives,
+                left deletes; farther right stars, farther left marks spam.
+              </p>
+              <div className="settings-group">
+                {SWIPE_SLOTS.map((slot) => (
+                  <div className="settings-row settings-row-stack" key={slot}>
+                    <div className="settings-row-text">
+                      <strong id={`swipe-${slot}-label`}>
+                        {SWIPE_SLOT_LABELS[slot]}
+                      </strong>
+                    </div>
+                    <label className="settings-select-wrap">
+                      <span className="sr-only">
+                        {SWIPE_SLOT_LABELS[slot]} action
+                      </span>
+                      <select
+                        className="field-input settings-select"
+                        aria-labelledby={`swipe-${slot}-label`}
+                        value={props.state.swipeActions[slot]}
+                        onChange={(event) =>
+                          props.onChange({
+                            swipeActions: {
+                              ...props.state.swipeActions,
+                              [slot]: event.target
+                                .value as SettingsState["swipeActions"][SwipeSlot],
+                            },
+                          })
+                        }
+                      >
+                        {SWIPE_ACTION_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <section className="settings-section">
             <h3 className="settings-section-title">Privacy</h3>
@@ -392,7 +474,10 @@ export function SettingsPanel(props: {
               <div className="settings-row settings-row-stack">
                 <div className="settings-row-text">
                   <strong id="mcp-approval-label">Approval mode</strong>
-                  <span>Writes always prompt unless set to Allowlisted</span>
+                  <span>
+                    Ask on writes, ask every time, or allow all for connected
+                    clients (send still prompts)
+                  </span>
                 </div>
                 <div
                   className="settings-segment"

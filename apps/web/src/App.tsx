@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type TouchEvent as ReactTouchEvent,
+  type UIEvent as ReactUIEvent,
+} from "react";
 import { Toaster, toast } from "sonner";
 import type {
   ComposeDraft as DomainComposeDraft,
@@ -59,14 +67,21 @@ import {
   resolveMobileSurface,
   useIsMobileLayout,
 } from "./lib/mobile-layout";
+import { decodeHtmlEntities } from "./lib/decode-entities";
+import { nextListHeaderHidden } from "./lib/list-header-visibility";
+import {
+  loadPersistedSwipeActions,
+  persistSwipeActions,
+  type SwipeMailAction,
+} from "./lib/swipe-actions";
 import {
   DEFAULT_LAYOUT,
   getSystemTheme,
-  loadPersistedLoadRemoteImages,
+  loadPersistedRemoteImagePolicy,
   loadPersistedSidebarCollapsed,
   loadPersistedTheme,
   loadPersistedTrashAfterUnsubscribe,
-  persistLoadRemoteImages,
+  persistRemoteImagePolicy,
   persistSidebarCollapsed,
   persistTheme,
   persistTrashAfterUnsubscribe,
@@ -109,6 +124,7 @@ import { LiveMcpSession } from "./lib/mcp-live";
 import { SafeMailBody } from "./components/SafeMailBody";
 import { SignInScreen } from "./components/SignInScreen";
 import { StatusBar, type EditorMode } from "./components/StatusBar";
+import { SwipeableThreadRow } from "./components/SwipeableThreadRow";
 
 function labelStatusName(labelId: string, labels: MailLabel[]): string {
   switch (labelId) {
@@ -168,6 +184,7 @@ function MessageCard(props: {
   developerMode: boolean;
   theme: ResolvedTheme;
   loadRemoteImages: boolean;
+  askRemoteImages?: boolean;
   onDownloadAttachment: (
     message: MailMessage,
     attachment: NonNullable<MailMessage["attachments"]>[number],
@@ -235,6 +252,7 @@ function MessageCard(props: {
             sender={props.message.from.email}
             theme={props.theme}
             loadRemoteImages={props.loadRemoteImages}
+            askRemoteImages={props.askRemoteImages}
           />
           {props.message.attachments &&
             props.message.attachments.length > 0 && (
@@ -359,14 +377,19 @@ export function App() {
   );
   const [inputMode, setInputMode] = useState<EditorMode>("normal");
   const [consent, setConsent] = useState<RemoteProcessingConsent | null>(null);
-  const [settings, setSettings] = useState<SettingsState>(() => ({
-    theme: loadPersistedTheme(),
-    layout: DEFAULT_LAYOUT,
-    developerMode: false,
-    requestReadReceipt: false,
-    loadRemoteImages: loadPersistedLoadRemoteImages(),
-    trashAfterUnsubscribe: loadPersistedTrashAfterUnsubscribe(),
-  }));
+  const [settings, setSettings] = useState<SettingsState>(() => {
+    const remoteImagePolicy = loadPersistedRemoteImagePolicy();
+    return {
+      theme: loadPersistedTheme(),
+      layout: DEFAULT_LAYOUT,
+      developerMode: false,
+      requestReadReceipt: false,
+      loadRemoteImages: remoteImagePolicy === "allow",
+      remoteImagePolicy,
+      trashAfterUnsubscribe: loadPersistedTrashAfterUnsubscribe(),
+      swipeActions: loadPersistedSwipeActions(),
+    };
+  });
   const [mcpPolicy, setMcpPolicy] = useState<McpPolicy>(() =>
     loadMcpPolicyFromLocalStorage(),
   );
@@ -383,10 +406,17 @@ export function App() {
     loadPersistedSidebarCollapsed(),
   );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [listHeaderHidden, setListHeaderHidden] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const isMobile = useIsMobileLayout();
   const [, startTransition] = useTransition();
   const threadListRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastScrollTopRef = useRef(0);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullActiveRef = useRef(false);
+  const pullDistanceRef = useRef(0);
   const undoRef = useRef<null | (() => Promise<void>)>(null);
   const inputModeRef = useRef<EditorMode>("normal");
   const selectedIdRef = useRef<string | null>(null);
@@ -448,8 +478,12 @@ export function App() {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
-    persistLoadRemoteImages(settings.loadRemoteImages);
-  }, [settings.loadRemoteImages]);
+    persistRemoteImagePolicy(settings.remoteImagePolicy);
+  }, [settings.remoteImagePolicy]);
+
+  useEffect(() => {
+    persistSwipeActions(settings.swipeActions);
+  }, [settings.swipeActions]);
 
   useEffect(() => {
     persistTrashAfterUnsubscribe(settings.trashAfterUnsubscribe);
@@ -1184,6 +1218,270 @@ export function App() {
   const updateSettings = (next: Partial<SettingsState>) =>
     setSettings((cur) => ({ ...cur, ...next }));
 
+  const refreshInbox = async () => {
+    if (!runtime || refreshing) return;
+    setRefreshing(true);
+    setStatus("Refreshing…");
+    try {
+      const accountIds = [
+        ...new Set(runtime.accounts.map((account) => account.accountId)),
+      ];
+      for (const accountId of accountIds) {
+        await runtime.sync.pullDeltas(accountId);
+      }
+      await runtime.sync.flushOutbox();
+      const nextThreads = threadsFromSync(runtime);
+      if (nextThreads.length) {
+        setThreads(nextThreads);
+      } else {
+        const locals = await Promise.all(
+          runtime.accounts.map((account) =>
+            runtime.sync.hydrateLocal(account.accountId),
+          ),
+        );
+        setThreads(
+          locals
+            .flatMap((local) => local.threads)
+            .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
+        );
+      }
+      setStatus("Inbox refreshed");
+    } catch (error) {
+      const messageText = invokeErrorMessage(error, "Refresh failed");
+      setStatus(messageText);
+      toast.error(messageText);
+    } finally {
+      setRefreshing(false);
+      setPullDistance(0);
+    }
+  };
+
+  const applyThreadSwipeAction = (
+    thread: MailThread,
+    action: SwipeMailAction,
+  ) => {
+    if (!runtime || action === "none") return;
+    const targetIds = thread.messageIds.length
+      ? thread.messageIds
+      : [];
+    if (!targetIds.length && action !== "archive" && action !== "trash") {
+      return;
+    }
+    const ids = targetIds.length ? targetIds : [thread.id];
+    const undoUntil = new Date(Date.now() + 5_000).toISOString();
+
+    if (action === "archive") {
+      const snapshot = thread;
+      startTransition(() => {
+        setThreads((prev) =>
+          prev.map((item) =>
+            item.id === thread.id
+              ? {
+                  ...item,
+                  labelIds: item.labelIds.filter((label) => label !== "INBOX"),
+                }
+              : item,
+          ),
+        );
+        setOpenedId((id) => (id === thread.id ? null : id));
+      });
+      void runtime.sync
+        .enqueue({
+          accountId: thread.accountId,
+          kind: "archive",
+          targetIds: ids,
+          availableAt: undoUntil,
+          undoUntil,
+        })
+        .then((mutation) => {
+          undoRef.current = async () => {
+            await runtime.sync.cancelOutbox(mutation.id);
+            setThreads((items) =>
+              items.map((item) => (item.id === thread.id ? snapshot : item)),
+            );
+            toast.success("Archive undone");
+          };
+          setTimeout(
+            () => void runtime.sync.flushOutbox(thread.accountId),
+            5_000,
+          );
+          toast.success("Archived", {
+            description: "Undo available for 5 seconds",
+          });
+        });
+      return;
+    }
+
+    if (action === "trash") {
+      const snapshot = thread;
+      setThreads((items) =>
+        items.map((item) =>
+          item.id === thread.id
+            ? { ...item, labelIds: ["TRASH" as never] }
+            : item,
+        ),
+      );
+      setOpenedId((id) => (id === thread.id ? null : id));
+      void runtime.sync
+        .enqueue({
+          accountId: thread.accountId,
+          kind: "trash",
+          targetIds: ids,
+          availableAt: undoUntil,
+          undoUntil,
+        })
+        .then((mutation) => {
+          undoRef.current = async () => {
+            await runtime.sync.cancelOutbox(mutation.id);
+            setThreads((items) =>
+              items.map((item) => (item.id === thread.id ? snapshot : item)),
+            );
+            toast.success("Trash undone");
+          };
+          setTimeout(
+            () => void runtime.sync.flushOutbox(thread.accountId),
+            5_000,
+          );
+          toast.success("Moved to Trash", {
+            description: "Undo available for 5 seconds",
+          });
+        });
+      return;
+    }
+
+    if (action === "spam") {
+      void runtime.sync
+        .enqueue({
+          accountId: thread.accountId,
+          kind: "spam",
+          targetIds: ids,
+          availableAt: undoUntil,
+          undoUntil,
+        })
+        .then((mutation) => {
+          setThreads((items) =>
+            items.map((item) =>
+              item.id === thread.id
+                ? { ...item, labelIds: ["SPAM" as never] }
+                : item,
+            ),
+          );
+          setOpenedId((id) => (id === thread.id ? null : id));
+          undoRef.current = async () => {
+            await runtime.sync.cancelOutbox(mutation.id);
+            setThreads((items) =>
+              items.map((item) => (item.id === thread.id ? thread : item)),
+            );
+            toast.success("Spam undone");
+          };
+          setTimeout(
+            () => void runtime.sync.flushOutbox(thread.accountId),
+            5_000,
+          );
+          toast.success("Reported as spam", {
+            description: "Undo available for 5 seconds",
+          });
+        });
+      return;
+    }
+
+    if (action === "star") {
+      void runtime.sync
+        .enqueue({
+          accountId: thread.accountId,
+          kind: "star",
+          targetIds: ids,
+        })
+        .then(() => runtime.sync.flushOutbox(thread.accountId))
+        .then(() => toast.success("Starred"));
+      return;
+    }
+
+    if (action === "mark_read" || action === "mark_unread") {
+      const unreadCount = action === "mark_unread" ? 1 : 0;
+      setThreads((prev) =>
+        prev.map((item) =>
+          item.id === thread.id ? { ...item, unreadCount } : item,
+        ),
+      );
+      void runtime.sync
+        .enqueue({
+          accountId: thread.accountId,
+          kind: action,
+          targetIds: ids,
+        })
+        .then(() => runtime.sync.flushOutbox(thread.accountId))
+        .then(() =>
+          toast.success(
+            action === "mark_read" ? "Marked read" : "Marked unread",
+          ),
+        );
+    }
+  };
+
+  const onThreadListScroll = (event: ReactUIEvent<HTMLElement>) => {
+    const top = event.currentTarget.scrollTop;
+    setListScrollTop(top);
+    if (!isMobile) {
+      lastScrollTopRef.current = top;
+      return;
+    }
+    setListHeaderHidden((hidden) =>
+      nextListHeaderHidden({
+        scrollTop: top,
+        lastScrollTop: lastScrollTopRef.current,
+        currentlyHidden: hidden,
+      }),
+    );
+    lastScrollTopRef.current = top;
+  };
+
+  const beginPull = (clientY: number, scrollTop: number) => {
+    if (!isMobile || refreshing) return;
+    if (scrollTop > 0) {
+      pullStartYRef.current = null;
+      pullActiveRef.current = false;
+      return;
+    }
+    pullStartYRef.current = clientY;
+    pullActiveRef.current = true;
+  };
+
+  const movePull = (clientY: number, scrollTop: number) => {
+    if (!isMobile || !pullActiveRef.current || pullStartYRef.current == null) {
+      return;
+    }
+    if (scrollTop > 0) {
+      pullDistanceRef.current = 0;
+      setPullDistance(0);
+      return;
+    }
+    const distance = Math.max(0, Math.min(96, clientY - pullStartYRef.current));
+    pullDistanceRef.current = distance;
+    setPullDistance(distance);
+  };
+
+  const endPull = () => {
+    if (!isMobile) return;
+    const shouldRefresh = pullDistanceRef.current >= 64;
+    pullStartYRef.current = null;
+    pullActiveRef.current = false;
+    pullDistanceRef.current = 0;
+    if (shouldRefresh) {
+      void refreshInbox();
+    } else {
+      setPullDistance(0);
+    }
+  };
+
+  const onThreadListTouchStart = (event: ReactTouchEvent<HTMLElement>) => {
+    beginPull(event.touches[0]?.clientY ?? 0, event.currentTarget.scrollTop);
+  };
+
+  const onThreadListTouchMove = (event: ReactTouchEvent<HTMLElement>) => {
+    movePull(event.touches[0]?.clientY ?? 0, event.currentTarget.scrollTop);
+  };
+
   const customLabels = useMemo(
     () =>
       labels
@@ -1917,6 +2215,7 @@ export function App() {
       data-mobile={isMobile ? "true" : "false"}
       data-mobile-surface={mobileSurface}
       data-mobile-nav={mobileNavOpen ? "open" : "closed"}
+      data-settings-open={settingsOpen ? "true" : "false"}
     >
       <McpApprovalBanner
         pending={mcpPending}
@@ -2200,11 +2499,18 @@ export function App() {
           aria-label="Thread list"
           tabIndex={-1}
           ref={threadListRef}
-          onScroll={(event) => setListScrollTop(event.currentTarget.scrollTop)}
+          onScroll={onThreadListScroll}
+          onTouchStart={onThreadListTouchStart}
+          onTouchMove={onThreadListTouchMove}
+          onTouchEnd={endPull}
+          onTouchCancel={endPull}
           data-fullscreen={fullscreenList ? "true" : "false"}
+          data-header-hidden={listHeaderHidden ? "true" : "false"}
         >
           {!(layout === "fullscreen" && openedId) && (
-            <div className="thread-list-head">
+            <div
+              className={`thread-list-head${listHeaderHidden ? " is-hidden" : ""}`}
+            >
               {isMobile ? (
                 <div className="mobile-list-title">
                   <strong>{folderTitle}</strong>
@@ -2222,6 +2528,8 @@ export function App() {
                   ref={searchInputRef}
                   className="field-input"
                   type="search"
+                  inputMode="search"
+                  enterKeyHint="search"
                   placeholder={
                     isMobile
                       ? "Search mail"
@@ -2234,6 +2542,22 @@ export function App() {
               </label>
             </div>
           )}
+          {isMobile ? (
+            <div
+              className={`pull-refresh${refreshing || pullDistance > 8 ? " is-visible" : ""}${refreshing ? " is-refreshing" : ""}`}
+              aria-live="polite"
+              style={{ height: refreshing ? 44 : pullDistance }}
+            >
+              <Icons.refresh />
+              <span>
+                {refreshing
+                  ? "Refreshing…"
+                  : pullDistance >= 64
+                    ? "Release to refresh"
+                    : "Pull to refresh"}
+              </span>
+            </div>
+          ) : null}
           {bulkSelection.size > 0 && (
             <div className="bulk-toolbar" aria-label="Bulk actions">
               <span className="bulk-toolbar-count">
@@ -2267,8 +2591,11 @@ export function App() {
           )}
           <div aria-hidden style={{ height: virtualStart * threadRowHeight }} />
           {virtualThreads.map((t) => {
-            const name =
-              t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown";
+            const name = decodeHtmlEntities(
+              t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown",
+            );
+            const subject = decodeHtmlEntities(t.subject);
+            const snippet = decodeHtmlEntities(t.snippet);
             return (
               <div
                 className={`thread-shell${bulkSelecting ? " is-selecting" : ""}`}
@@ -2277,7 +2604,7 @@ export function App() {
                 <label className="bulk-select" aria-hidden={!bulkSelecting}>
                   <input
                     type="checkbox"
-                    aria-label={`Select ${t.subject}`}
+                    aria-label={`Select ${subject}`}
                     checked={bulkSelection.has(t.id)}
                     tabIndex={bulkSelecting ? 0 : -1}
                     disabled={!bulkSelecting}
@@ -2295,46 +2622,52 @@ export function App() {
                     }
                   />
                 </label>
-                <button
-                  type="button"
-                  className={`thread ${selectedId === t.id ? "selected" : ""} ${
-                    t.unreadCount > 0 ? "unread" : ""
-                  }`}
-                  aria-current={selectedId === t.id ? "true" : undefined}
-                  title={`Open ${t.subject} · Enter`}
-                  onClick={(event) => {
-                    if (event.shiftKey) {
-                      event.preventDefault();
-                      applyBulkRangeSelect(t.id);
-                      setSelectedId(t.id);
-                      return;
-                    }
-                    setSelectedId(t.id);
-                    setOpenedId(t.id);
-                  }}
+                <SwipeableThreadRow
+                  enabled={isMobile && !bulkSelecting}
+                  settings={settings.swipeActions}
+                  onAction={(action) => applyThreadSwipeAction(t, action)}
                 >
-                  <div className="thread-row">
-                    <div className="thread-main">
-                      <div className="thread-top">
-                        <span className="thread-from">
-                          {name}
-                          <span className="provider-pill">{t.provider}</span>
-                        </span>
-                        <span className="thread-meta">
-                          {new Date(t.lastMessageAt).toLocaleDateString(
-                            undefined,
-                            {
-                              month: "short",
-                              day: "numeric",
-                            },
-                          )}
-                        </span>
+                  <button
+                    type="button"
+                    className={`thread ${selectedId === t.id ? "selected" : ""} ${
+                      t.unreadCount > 0 ? "unread" : ""
+                    }`}
+                    aria-current={selectedId === t.id ? "true" : undefined}
+                    title={`Open ${subject} · Enter`}
+                    onClick={(event) => {
+                      if (event.shiftKey) {
+                        event.preventDefault();
+                        applyBulkRangeSelect(t.id);
+                        setSelectedId(t.id);
+                        return;
+                      }
+                      setSelectedId(t.id);
+                      setOpenedId(t.id);
+                    }}
+                  >
+                    <div className="thread-row">
+                      <div className="thread-main">
+                        <div className="thread-top">
+                          <span className="thread-from">
+                            {name}
+                            <span className="provider-pill">{t.provider}</span>
+                          </span>
+                          <span className="thread-meta">
+                            {new Date(t.lastMessageAt).toLocaleDateString(
+                              undefined,
+                              {
+                                month: "short",
+                                day: "numeric",
+                              },
+                            )}
+                          </span>
+                        </div>
+                        <div className="thread-subject">{subject}</div>
+                        <div className="thread-snippet">{snippet}</div>
                       </div>
-                      <div className="thread-subject">{t.subject}</div>
-                      <div className="thread-snippet">{t.snippet}</div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                </SwipeableThreadRow>
               </div>
             );
           })}
@@ -2473,7 +2806,8 @@ export function App() {
                     defaultExpanded={index === threadMessages.length - 1}
                     developerMode={settings.developerMode}
                     theme={resolvedTheme}
-                    loadRemoteImages={settings.loadRemoteImages}
+                    loadRemoteImages={settings.remoteImagePolicy === "allow"}
+                    askRemoteImages={settings.remoteImagePolicy === "ask"}
                     onDownloadAttachment={async (source, attachment) => {
                       const account = runtime.accounts.find(
                         (item) => item.accountId === source.accountId,
@@ -2529,11 +2863,11 @@ export function App() {
           <button
             type="button"
             className={mobileNavOpen ? "is-active" : undefined}
+            aria-label="Folders"
             aria-expanded={mobileNavOpen}
             onClick={() => setMobileNavOpen((open) => !open)}
           >
             <Icons.menu />
-            <span>Folders</span>
           </button>
           <button
             type="button"
@@ -2542,6 +2876,7 @@ export function App() {
                 ? "is-active mobile-nav-badge"
                 : "mobile-nav-badge"
             }
+            aria-label="Inbox"
             aria-current={
               mainView === "mail" && activeLabel === "INBOX" && !openedId
                 ? "page"
@@ -2563,7 +2898,6 @@ export function App() {
             }}
           >
             <Icons.inbox />
-            <span>Inbox</span>
           </button>
           <button
             type="button"
@@ -2577,26 +2911,27 @@ export function App() {
             }}
           >
             <Icons.compose />
-            <span>Compose</span>
           </button>
           <button
             type="button"
+            aria-label="Search"
             onClick={() => {
               setMobileNavOpen(false);
+              setSettingsOpen(false);
               if (openedId) setOpenedId(null);
               setMainView("mail");
-              requestAnimationFrame(() => {
-                searchInputRef.current?.focus();
-                setInputMode("insert");
-              });
+              setListHeaderHidden(false);
+              setInputMode("insert");
+              // Focus in the same turn as the tap so iOS/Android show the keyboard.
+              searchInputRef.current?.focus();
             }}
           >
             <Icons.search />
-            <span>Search</span>
           </button>
           <button
             type="button"
             className={settingsOpen ? "is-active" : undefined}
+            aria-label="Settings"
             aria-current={settingsOpen ? "page" : undefined}
             onClick={() => {
               setMobileNavOpen(false);
@@ -2604,7 +2939,6 @@ export function App() {
             }}
           >
             <Icons.settings />
-            <span>Settings</span>
           </button>
         </nav>
       ) : null}
@@ -2768,6 +3102,7 @@ export function App() {
           gmailConnecting={gmailConnecting}
           microsoftConnecting={microsoftConnecting}
           connectError={gmailConnectError}
+          isMobile={isMobile}
           accounts={runtime.accounts.map((account) => ({
             accountId: account.accountId,
             email: account.email,

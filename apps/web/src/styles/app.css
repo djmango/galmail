@@ -1070,6 +1070,7 @@ select:focus-visible {
 
 
 .thread-meta {
+  flex: none;
   color: var(--muted);
   font: 0.72rem var(--mono);
 }
@@ -1089,8 +1090,18 @@ select:focus-visible {
   box-sizing: border-box;
 }
 
-.thread:hover {
-  border-color: var(--line);
+@media (hover: hover) and (pointer: fine) {
+  .thread:hover {
+    border-color: var(--line);
+    background: var(--selection-bg);
+  }
+
+  .thread.unread:hover {
+    border-left-color: var(--accent);
+  }
+}
+
+.thread:active {
   background: var(--selection-bg);
 }
 
@@ -1106,10 +1117,6 @@ select:focus-visible {
   color: var(--ink);
 }
 
-.thread.unread:hover {
-  border-left-color: var(--accent);
-}
-
 .thread.selected.unread {
   border-left-color: var(--focus);
 }
@@ -1120,6 +1127,7 @@ select:focus-visible {
 }
 .thread-main {
   min-width: 0;
+  overflow: hidden;
 }
 
 .thread-top {
@@ -1128,18 +1136,26 @@ select:focus-visible {
   justify-content: space-between;
   gap: 0.5rem;
   margin-bottom: 0.18rem;
+  min-width: 0;
 }
 
 .thread-from {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-strong);
   font-size: 0.88rem;
   font-weight: 500;
-  color: var(--muted-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .thread-subject {
   margin-bottom: 0.18rem;
+  overflow: hidden;
+  color: var(--muted);
   font-size: 0.86rem;
   font-weight: 400;
-  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .thread.unread .thread-from {
   font-weight: 700;
@@ -2131,6 +2147,161 @@ select:focus-visible {
   margin-top: 0.75rem;
 }
 
+.account-row {
+  align-items: center;
+}
+
+.account-row .account-disconnect {
+  flex: none;
+  margin-left: auto;
+}
+
+.account-connect-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.account-connect-grid .account-connect-tile,
+.account-connect-grid .ui-button {
+  width: 100%;
+  min-height: 2.75rem;
+  justify-content: center;
+}
+
+.settings-select-wrap {
+  display: block;
+  width: 100%;
+}
+
+.settings-select {
+  width: 100%;
+  min-height: 2.4rem;
+}
+
+.remote-image-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+}
+
+.thread-shell .swipe-row {
+  width: 100%;
+  min-width: 0;
+}
+
+.swipe-row {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.swipe-row-content {
+  position: relative;
+  z-index: 1;
+  background: var(--bg1);
+  will-change: transform;
+}
+
+.swipe-row.is-dragging .swipe-row-content {
+  background: var(--bg1);
+}
+
+.swipe-reveal {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 4.5rem;
+  padding: 0 0.85rem;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.swipe-reveal-right {
+  inset: 0 0 0 auto;
+  justify-content: flex-end;
+}
+
+.swipe-reveal.tone-archive {
+  background: #3d7eff;
+}
+
+.swipe-reveal.tone-danger {
+  background: #c23b3b;
+}
+
+.swipe-reveal.tone-star {
+  background: #d4a017;
+}
+
+.swipe-reveal.tone-neutral {
+  background: #667085;
+}
+
+.swipe-reveal[data-far="true"] {
+  filter: saturate(1.15) brightness(0.95);
+}
+
+.swipe-reveal-icon {
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.swipe-reveal-icon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.pull-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.pull-refresh.is-visible {
+  opacity: 1;
+}
+
+.pull-refresh.is-refreshing svg {
+  animation: pull-spin 0.8s linear infinite;
+}
+
+.pull-refresh svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@keyframes pull-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .settings-segment {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2752,7 +2923,8 @@ select:focus-visible {
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  --mobile-nav-h: 3.5rem;
+  /* Icons-only nav; home-indicator inset is applied as padding, not extra bar height. */
+  --mobile-nav-h: 2.5rem;
   --mobile-chrome: calc(var(--mobile-nav-h) + var(--safe-bottom));
   height: 100dvh;
   max-height: 100dvh;
@@ -2861,10 +3033,21 @@ select:focus-visible {
 }
 
 .app[data-mobile="true"][data-mobile-surface="list"] .reading-pane,
-.app[data-mobile="true"][data-mobile-surface="thread"] .thread-list,
-.app[data-mobile="true"][data-mobile-surface="calendar"] .thread-list,
 .app[data-mobile="true"][data-mobile-surface="calendar"] .reading-pane {
   display: none;
+}
+
+/* Keep the list (and search field) mounted while reading so Search can open the keyboard. */
+.app[data-mobile="true"][data-mobile-surface="thread"] .thread-list,
+.app[data-mobile="true"][data-mobile-surface="calendar"] .thread-list {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app[data-mobile="true"] .thread-list.panel,
@@ -2879,7 +3062,7 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   padding:
-    calc(0.45rem + var(--safe-top))
+    0
     calc(0.45rem + var(--safe-right))
     0.35rem
     calc(0.2rem + var(--safe-left));
@@ -2888,21 +3071,29 @@ select:focus-visible {
   overscroll-behavior: contain;
 }
 
-.app[data-mobile="true"][data-mobile-surface="thread"] .thread-list.panel {
-  display: none;
-}
-
 .app[data-mobile="true"] .thread-list-head {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
   margin: 0 0 0.35rem;
-  padding: 0.15rem 0.45rem 0.55rem;
-  background: color-mix(in srgb, var(--bg0) 94%, transparent);
+  padding:
+    calc(0.35rem + var(--safe-top))
+    0.45rem
+    0.55rem;
+  background: var(--bg0);
   backdrop-filter: blur(8px);
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+.app[data-mobile="true"] .thread-list-head.is-hidden {
+  transform: translate3d(0, calc(-100% + var(--safe-top)), 0);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app[data-mobile="true"] .mobile-list-title {
@@ -3053,15 +3244,15 @@ select:focus-visible {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 28;
+  z-index: 45;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: stretch;
   min-height: var(--mobile-nav-h);
   padding:
-    0.2rem
+    0.1rem
     calc(0.25rem + var(--safe-right))
-    calc(0.2rem + var(--safe-bottom))
+    calc(0.1rem + var(--safe-bottom))
     calc(0.25rem + var(--safe-left));
   border-top: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg1) 94%, transparent);
@@ -3073,24 +3264,21 @@ select:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.15rem;
-  min-height: 44px;
+  gap: 0;
+  min-height: 2.5rem;
   margin: 0;
-  padding: 0.2rem 0.15rem;
+  padding: 0.1rem;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
   cursor: pointer;
 }
 
 .app[data-mobile="true"] .mobile-bottom-nav button svg {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
 .app[data-mobile="true"] .mobile-bottom-nav button[aria-current="page"],
@@ -3154,16 +3342,21 @@ select:focus-visible {
 }
 
 .app[data-mobile="true"] .settings-modal {
+  z-index: 40;
   padding: 0;
   align-items: stretch;
+  /* Keep the primary bottom nav visible while settings is open. */
+  padding-bottom: var(--mobile-chrome);
 }
 
 .app[data-mobile="true"] .settings-card {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  max-height: calc(100dvh - var(--mobile-chrome));
   margin: 0;
   padding-top: var(--safe-top);
-  padding-bottom: var(--safe-bottom);
+  padding-bottom: 0;
 }
 
 .app[data-mobile="true"] .settings-body {
@@ -3172,6 +3365,17 @@ select:focus-visible {
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: 1rem;
+}
+
+.app[data-mobile="true"] .account-connect-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 420px) {
+  .app[data-mobile="true"] .account-connect-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .app[data-mobile="true"] .cmdk-overlay {
@@ -3210,7 +3414,18 @@ select:focus-visible {
 }
 
 .app[data-mobile="true"] .galmail-toaster[data-sonner-toaster] {
+  z-index: 50 !important;
   bottom: calc(var(--mobile-chrome) + 0.5rem) !important;
+}
+
+/* Mobile list: selection is for keyboard triage; taps should not leave a sticky highlight. */
+.app[data-mobile="true"][data-mobile-surface="list"] .thread.selected {
+  border-color: transparent;
+  background: transparent;
+}
+
+.app[data-mobile="true"][data-mobile-surface="list"] .thread.selected.unread {
+  border-left-color: var(--accent);
 }
 
 .app[data-mobile="true"]:has(> .sign-in) {

@@ -10,11 +10,22 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:1420",
     trace: "retain-on-failure",
+    video: "on",
+    screenshot: "only-on-failure",
   },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      testIgnore: /mobile-gestures\.e2e\.ts/,
+    },
+    {
+      name: "mobile-chrome",
+      use: {
+        ...devices["Pixel 7"],
+        hasTouch: true,
+      },
+      testMatch: /mobile-gestures\.e2e\.ts/,
     },
   ],
   webServer: {

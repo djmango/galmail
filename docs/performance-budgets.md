@@ -12,7 +12,7 @@
 | Network work on launch           | None blocking  | Sync starts after hydrate                   |
 | Main JavaScript bundle           | < 150 KiB gzip | Production Vite output                      |
 | Main CSS bundle                  | < 20 KiB gzip  | Production Vite output                      |
-| Total web distribution           | < 600 KiB raw  | All production web assets                   |
+| Total web distribution           | < 650 KiB raw  | All production web assets                   |
 
 ## Fixture mailboxes
 
