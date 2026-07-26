@@ -151,7 +151,11 @@ export function SettingsPanel(props: {
                 </div>
               ))}
             </div>
-            <div className="account-connect-grid" role="group" aria-label="Add accounts">
+            <div
+              className="account-connect-grid"
+              role="group"
+              aria-label="Add accounts"
+            >
               {props.canConnectGmail && (
                 <ActionButton
                   className="account-connect-tile"
@@ -317,9 +321,7 @@ export function SettingsPanel(props: {
                       key={option.id}
                       type="button"
                       className="settings-segment-option"
-                      aria-pressed={
-                        props.state.remoteImagePolicy === option.id
-                      }
+                      aria-pressed={props.state.remoteImagePolicy === option.id}
                       onClick={() =>
                         props.onChange({
                           remoteImagePolicy: option.id,
@@ -362,8 +364,8 @@ export function SettingsPanel(props: {
                           props.onChange({
                             swipeActions: {
                               ...props.state.swipeActions,
-                              [slot]: event.target.value as
-                                SettingsState["swipeActions"][SwipeSlot],
+                              [slot]: event.target
+                                .value as SettingsState["swipeActions"][SwipeSlot],
                             },
                           })
                         }

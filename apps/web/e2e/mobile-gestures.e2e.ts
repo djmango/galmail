@@ -170,7 +170,10 @@ test.describe("mobile gestures and chrome", () => {
   test("settings keeps bottom nav and shows swipe + allow-all", async ({
     page,
   }) => {
-    await page.getByRole("navigation", { name: "Primary" }).getByLabel("Settings").click();
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByLabel("Settings")
+      .click();
     const dialog = page.getByRole("dialog", { name: "Settings" });
     await expect(dialog).toBeVisible();
     await expect(
@@ -178,7 +181,16 @@ test.describe("mobile gestures and chrome", () => {
     ).toBeVisible();
     await expect(dialog.getByText("Inbox layout")).toHaveCount(0);
     await expect(dialog.getByText("Remote images")).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Allow all" })).toBeVisible();
+    await expect(
+      dialog
+        .getByLabel("Remote images")
+        .getByRole("button", { name: "Allow all" }),
+    ).toBeVisible();
+    await expect(
+      dialog
+        .getByLabel("Approval mode")
+        .getByRole("button", { name: "Allow all" }),
+    ).toBeVisible();
     await expect(dialog.getByText("Swipe actions")).toBeVisible();
     await expect(dialog.getByText("Link device")).toBeVisible();
     await expect(dialog.getByText(" · live")).toHaveCount(0);
