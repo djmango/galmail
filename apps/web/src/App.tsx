@@ -476,6 +476,20 @@ export function App() {
   const resolvedTheme: ResolvedTheme =
     settings.theme === "system" ? systemTheme : settings.theme;
 
+  // Paint theme tokens on <html> so body/#root gaps (home indicator strip)
+  // match the shell instead of always using the dark :root fallback.
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.style.colorScheme = resolvedTheme;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute(
+        "content",
+        resolvedTheme === "light" ? "#f4ede0" : "#08090a",
+      );
+    }
+  }, [resolvedTheme]);
+
   useEffect(() => {
     if (bulkSelection.size === 0) bulkAnchorIdRef.current = null;
   }, [bulkSelection]);

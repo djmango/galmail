@@ -9,6 +9,9 @@ body,
   margin: 0;
   overflow: hidden;
   overscroll-behavior: none;
+  /* Theme tokens (and cold-start fallback) so gaps under the shell never flash
+     hard-coded near-black on light themes / iOS home-indicator strips. */
+  background: var(--bg0, #08090a);
 }
 
 .safe-mail-body {
@@ -358,7 +361,7 @@ body,
 }
 
 body {
-  background: #08090a;
+  background: var(--bg0, #08090a);
   color: var(--ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
@@ -2222,17 +2225,14 @@ select:focus-visible {
   user-select: none;
 }
 
+/* Drag suppresses transition via inline style; never use !important so snap-back
+   can set an easing transition while clearing is-dragging synchronously. */
 .swipe-row.is-dragging .swipe-row-content {
   background: var(--bg1);
-  transition: none !important;
 }
 
 .swipe-row.is-exiting {
   pointer-events: none;
-}
-
-.swipe-row.is-exiting .swipe-reveal {
-  transition: none;
 }
 
 .swipe-reveal {
@@ -2248,6 +2248,8 @@ select:focus-visible {
   font-size: 0.78rem;
   font-weight: 700;
   pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
 }
 
 .swipe-reveal-right {
@@ -2273,6 +2275,11 @@ select:focus-visible {
 
 .swipe-reveal[data-far="true"] {
   filter: saturate(1.15) brightness(0.95);
+}
+
+.swipe-row.is-exiting .swipe-reveal {
+  /* Keep the active reveal painted while the row collapses. */
+  filter: none;
 }
 
 .swipe-reveal-icon {
@@ -2940,15 +2947,23 @@ select:focus-visible {
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  /* Icons-only nav; home-indicator inset is applied as padding, not extra bar height. */
+  /* Icons-only nav + home-indicator. Include the nav's vertical padding so the
+     shell reserve matches the real fixed chrome height. */
   --mobile-nav-h: 2.5rem;
-  --mobile-chrome: calc(var(--mobile-nav-h) + var(--safe-bottom));
-  height: 100dvh;
-  max-height: 100dvh;
+  --mobile-nav-pad-y: 0.2rem;
+  --mobile-chrome: calc(
+    var(--mobile-nav-h) + var(--mobile-nav-pad-y) + var(--safe-bottom)
+  );
+  /* Prefer the webview's 100% height over 100dvh - dvh often undershoots on iOS
+     WKWebView and leaves a body-colored (or black) strip under the shell. */
+  height: 100%;
+  min-height: 100%;
+  max-height: none;
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  background: var(--bg0);
 }
 
 .app[data-mobile="true"] .shell {
@@ -3313,8 +3328,10 @@ select:focus-visible {
     calc(0.1rem + var(--safe-bottom))
     calc(0.25rem + var(--safe-left));
   border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg1) 94%, transparent);
-  backdrop-filter: blur(14px);
+  /* Opaque through the home-indicator safe area so the WKWebView underlay
+     never shows as a black bar. */
+  background: var(--bg1);
+  backdrop-filter: none;
 }
 
 .app[data-mobile="true"] .mobile-bottom-nav button {
@@ -3411,7 +3428,7 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: calc(100dvh - var(--mobile-chrome));
+  max-height: calc(100% - var(--mobile-chrome));
   margin: 0;
   padding-top: var(--safe-top);
   padding-bottom: 0;

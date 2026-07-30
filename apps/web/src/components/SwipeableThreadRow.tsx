@@ -46,7 +46,8 @@ function thresholdBand(offset: number): "none" | "near" | "far" {
 }
 
 const EXIT_MS = 240;
-const SNAP_MS = 200;
+const SNAP_MS = 220;
+const SNAP_EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 
 export function SwipeableThreadRow(props: {
   enabled: boolean;
@@ -54,8 +55,9 @@ export function SwipeableThreadRow(props: {
   onAction: (action: SwipeMailAction) => void;
   children: ReactNode;
 }) {
-  const [dragging, setDragging] = useState(false);
   const [exiting, setExiting] = useState(false);
+  // Preview labels are React state, but opacity / transform stay imperative so
+  // re-renders never reset mid-gesture styles back to the resting frame.
   const [revealAction, setRevealAction] = useState<SwipeMailAction | null>(
     null,
   );
@@ -72,6 +74,7 @@ export function SwipeableThreadRow(props: {
   const axis = useRef<"undecided" | "x" | "y">("undecided");
   const pointerId = useRef<number | null>(null);
   const offsetRef = useRef(0);
+  const rawDxRef = useRef(0);
   const bandRef = useRef<"none" | "near" | "far">("none");
   const actionRef = useRef<SwipeMailAction | null>(null);
   const sideRef = useRef<"left" | "right">("left");
@@ -79,16 +82,24 @@ export function SwipeableThreadRow(props: {
   const rafRef = useRef<number | null>(null);
   const pendingDx = useRef(0);
   const lockedRef = useRef(false);
+  const snapTimerRef = useRef<number | null>(null);
+  const exitTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      if (snapTimerRef.current != null) window.clearTimeout(snapTimerRef.current);
+      if (exitTimerRef.current != null) window.clearTimeout(exitTimerRef.current);
     };
   }, []);
 
   if (!props.enabled) {
     return <>{props.children}</>;
   }
+
+  const setDraggingClass = (on: boolean) => {
+    rowRef.current?.classList.toggle("is-dragging", on);
+  };
 
   const paintOffset = (next: number, withTransition: string | null) => {
     offsetRef.current = next;
@@ -103,21 +114,27 @@ export function SwipeableThreadRow(props: {
     const side: "left" | "right" = next >= 0 ? "left" : "right";
     const leftEl = leftRevealRef.current;
     const rightEl = rightRevealRef.current;
+    const revealTransition =
+      withTransition != null
+        ? `opacity ${SNAP_MS}ms ${SNAP_EASE}`
+        : "none";
     if (leftEl) {
+      leftEl.style.transition = revealTransition;
       leftEl.style.opacity =
         side === "left" && next > 0 ? String(Math.max(0.35, progress)) : "0";
       leftEl.dataset.far =
         side === "left" && abs >= SWIPE_FAR_PX ? "true" : "false";
     }
     if (rightEl) {
+      rightEl.style.transition = revealTransition;
       rightEl.style.opacity =
         side === "right" && next < 0 ? String(Math.max(0.35, progress)) : "0";
       rightEl.dataset.far =
         side === "right" && abs >= SWIPE_FAR_PX ? "true" : "false";
     }
 
-    const action = resolveSwipeAction(next, props.settings);
-    const far = abs >= SWIPE_FAR_PX;
+    const action = resolveSwipeAction(rawDxRef.current || next, props.settings);
+    const far = Math.abs(rawDxRef.current || next) >= SWIPE_FAR_PX;
     if (action !== actionRef.current) {
       actionRef.current = action;
       setRevealAction(action && action !== "none" ? action : null);
@@ -131,7 +148,7 @@ export function SwipeableThreadRow(props: {
       setAtFar(far);
     }
 
-    const band = thresholdBand(next);
+    const band = thresholdBand(rawDxRef.current || next);
     if (band !== bandRef.current) {
       bandRef.current = band;
       if (band === "near") haptic("selection");
@@ -142,11 +159,16 @@ export function SwipeableThreadRow(props: {
   const flushMove = () => {
     rafRef.current = null;
     if (lockedRef.current || axis.current !== "x") return;
+    rawDxRef.current = pendingDx.current;
     paintOffset(resistSwipeOffset(pendingDx.current), null);
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || lockedRef.current || exiting) return;
+    if (snapTimerRef.current != null) {
+      window.clearTimeout(snapTimerRef.current);
+      snapTimerRef.current = null;
+    }
     pointerId.current = event.pointerId;
     startX.current = event.clientX;
     startY.current = event.clientY;
@@ -154,8 +176,11 @@ export function SwipeableThreadRow(props: {
     bandRef.current = "none";
     actionRef.current = null;
     pendingDx.current = 0;
-    setDragging(true);
+    rawDxRef.current = 0;
+    setDraggingClass(true);
     setRevealAction(null);
+    const content = contentRef.current;
+    if (content) content.style.transition = "none";
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -166,7 +191,7 @@ export function SwipeableThreadRow(props: {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
       axis.current = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
       if (axis.current === "y") {
-        setDragging(false);
+        setDraggingClass(false);
         return;
       }
       try {
@@ -191,15 +216,33 @@ export function SwipeableThreadRow(props: {
     props.onAction(action);
   };
 
+  const clearInlineMotion = () => {
+    const content = contentRef.current;
+    if (content) {
+      content.style.transition = "";
+      content.style.transform = "";
+    }
+    for (const el of [leftRevealRef.current, rightRevealRef.current]) {
+      if (!el) continue;
+      el.style.transition = "";
+      el.style.opacity = "0";
+      el.dataset.far = "false";
+    }
+  };
+
   const snapBack = (then?: () => void) => {
-    paintOffset(0, `transform ${SNAP_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`);
-    window.setTimeout(() => {
+    // Drop is-dragging synchronously so CSS cannot kill the snap transition.
+    setDraggingClass(false);
+    paintOffset(0, `transform ${SNAP_MS}ms ${SNAP_EASE}`);
+    snapTimerRef.current = window.setTimeout(() => {
+      snapTimerRef.current = null;
+      clearInlineMotion();
       then?.();
       lockedRef.current = false;
-      setDragging(false);
       setRevealAction(null);
       actionRef.current = null;
       bandRef.current = "none";
+      rawDxRef.current = 0;
     }, SNAP_MS);
   };
 
@@ -211,23 +254,30 @@ export function SwipeableThreadRow(props: {
       return;
     }
     lockedRef.current = true;
+    setDraggingClass(false);
     setExiting(true);
-    setDragging(false);
     const width = row.offsetWidth || window.innerWidth;
-    const dir = offsetRef.current >= 0 ? 1 : -1;
+    const dir = (rawDxRef.current || offsetRef.current) >= 0 ? 1 : -1;
     const startHeight = row.offsetHeight;
     row.style.height = `${startHeight}px`;
     row.style.overflow = "hidden";
-    row.style.transition = `height ${EXIT_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${EXIT_MS}ms ease`;
-    content.style.transition = `transform ${EXIT_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`;
+    row.style.transition = `height ${EXIT_MS}ms ${SNAP_EASE}, opacity ${EXIT_MS}ms ease`;
+    content.style.transition = `transform ${EXIT_MS}ms ${SNAP_EASE}`;
     content.style.transform = `translate3d(${dir * (width + 40)}px, 0, 0)`;
     const reveal = dir > 0 ? leftRevealRef.current : rightRevealRef.current;
-    if (reveal) reveal.style.opacity = "1";
+    if (reveal) {
+      reveal.style.transition = "none";
+      reveal.style.opacity = "1";
+    }
+    // Keep the opposite reveal hidden without React resetting styles.
+    const other = dir > 0 ? rightRevealRef.current : leftRevealRef.current;
+    if (other) other.style.opacity = "0";
     requestAnimationFrame(() => {
       row.style.height = "0px";
       row.style.opacity = "0";
     });
-    window.setTimeout(() => {
+    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = null;
       completeAction(action);
     }, EXIT_MS);
   };
@@ -240,14 +290,16 @@ export function SwipeableThreadRow(props: {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       if (axis.current === "x") {
+        rawDxRef.current = pendingDx.current;
         paintOffset(resistSwipeOffset(pendingDx.current), null);
       }
     }
     if (lockedRef.current || exiting) return;
 
+    // Resolve from raw finger travel so rubber-banding is visual-only.
     const action =
       axis.current === "x"
-        ? resolveSwipeAction(offsetRef.current, props.settings)
+        ? resolveSwipeAction(rawDxRef.current, props.settings)
         : null;
     axis.current = "undecided";
 
@@ -278,7 +330,7 @@ export function SwipeableThreadRow(props: {
   return (
     <div
       ref={rowRef}
-      className={`swipe-row${dragging ? " is-dragging" : ""}${exiting ? " is-exiting" : ""}`}
+      className={`swipe-row${exiting ? " is-exiting" : ""}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finish}
@@ -290,8 +342,6 @@ export function SwipeableThreadRow(props: {
           revealSide === "left" && revealAction ? " is-active" : ""
         }`}
         aria-hidden
-        data-far={revealSide === "left" && atFar ? "true" : "false"}
-        style={{ opacity: 0 }}
       >
         <span className="swipe-reveal-icon">{actionIcon(leftPreview)}</span>
         <span className="swipe-reveal-label">
@@ -304,8 +354,6 @@ export function SwipeableThreadRow(props: {
           revealSide === "right" && revealAction ? " is-active" : ""
         }`}
         aria-hidden
-        data-far={revealSide === "right" && atFar ? "true" : "false"}
-        style={{ opacity: 0 }}
       >
         <span className="swipe-reveal-icon">{actionIcon(rightPreview)}</span>
         <span className="swipe-reveal-label">
