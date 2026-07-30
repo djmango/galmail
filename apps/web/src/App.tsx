@@ -81,6 +81,7 @@ import {
   canBeginSwipeBack,
   shouldCompleteSwipeBack,
 } from "./lib/swipe-back";
+import { resolveCidImageMap } from "./lib/cid-images";
 import {
   loadPersistedSwipeActions,
   persistSwipeActions,
@@ -197,17 +198,36 @@ function MessageCard(props: {
   theme: ResolvedTheme;
   loadRemoteImages: boolean;
   askRemoteImages?: boolean;
+  /** Flatter Superhuman-style card chrome on mobile. */
+  compact?: boolean;
+  resolveCidMap?: (
+    message: MailMessage,
+  ) => Promise<Record<string, string>>;
   onDownloadAttachment: (
     message: MailMessage,
     attachment: NonNullable<MailMessage["attachments"]>[number],
   ) => Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(props.defaultExpanded);
+  const [cidMap, setCidMap] = useState<Record<string, string>>({});
   const detailsId = `message-details-${props.message.id}`;
   const sender = props.message.from.name ?? props.message.from.email;
 
+  useEffect(() => {
+    if (!expanded || !props.resolveCidMap) return;
+    let cancelled = false;
+    void props.resolveCidMap(props.message).then((map) => {
+      if (!cancelled) setCidMap(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, props.message, props.resolveCidMap]);
+
   return (
-    <article className="message-card">
+    <article
+      className={`message-card${props.compact ? " is-compact" : ""}${expanded ? " is-expanded" : ""}`}
+    >
       <button
         type="button"
         className="message-summary"
@@ -217,7 +237,7 @@ function MessageCard(props: {
       >
         <span className="message-summary-main">
           <strong>{sender}</strong>
-          <span>{props.message.snippet}</span>
+          {!expanded && <span>{props.message.snippet}</span>}
         </span>
         <time dateTime={props.message.date}>
           {formatMessageDate(props.message.date)}
@@ -228,36 +248,66 @@ function MessageCard(props: {
       </button>
       {expanded && (
         <div className="message-content" id={detailsId}>
-          <dl className="participant-details">
-            <div>
-              <dt>From</dt>
-              <dd>{formatAddress(props.message.from)}</dd>
-            </div>
-            <div>
-              <dt>To</dt>
-              <dd>{props.message.to.map(formatAddress).join(", ")}</dd>
-            </div>
-            {props.message.cc && props.message.cc.length > 0 && (
+          {props.compact ? (
+            <details className="participant-details-fold">
+              <summary>Details</summary>
+              <dl className="participant-details">
+                <div>
+                  <dt>From</dt>
+                  <dd>{formatAddress(props.message.from)}</dd>
+                </div>
+                <div>
+                  <dt>To</dt>
+                  <dd>{props.message.to.map(formatAddress).join(", ")}</dd>
+                </div>
+                {props.message.cc && props.message.cc.length > 0 && (
+                  <div>
+                    <dt>Cc</dt>
+                    <dd>{props.message.cc.map(formatAddress).join(", ")}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>Date</dt>
+                  <dd>
+                    <time dateTime={props.message.date}>
+                      {formatMessageDate(props.message.date)}
+                    </time>
+                  </dd>
+                </div>
+              </dl>
+            </details>
+          ) : (
+            <dl className="participant-details">
               <div>
-                <dt>Cc</dt>
-                <dd>{props.message.cc.map(formatAddress).join(", ")}</dd>
+                <dt>From</dt>
+                <dd>{formatAddress(props.message.from)}</dd>
               </div>
-            )}
-            {props.message.bcc && props.message.bcc.length > 0 && (
               <div>
-                <dt>Bcc</dt>
-                <dd>{props.message.bcc.map(formatAddress).join(", ")}</dd>
+                <dt>To</dt>
+                <dd>{props.message.to.map(formatAddress).join(", ")}</dd>
               </div>
-            )}
-            <div>
-              <dt>Date</dt>
-              <dd>
-                <time dateTime={props.message.date}>
-                  {formatMessageDate(props.message.date)}
-                </time>
-              </dd>
-            </div>
-          </dl>
+              {props.message.cc && props.message.cc.length > 0 && (
+                <div>
+                  <dt>Cc</dt>
+                  <dd>{props.message.cc.map(formatAddress).join(", ")}</dd>
+                </div>
+              )}
+              {props.message.bcc && props.message.bcc.length > 0 && (
+                <div>
+                  <dt>Bcc</dt>
+                  <dd>{props.message.bcc.map(formatAddress).join(", ")}</dd>
+                </div>
+              )}
+              <div>
+                <dt>Date</dt>
+                <dd>
+                  <time dateTime={props.message.date}>
+                    {formatMessageDate(props.message.date)}
+                  </time>
+                </dd>
+              </div>
+            </dl>
+          )}
           <SafeMailBody
             html={props.message.bodyHtml}
             text={props.message.bodyText ?? props.message.snippet}
@@ -265,6 +315,7 @@ function MessageCard(props: {
             theme={props.theme}
             loadRemoteImages={props.loadRemoteImages}
             askRemoteImages={props.askRemoteImages}
+            cidMap={cidMap}
           />
           {props.message.attachments &&
             props.message.attachments.length > 0 && (
@@ -2963,112 +3014,147 @@ export function App() {
         >
           {message ? (
             <>
-              {showReadingBack && (
-                <div className={isMobile ? "mobile-back-row" : undefined}>
+              {isMobile ? (
+                <header className="reading-mobile-header">
                   <ActionButton
                     className="back-btn"
                     label="Back to inbox"
                     icon={<Icons.back />}
                     command="back"
+                    iconOnly
                     onClick={() => closeReading()}
                   />
-                </div>
-              )}
-              <div className="reading-toolbar">
-                <ActionButton
-                  label="Archive"
-                  icon={<Icons.archive />}
-                  command="archive"
-                  onClick={() => runtime.commands.dispatch("archive")}
-                />
-                <ActionButton
-                  label={message.unread ? "Mark read" : "Mark unread"}
-                  icon={
-                    message.unread ? <Icons.mailOpen /> : <Icons.mail />
-                  }
-                  command="mark_read_toggle"
-                  onClick={() => runtime.commands.dispatch("mark_read_toggle")}
-                />
-                <ActionButton
-                  label="Reply"
-                  icon={<Icons.reply />}
-                  command="reply"
-                  onClick={() => runtime.commands.dispatch("reply")}
-                />
-                <ActionButton
-                  label="Reply all"
-                  icon={<Icons.replyAll />}
-                  onClick={() =>
-                    openCompose({
-                      to: [
-                        message.from.email,
-                        ...message.to.map((address) => address.email),
-                      ].join(", "),
-                      cc: message.cc
-                        ?.map((address) => address.email)
-                        .join(", "),
-                      subject: message.subject.startsWith("Re:")
-                        ? message.subject
-                        : `Re: ${message.subject}`,
-                      body: "",
-                      inReplyTo: message.id,
-                      references: [...(message.references ?? []), message.id],
-                    })
-                  }
-                />
-                <ActionButton
-                  label="Forward"
-                  icon={<Icons.forward />}
-                  onClick={() =>
-                    openCompose({
-                      to: "",
-                      subject: message.subject.startsWith("Fwd:")
-                        ? message.subject
-                        : `Fwd: ${message.subject}`,
-                      body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
-                    })
-                  }
-                />
-                <ActionButton
-                  label={message.starred ? "Unstar" : "Star"}
-                  icon={<Icons.star />}
-                  onClick={() =>
-                    void mutateOpened(message.starred ? "unstar" : "star")
-                  }
-                />
-                <ActionButton
-                  label="Snooze until tomorrow"
-                  icon={<Icons.snooze />}
-                  command="snooze"
-                  onClick={() =>
-                    void mutateOpened("snooze", {
-                      until: new Date(Date.now() + 86_400_000).toISOString(),
-                    })
-                  }
-                />
-                <ActionButton
-                  label="Report spam"
-                  icon={<Icons.warning />}
-                  onClick={() => void mutateOpened("spam")}
-                />
-                {unsubscribeCapability &&
-                  unsubscribeButtonVisible(unsubscribeCapability) && (
-                    <ActionButton
-                      label="Unsubscribe"
-                      icon={<Icons.unsubscribe />}
-                      tooltip={unsubscribeTooltip(unsubscribeCapability)}
-                      onClick={() => void handleUnsubscribe()}
-                    />
+                  <div className="reading-mobile-heading">
+                    <h1 className="reading-mobile-subject">
+                      {message.subject}
+                    </h1>
+                    <p className="reading-mobile-meta">
+                      {message.from.name ?? message.from.email}
+                      {threadMessages.length > 1
+                        ? ` · ${threadMessages.length} messages`
+                        : ""}
+                    </p>
+                  </div>
+                </header>
+              ) : (
+                <>
+                  {showReadingBack && (
+                    <div>
+                      <ActionButton
+                        className="back-btn"
+                        label="Back to inbox"
+                        icon={<Icons.back />}
+                        command="back"
+                        onClick={() => closeReading()}
+                      />
+                    </div>
                   )}
-              </div>
-              <h1>{message.subject}</h1>
-              <div className="conversation-heading">
-                <span>
-                  {threadMessages.length}{" "}
-                  {threadMessages.length === 1 ? "message" : "messages"}
-                </span>
-                <span className="provider-pill">{message.provider}</span>
-              </div>
+                  <div className="reading-toolbar">
+                    <ActionButton
+                      label="Archive"
+                      icon={<Icons.archive />}
+                      command="archive"
+                      onClick={() => runtime.commands.dispatch("archive")}
+                    />
+                    <ActionButton
+                      label={message.unread ? "Mark read" : "Mark unread"}
+                      icon={
+                        message.unread ? <Icons.mailOpen /> : <Icons.mail />
+                      }
+                      command="mark_read_toggle"
+                      onClick={() =>
+                        runtime.commands.dispatch("mark_read_toggle")
+                      }
+                    />
+                    <ActionButton
+                      label="Reply"
+                      icon={<Icons.reply />}
+                      command="reply"
+                      onClick={() => runtime.commands.dispatch("reply")}
+                    />
+                    <ActionButton
+                      label="Reply all"
+                      icon={<Icons.replyAll />}
+                      onClick={() =>
+                        openCompose({
+                          to: [
+                            message.from.email,
+                            ...message.to.map((address) => address.email),
+                          ].join(", "),
+                          cc: message.cc
+                            ?.map((address) => address.email)
+                            .join(", "),
+                          subject: message.subject.startsWith("Re:")
+                            ? message.subject
+                            : `Re: ${message.subject}`,
+                          body: "",
+                          inReplyTo: message.id,
+                          references: [
+                            ...(message.references ?? []),
+                            message.id,
+                          ],
+                        })
+                      }
+                    />
+                    <ActionButton
+                      label="Forward"
+                      icon={<Icons.forward />}
+                      onClick={() =>
+                        openCompose({
+                          to: "",
+                          subject: message.subject.startsWith("Fwd:")
+                            ? message.subject
+                            : `Fwd: ${message.subject}`,
+                          body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
+                        })
+                      }
+                    />
+                    <ActionButton
+                      label={message.starred ? "Unstar" : "Star"}
+                      icon={<Icons.star />}
+                      onClick={() =>
+                        void mutateOpened(
+                          message.starred ? "unstar" : "star",
+                        )
+                      }
+                    />
+                    <ActionButton
+                      label="Snooze until tomorrow"
+                      icon={<Icons.snooze />}
+                      command="snooze"
+                      onClick={() =>
+                        void mutateOpened("snooze", {
+                          until: new Date(
+                            Date.now() + 86_400_000,
+                          ).toISOString(),
+                        })
+                      }
+                    />
+                    <ActionButton
+                      label="Report spam"
+                      icon={<Icons.warning />}
+                      onClick={() => void mutateOpened("spam")}
+                    />
+                    {unsubscribeCapability &&
+                      unsubscribeButtonVisible(unsubscribeCapability) && (
+                        <ActionButton
+                          label="Unsubscribe"
+                          icon={<Icons.unsubscribe />}
+                          tooltip={unsubscribeTooltip(unsubscribeCapability)}
+                          onClick={() => void handleUnsubscribe()}
+                        />
+                      )}
+                  </div>
+                  <h1>{message.subject}</h1>
+                  <div className="conversation-heading">
+                    <span>
+                      {threadMessages.length}{" "}
+                      {threadMessages.length === 1 ? "message" : "messages"}
+                    </span>
+                    <span className="provider-pill">{message.provider}</span>
+                  </div>
+                </>
+              )}
               <div className="conversation" aria-label="Conversation history">
                 {threadMessages.map((item, index) => (
                   <MessageCard
@@ -3077,11 +3163,24 @@ export function App() {
                     defaultExpanded={index === threadMessages.length - 1}
                     developerMode={settings.developerMode}
                     theme={resolvedTheme}
+                    compact={isMobile}
                     loadRemoteImages={settings.remoteImagePolicy === "allow"}
                     askRemoteImages={settings.remoteImagePolicy === "ask"}
+                    resolveCidMap={async (source) => {
+                      const account = runtime.accounts.find(
+                        (entry) => entry.accountId === source.accountId,
+                      );
+                      if (!account) return {};
+                      return resolveCidImageMap(source, (attachment) =>
+                        account.provider.fetchAttachment(
+                          source.accountId,
+                          attachment,
+                        ),
+                      );
+                    }}
                     onDownloadAttachment={async (source, attachment) => {
                       const account = runtime.accounts.find(
-                        (item) => item.accountId === source.accountId,
+                        (entry) => entry.accountId === source.accountId,
                       );
                       if (!account) return;
                       const stream = account.provider.fetchAttachment(
@@ -3110,6 +3209,95 @@ export function App() {
                   />
                 ))}
               </div>
+              {isMobile && (
+                <footer
+                  className="reading-action-bar"
+                  aria-label="Message actions"
+                >
+                  <ActionButton
+                    label="Archive"
+                    icon={<Icons.archive />}
+                    command="archive"
+                    iconOnly
+                    onClick={() => runtime.commands.dispatch("archive")}
+                  />
+                  <ActionButton
+                    label="Trash"
+                    icon={<Icons.trash />}
+                    iconOnly
+                    onClick={() => runtime.commands.dispatch("trash")}
+                  />
+                  <ActionButton
+                    label="Snooze until tomorrow"
+                    icon={<Icons.snooze />}
+                    command="snooze"
+                    iconOnly
+                    onClick={() =>
+                      void mutateOpened("snooze", {
+                        until: new Date(
+                          Date.now() + 86_400_000,
+                        ).toISOString(),
+                      })
+                    }
+                  />
+                  <ActionButton
+                    className="reading-action-primary"
+                    label="Reply"
+                    icon={<Icons.reply />}
+                    command="reply"
+                    iconOnly
+                    variant="primary"
+                    onClick={() => runtime.commands.dispatch("reply")}
+                  />
+                  <ActionButton
+                    label="Reply all"
+                    icon={<Icons.replyAll />}
+                    iconOnly
+                    onClick={() =>
+                      openCompose({
+                        to: [
+                          message.from.email,
+                          ...message.to.map((address) => address.email),
+                        ].join(", "),
+                        cc: message.cc
+                          ?.map((address) => address.email)
+                          .join(", "),
+                        subject: message.subject.startsWith("Re:")
+                          ? message.subject
+                          : `Re: ${message.subject}`,
+                        body: "",
+                        inReplyTo: message.id,
+                        references: [
+                          ...(message.references ?? []),
+                          message.id,
+                        ],
+                      })
+                    }
+                  />
+                  <ActionButton
+                    label={message.starred ? "Unstar" : "Star"}
+                    icon={<Icons.star />}
+                    iconOnly
+                    onClick={() =>
+                      void mutateOpened(message.starred ? "unstar" : "star")
+                    }
+                  />
+                  <ActionButton
+                    label="Forward"
+                    icon={<Icons.forward />}
+                    iconOnly
+                    onClick={() =>
+                      openCompose({
+                        to: "",
+                        subject: message.subject.startsWith("Fwd:")
+                          ? message.subject
+                          : `Fwd: ${message.subject}`,
+                        body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
+                      })
+                    }
+                  />
+                </footer>
+              )}
             </>
           ) : openedId ? (
             <div className="reading-empty reading-loading">

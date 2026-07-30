@@ -11,6 +11,7 @@ import { ActionButton } from "./ActionButton";
 import { Icons } from "./Icons";
 
 const OPEN_URL_MESSAGE = "galmail:open-url";
+const FRAME_HEIGHT_MESSAGE = "galmail:frame-height";
 
 /** Click bridge: post safe link navigations to the parent (no same-origin). */
 const LINK_BRIDGE_SCRIPT = `<script>(function(){
@@ -32,15 +33,49 @@ const LINK_BRIDGE_SCRIPT = `<script>(function(){
   document.addEventListener("auxclick",onActivate,true);
 })();</script>`;
 
-function withLinkBridge(htmlDocument: string): string {
+/** Report content height so the parent can size the iframe (no inner scroll). */
+const HEIGHT_BRIDGE_SCRIPT = `<script>(function(){
+  var TYPE=${JSON.stringify(FRAME_HEIGHT_MESSAGE)};
+  function measure(){
+    var root=document.documentElement;
+    var body=document.body;
+    var h=Math.max(
+      root?root.scrollHeight:0,
+      root?root.offsetHeight:0,
+      body?body.scrollHeight:0,
+      body?body.offsetHeight:0
+    );
+    window.parent.postMessage({type:TYPE,height:h},"*");
+  }
+  function schedule(){
+    if(window.requestAnimationFrame)requestAnimationFrame(measure);
+    else setTimeout(measure,0);
+  }
+  window.addEventListener("load",schedule);
+  document.addEventListener("DOMContentLoaded",schedule);
+  if(window.ResizeObserver&&document.documentElement){
+    try{new ResizeObserver(schedule).observe(document.documentElement);}catch(e){}
+  }
+  var imgs=document.images||[];
+  for(var i=0;i<imgs.length;i++){
+    imgs[i].addEventListener("load",schedule);
+    imgs[i].addEventListener("error",schedule);
+  }
+  schedule();
+  setTimeout(schedule,120);
+  setTimeout(schedule,480);
+})();</script>`;
+
+function withMailBridges(htmlDocument: string): string {
   const withCsp = htmlDocument.replace(
     "style-src 'unsafe-inline'",
     "style-src 'unsafe-inline'; script-src 'unsafe-inline'",
   );
+  const inject = `${HEIGHT_BRIDGE_SCRIPT}${LINK_BRIDGE_SCRIPT}`;
   if (withCsp.includes("</body>")) {
-    return withCsp.replace("</body>", `${LINK_BRIDGE_SCRIPT}</body>`);
+    return withCsp.replace("</body>", `${inject}</body>`);
   }
-  return `${withCsp}${LINK_BRIDGE_SCRIPT}`;
+  return `${withCsp}${inject}`;
 }
 
 async function openExternalUrl(url: string): Promise<void> {
@@ -149,6 +184,8 @@ export function SafeMailBody(props: {
   loadRemoteImages?: boolean;
   /** When true, start blocked and prompt once (Ask approval mode). */
   askRemoteImages?: boolean;
+  /** Content-ID → data/blob URL map for inline images. */
+  cidMap?: Record<string, string>;
 }) {
   const colorScheme: MailColorScheme =
     props.theme === "light" ? "light" : "dark";
@@ -157,30 +194,45 @@ export function SafeMailBody(props: {
     () => (props.askRemoteImages ? false : (props.loadRemoteImages ?? true)),
   );
   const [asked, setAsked] = useState(false);
+  const [frameHeight, setFrameHeight] = useState(160);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const document = useMemo(
     () =>
       props.html
-        ? withLinkBridge(
+        ? withMailBridges(
             buildIsolatedMailDocument(props.html, {
               allowRemoteImages,
               stripTrackingParameters: true,
               colorScheme,
+              cidMap: props.cidMap,
             }),
           )
         : "",
-    [props.html, allowRemoteImages, colorScheme],
+    [props.html, allowRemoteImages, colorScheme, props.cidMap],
   );
+
+  useEffect(() => {
+    setFrameHeight(160);
+  }, [document]);
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
       const data = event.data;
       if (!data || typeof data !== "object") return;
-      if ((data as { type?: unknown }).type !== OPEN_URL_MESSAGE) return;
-      const href = (data as { href?: unknown }).href;
-      if (typeof href !== "string" || !isSafeHttpUrl(href)) return;
-      void openExternalUrl(href);
+      const type = (data as { type?: unknown }).type;
+      if (type === OPEN_URL_MESSAGE) {
+        const href = (data as { href?: unknown }).href;
+        if (typeof href !== "string" || !isSafeHttpUrl(href)) return;
+        void openExternalUrl(href);
+        return;
+      }
+      if (type === FRAME_HEIGHT_MESSAGE) {
+        const height = (data as { height?: unknown }).height;
+        if (typeof height !== "number" || !Number.isFinite(height)) return;
+        const next = Math.max(80, Math.ceil(height) + 2);
+        setFrameHeight((prev) => (Math.abs(prev - next) < 2 ? prev : next));
+      }
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -242,8 +294,11 @@ export function SafeMailBody(props: {
         className="mail-html-frame"
         title="Sanitized message body"
         sandbox="allow-scripts"
-        referrerPolicy="no-referrer"
+        // Allow image hosts that require a referrer while still avoiding
+        // leaking full path for most navigations.
+        referrerPolicy="strict-origin-when-cross-origin"
         srcDoc={document}
+        style={{ height: `${frameHeight}px` }}
       />
     </div>
   );

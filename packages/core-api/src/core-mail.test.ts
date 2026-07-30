@@ -164,6 +164,21 @@ describe("mail content security", () => {
     expect(document).toContain("<body>");
   });
 
+  test("rewrites cid: image sources when a cidMap is provided", () => {
+    const document = buildIsolatedMailDocument(
+      '<img src="cid:inline-logo@mail"><p>hi</p>',
+      {
+        allowRemoteImages: true,
+        cidMap: {
+          "inline-logo@mail": "data:image/png;base64,abc",
+        },
+      },
+    );
+    expect(document).toContain('src="data:image/png;base64,abc"');
+    expect(document).not.toContain("cid:inline-logo@mail");
+    expect(document).toContain("overflow-x:hidden");
+  });
+
   test("flags tracking and dangerous attachments", () => {
     expect(isTrackingImage({ width: 1, height: 1, url: "https://x/img" })).toBe(
       true,
