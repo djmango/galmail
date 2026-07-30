@@ -67,6 +67,11 @@ export interface HtmlSanitizeOptions {
   stripTrackingParameters?: boolean;
   /** Base chrome for the sandboxed reading document. Defaults to light. */
   colorScheme?: MailColorScheme;
+  /**
+   * Map Content-ID (with or without angle brackets / cid: prefix) to a
+   * `data:` or `blob:` URL so inline images render inside the sandboxed iframe.
+   */
+  cidMap?: Record<string, string>;
 }
 
 const MAIL_DOCUMENT_THEME: Record<
@@ -108,13 +113,15 @@ const MAIL_DOCUMENT_THEME: Record<
 function mailDocumentBaseStyles(scheme: MailColorScheme): string {
   const t = MAIL_DOCUMENT_THEME[scheme];
   return [
-    `html{color-scheme:${scheme};background:${t.bg}}`,
-    `body{margin:0;padding:0;background:${t.bg};color:${t.fg};font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word}`,
+    `html{color-scheme:${scheme};background:${t.bg};width:100%;max-width:100%;overflow-x:hidden}`,
+    `body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden;background:${t.bg};color:${t.fg};font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
     `a{color:${t.link}}`,
     `a:visited{color:${t.linkVisited}}`,
-    "img{max-width:100%;height:auto}",
-    "table{border-collapse:collapse;max-width:100%}",
-    "td,th{vertical-align:top}",
+    /* Force marketing-mail fixed widths into the reading canvas. */
+    "img,video{max-width:100%!important;height:auto!important;display:block}",
+    "table{border-collapse:collapse;max-width:100%!important;width:auto!important}",
+    "td,th{vertical-align:top;word-break:break-word}",
+    "div,p,span,font,center{max-width:100%}",
     "ul,ol{padding-left:1.4em}",
     "p,li{margin:0.55em 0}",
     "h1,h2,h3,h4,h5,h6{line-height:1.25;margin:0.8em 0 0.4em;font-weight:600}",
@@ -146,6 +153,29 @@ export function stripTrackingParameters(value: string): string {
   }
 }
 
+function normalizeCidKey(value: string): string {
+  return value
+    .replace(/^cid:/i, "")
+    .replace(/^<|>$/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveCidSrc(
+  value: string,
+  cidMap?: Record<string, string>,
+): string | undefined {
+  if (!cidMap) return undefined;
+  const key = normalizeCidKey(value);
+  if (!key) return undefined;
+  return (
+    cidMap[key] ??
+    cidMap[value] ??
+    cidMap[`cid:${key}`] ??
+    cidMap[`<${key}>`]
+  );
+}
+
 function safeAttribute(
   name: string,
   value: string,
@@ -153,7 +183,10 @@ function safeAttribute(
 ): string | undefined {
   if (!ALLOWED_ATTRIBUTES.has(name) || name.startsWith("on")) return undefined;
   if (name === "src") {
-    if (/^cid:/i.test(value)) return value;
+    if (/^cid:/i.test(value)) {
+      return resolveCidSrc(value, options.cidMap) ?? value;
+    }
+    if (/^data:/i.test(value)) return value;
     if (!options.allowRemoteImages || !/^https?:/i.test(value))
       return undefined;
   }

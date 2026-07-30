@@ -248,6 +248,16 @@ test.describe("mobile gestures and chrome", () => {
         })
         .toBeTruthy();
     }
+    // Superhuman-style bottom action bar replaces the primary app nav on thread.
+    await expect(page.getByLabel("Message actions")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Primary" }),
+    ).toBeHidden();
+    await expect(
+      page
+        .getByLabel("Message actions")
+        .getByRole("button", { name: "Reply", exact: true }),
+    ).toBeVisible();
     await page.screenshot({
       path: path.join(ARTIFACT_DIR, "12-thread-open.png"),
       fullPage: true,
