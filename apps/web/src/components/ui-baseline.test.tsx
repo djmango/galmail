@@ -204,9 +204,7 @@ describe("current UI baseline", () => {
     );
     expect(html).toContain('sandbox="allow-scripts"');
     expect(html).not.toContain("allow-same-origin");
-    expect(html).toContain(
-      'referrerPolicy="strict-origin-when-cross-origin"',
-    );
+    expect(html).toContain('referrerPolicy="strict-origin-when-cross-origin"');
     expect(html).toContain("Message options");
     expect(html).toContain("mail-body-menu");
     expect(html).toContain('aria-haspopup="menu"');
