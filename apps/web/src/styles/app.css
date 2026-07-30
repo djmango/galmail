@@ -266,13 +266,18 @@ body,
 }
 
 .thread-shell {
+  --thread-row-h: 84px;
   display: grid;
   /* Idle: no checkbox gutter so unread accent sits flush at the pane edge. */
   grid-template-columns: 0 minmax(0, 1fr);
   align-items: stretch;
-  min-height: 84px;
+  /* Fixed height so virtualization spacers match real row geometry. */
+  height: var(--thread-row-h);
+  min-height: var(--thread-row-h);
+  max-height: var(--thread-row-h);
   margin: 0;
-  margin-bottom: 0.1rem;
+  margin-bottom: 0;
+  overflow: hidden;
 }
 
 /* Selecting: restore checkbox gutter (slight layout jump is OK). */
@@ -282,7 +287,8 @@ body,
 
 .thread-shell .thread {
   width: 100%;
-  min-height: 84px;
+  height: 100%;
+  min-height: 0;
   margin-bottom: 0;
 }
 
@@ -2230,6 +2236,13 @@ select:focus-visible {
 .thread-shell .swipe-row {
   width: 100%;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.thread-shell .swipe-row-content {
+  height: 100%;
+  min-height: 0;
 }
 
 .swipe-row {
@@ -2976,13 +2989,17 @@ select:focus-visible {
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  /* Icons-only nav + home-indicator. Include the nav's vertical padding so the
-     shell reserve matches the real fixed chrome height. */
+  /* Icons-only nav + home-indicator. Include vertical padding + 1px border so
+     the shell reserve matches the real fixed chrome height. */
   --mobile-nav-h: 2.5rem;
   --mobile-nav-pad-y: 0.2rem;
+  --mobile-nav-border: 1px;
   --mobile-chrome: calc(
-    var(--mobile-nav-h) + var(--mobile-nav-pad-y) + var(--safe-bottom)
+    var(--mobile-nav-h) + var(--mobile-nav-pad-y) + var(--mobile-nav-border) +
+      var(--safe-bottom)
   );
+  /* Must match apps/web/src/lib/thread-row-height.ts THREAD_ROW_HEIGHT_MOBILE. */
+  --thread-row-h: 86px;
   /* Prefer the webview's 100% height over 100dvh - dvh often undershoots on iOS
      WKWebView and leaves a body-colored (or black) strip under the shell. */
   height: 100%;
@@ -3310,13 +3327,21 @@ select:focus-visible {
     0.55rem;
   background: var(--bg0);
   backdrop-filter: blur(8px);
+  /* Collapse without transform - transforming sticky nodes glitches in WKWebView. */
+  overflow: hidden;
+  max-height: 12rem;
   transition:
-    transform 180ms ease,
-    opacity 180ms ease;
+    max-height 180ms ease,
+    margin 180ms ease,
+    padding 180ms ease,
+    opacity 160ms ease;
 }
 
 .app[data-mobile="true"] .thread-list-head.is-hidden {
-  transform: translate3d(0, calc(-100% + var(--safe-top)), 0);
+  max-height: 0;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
   opacity: 0;
   pointer-events: none;
 }
@@ -3349,9 +3374,73 @@ select:focus-visible {
   font-size: 1rem;
 }
 
+.app[data-mobile="true"] .thread-shell {
+  --thread-row-h: 86px;
+  height: var(--thread-row-h);
+  min-height: var(--thread-row-h);
+  max-height: var(--thread-row-h);
+}
+
 .app[data-mobile="true"] .thread {
-  min-height: 72px;
-  padding: 0.7rem 0.55rem 0.7rem 0.45rem;
+  min-height: 0;
+  height: 100%;
+  padding: 0.55rem 0.55rem 0.55rem 0.45rem;
+}
+
+.app[data-mobile="true"] .pull-refresh {
+  /* Overlay slot: never grows the scroll document during the gesture. */
+  position: relative;
+  z-index: 2;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 1;
+  transition: none;
+}
+
+.app[data-mobile="true"] .pull-refresh-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 44px;
+  margin-top: -44px;
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
+}
+
+.app[data-mobile="true"] .pull-refresh.is-visible .pull-refresh-inner,
+.app[data-mobile="true"] .pull-refresh.is-refreshing .pull-refresh-inner {
+  opacity: 1;
+}
+
+.app[data-mobile="true"] .pull-refresh.is-refreshing {
+  height: 44px;
+  transition: height 160ms ease;
+}
+
+.app[data-mobile="true"] .pull-refresh.is-refreshing .pull-refresh-inner {
+  margin-top: 0;
+  transform: none;
+}
+
+.app[data-mobile="true"] .thread-main {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app[data-mobile="true"] .thread-top,
+.app[data-mobile="true"] .thread-subject,
+.app[data-mobile="true"] .thread-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app[data-mobile="true"] .thread-from {

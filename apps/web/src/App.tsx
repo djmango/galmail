@@ -82,6 +82,7 @@ import {
   shouldCompleteSwipeBack,
 } from "./lib/swipe-back";
 import { resolveCidImageMap } from "./lib/cid-images";
+import { threadRowHeightForLayout } from "./lib/thread-row-height";
 import {
   loadPersistedSwipeActions,
   persistSwipeActions,
@@ -1868,7 +1869,7 @@ export function App() {
     );
   };
 
-  const threadRowHeight = isMobile ? 96 : 92;
+  const threadRowHeight = threadRowHeightForLayout(isMobile);
   const virtualStart = Math.max(
     0,
     Math.floor(listScrollTop / threadRowHeight) - 8,
@@ -2855,16 +2856,27 @@ export function App() {
             <div
               className={`pull-refresh${refreshing || pullDistance > 8 ? " is-visible" : ""}${refreshing ? " is-refreshing" : ""}`}
               aria-live="polite"
-              style={{ height: refreshing ? 44 : pullDistance }}
             >
-              <Icons.refresh />
-              <span>
-                {refreshing
-                  ? "Refreshing…"
-                  : pullDistance >= PULL_TRIGGER_PX
-                    ? "Release to refresh"
-                    : "Pull to refresh"}
-              </span>
+              <div
+                className="pull-refresh-inner"
+                style={
+                  refreshing
+                    ? undefined
+                    : {
+                        transform: `translate3d(0, ${Math.max(0, pullDistance)}px, 0)`,
+                        opacity: Math.min(1, pullDistance / 24),
+                      }
+                }
+              >
+                <Icons.refresh />
+                <span>
+                  {refreshing
+                    ? "Refreshing…"
+                    : pullDistance >= PULL_TRIGGER_PX
+                      ? "Release to refresh"
+                      : "Pull to refresh"}
+                </span>
+              </div>
             </div>
           ) : null}
           {bulkSelection.size > 0 && (
