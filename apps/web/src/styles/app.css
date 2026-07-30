@@ -2973,6 +2973,7 @@ select:focus-visible {
   min-height: 0;
   padding-bottom: var(--mobile-chrome);
   overflow: hidden;
+  background: var(--bg0);
 }
 
 .app[data-mobile="true"][data-layout="two-panel"] .sidebar,
