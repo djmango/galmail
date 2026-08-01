@@ -88,8 +88,8 @@ const MAIL_DOCUMENT_THEME: Record<
   }
 > = {
   dark: {
-    // Match app `--bg1` (reading / message-card), not elevated `--bg2`.
-    bg: "#0d0e10",
+    // Match app `--bg0` (mobile reading canvas / shell), not elevated cards.
+    bg: "#08090a",
     fg: "#e6e8ec",
     muted: "#969cab",
     link: "#6d78dd",
@@ -99,7 +99,7 @@ const MAIL_DOCUMENT_THEME: Record<
     hr: "rgba(255, 255, 255, 0.12)",
   },
   light: {
-    bg: "#fbf6ec",
+    bg: "#f4ede0",
     fg: "#2b2620",
     muted: "#5d5346",
     link: "#955e0a",
@@ -113,8 +113,8 @@ const MAIL_DOCUMENT_THEME: Record<
 function mailDocumentBaseStyles(scheme: MailColorScheme): string {
   const t = MAIL_DOCUMENT_THEME[scheme];
   return [
-    `html{color-scheme:${scheme};background:${t.bg};width:100%;max-width:100%;overflow-x:hidden}`,
-    `body{margin:0;padding:0;width:100%;max-width:100%;overflow-x:hidden;background:${t.bg};color:${t.fg};font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
+    `html{color-scheme:${scheme};background:${t.bg};width:100%;max-width:100%;height:auto;overflow:hidden}`,
+    `body{margin:0;padding:0;width:100%;max-width:100%;height:auto;overflow:hidden;background:${t.bg};color:${t.fg};font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
     `a{color:${t.link}}`,
     `a:visited{color:${t.linkVisited}}`,
     /* Force marketing-mail fixed widths into the reading canvas. */
@@ -154,11 +154,7 @@ export function stripTrackingParameters(value: string): string {
 }
 
 function normalizeCidKey(value: string): string {
-  return value
-    .replace(/^cid:/i, "")
-    .replace(/^<|>$/g, "")
-    .trim()
-    .toLowerCase();
+  return value.replace(/^cid:/i, "").replace(/^<|>$/g, "").trim().toLowerCase();
 }
 
 function resolveCidSrc(
@@ -169,10 +165,7 @@ function resolveCidSrc(
   const key = normalizeCidKey(value);
   if (!key) return undefined;
   return (
-    cidMap[key] ??
-    cidMap[value] ??
-    cidMap[`cid:${key}`] ??
-    cidMap[`<${key}>`]
+    cidMap[key] ?? cidMap[value] ?? cidMap[`cid:${key}`] ?? cidMap[`<${key}>`]
   );
 }
 

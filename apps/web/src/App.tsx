@@ -63,13 +63,15 @@ import {
 } from "./lib/microsoft-calendar";
 import { createGalMailRuntime, type GalMailRuntime } from "./lib/runtime";
 import type { NativeGmailSyncEngine } from "./lib/native-sync";
-import {
-  resolveMobileSurface,
-  useIsMobileLayout,
-} from "./lib/mobile-layout";
+import { resolveMobileSurface, useIsMobileLayout } from "./lib/mobile-layout";
 import { decodeHtmlEntities } from "./lib/decode-entities";
 import { haptic } from "./lib/haptics";
 import { nextListHeaderHidden } from "./lib/list-header-visibility";
+import {
+  presentUndoToast,
+  undoDeadline,
+  UNDO_WINDOW_MS,
+} from "./lib/undo-toast";
 import {
   canBeginPull,
   pullDistanceFromDelta,
@@ -77,10 +79,7 @@ import {
   shouldTriggerRefresh,
   PULL_TRIGGER_PX,
 } from "./lib/pull-to-refresh";
-import {
-  canBeginSwipeBack,
-  shouldCompleteSwipeBack,
-} from "./lib/swipe-back";
+import { canBeginSwipeBack, shouldCompleteSwipeBack } from "./lib/swipe-back";
 import { resolveCidImageMap } from "./lib/cid-images";
 import { threadRowHeightForLayout } from "./lib/thread-row-height";
 import {
@@ -201,9 +200,7 @@ function MessageCard(props: {
   askRemoteImages?: boolean;
   /** Flatter Superhuman-style card chrome on mobile. */
   compact?: boolean;
-  resolveCidMap?: (
-    message: MailMessage,
-  ) => Promise<Record<string, string>>;
+  resolveCidMap?: (message: MailMessage) => Promise<Record<string, string>>;
   onDownloadAttachment: (
     message: MailMessage,
     attachment: NonNullable<MailMessage["attachments"]>[number],
@@ -997,29 +994,31 @@ export function App() {
         });
         setOpenedId((id) => (id === thread.id ? null : id));
       });
+      const until = undoDeadline();
       void runtime.sync
         .enqueue({
           accountId: thread.accountId,
           kind: "archive",
           targetIds: [thread.messageIds[0]],
-          availableAt: new Date(Date.now() + 5_000).toISOString(),
-          undoUntil: new Date(Date.now() + 5_000).toISOString(),
+          availableAt: until,
+          undoUntil: until,
         })
         .then((mutation) => {
-          undoRef.current = async () => {
-            await runtime.sync.cancelOutbox(mutation.id);
-            setThreads((items) =>
-              items.map((item) => (item.id === thread.id ? thread : item)),
-            );
-            toast.success("Archive undone");
-          };
+          presentUndoToast({
+            title: "Archived",
+            undoRef,
+            undoneTitle: "Archive undone",
+            performUndo: async () => {
+              await runtime.sync.cancelOutbox(mutation.id);
+              setThreads((items) =>
+                items.map((item) => (item.id === thread.id ? thread : item)),
+              );
+            },
+          });
           setTimeout(
             () => void runtime.sync.flushOutbox(thread.accountId),
-            5_000,
+            UNDO_WINDOW_MS,
           );
-          toast.success("Archived", {
-            description: "Undo available for 5 seconds",
-          });
         });
     };
 
@@ -1104,7 +1103,9 @@ export function App() {
 
     reg.on("navigate_down", () => {
       const list = filteredThreadsRef.current;
-      const idx = list.findIndex((thread) => thread.id === selectedIdRef.current);
+      const idx = list.findIndex(
+        (thread) => thread.id === selectedIdRef.current,
+      );
       const next = list[Math.min(list.length - 1, Math.max(0, idx) + 1)];
       if (next) {
         setSelectedId(next.id);
@@ -1113,7 +1114,9 @@ export function App() {
     });
     reg.on("navigate_up", () => {
       const list = filteredThreadsRef.current;
-      const idx = list.findIndex((thread) => thread.id === selectedIdRef.current);
+      const idx = list.findIndex(
+        (thread) => thread.id === selectedIdRef.current,
+      );
       const prev = list[Math.max(0, (idx < 0 ? 0 : idx) - 1)];
       if (prev) {
         setSelectedId(prev.id);
@@ -1142,35 +1145,40 @@ export function App() {
             : item,
         ),
       );
+      const until = undoDeadline();
       void Promise.all(
         targets.map((thread) =>
           runtime.sync.enqueue({
             accountId: thread.accountId,
             kind: "trash",
             targetIds: thread.messageIds,
-            availableAt: new Date(Date.now() + 5_000).toISOString(),
-            undoUntil: new Date(Date.now() + 5_000).toISOString(),
+            availableAt: until,
+            undoUntil: until,
           }),
         ),
       ).then((mutations) => {
-        undoRef.current = async () => {
-          await Promise.all(
-            mutations.map((mutation) => runtime.sync.cancelOutbox(mutation.id)),
-          );
-          setThreads((items) =>
-            items.map((item) => {
-              const original = targets.find((target) => target.id === item.id);
-              return original ?? item;
-            }),
-          );
-          toast.success("Trash undone");
-        };
-        setTimeout(() => void runtime.sync.flushOutbox(), 5_000);
+        presentUndoToast({
+          title: `Moved ${targets.length} thread(s) to Trash`,
+          undoRef,
+          undoneTitle: "Trash undone",
+          performUndo: async () => {
+            await Promise.all(
+              mutations.map((mutation) =>
+                runtime.sync.cancelOutbox(mutation.id),
+              ),
+            );
+            setThreads((items) =>
+              items.map((item) => {
+                const original = targets.find(
+                  (target) => target.id === item.id,
+                );
+                return original ?? item;
+              }),
+            );
+          },
+        });
+        setTimeout(() => void runtime.sync.flushOutbox(), UNDO_WINDOW_MS);
         setBulkSelection(new Set());
-        toast.success(
-          `Moved ${targets.length} thread(s) to Trash`,
-          { description: "Undo available for 5 seconds" },
-        );
       });
     });
     reg.on("mark_read_toggle", toggleReadSelected);
@@ -1253,11 +1261,7 @@ export function App() {
       if (editable && !e.metaKey && !e.ctrlKey) return;
 
       // Insert mode: only meta/ctrl chords (e.g. ⌘K, ⌘,) still run until Esc.
-      if (
-        inputModeRef.current === "insert" &&
-        !e.metaKey &&
-        !e.ctrlKey
-      ) {
+      if (inputModeRef.current === "insert" && !e.metaKey && !e.ctrlKey) {
         return;
       }
 
@@ -1268,9 +1272,7 @@ export function App() {
 
       // Other overlays: don't run inbox list shortcuts underneath.
       if (
-        (overlays.paletteOpen ||
-          overlays.settingsOpen ||
-          overlays.optInOpen) &&
+        (overlays.paletteOpen || overlays.settingsOpen || overlays.optInOpen) &&
         !e.metaKey &&
         !e.ctrlKey
       ) {
@@ -1320,7 +1322,8 @@ export function App() {
   const layout = settings.layout;
   const fullscreenList = layout === "fullscreen" && !openedId;
   const mobileSurface = resolveMobileSurface({ mainView, openedId });
-  const showReadingBack = Boolean(openedId) && (isMobile || layout === "fullscreen");
+  const showReadingBack =
+    Boolean(openedId) && (isMobile || layout === "fullscreen");
 
   const closeMobileNav = () => setMobileNavOpen(false);
 
@@ -1407,14 +1410,12 @@ export function App() {
     action: SwipeMailAction,
   ) => {
     if (!runtime || action === "none") return;
-    const targetIds = thread.messageIds.length
-      ? thread.messageIds
-      : [];
+    const targetIds = thread.messageIds.length ? thread.messageIds : [];
     if (!targetIds.length && action !== "archive" && action !== "trash") {
       return;
     }
     const ids = targetIds.length ? targetIds : [thread.id];
-    const undoUntil = new Date(Date.now() + 5_000).toISOString();
+    const undoUntil = undoDeadline();
 
     if (action === "archive") {
       const snapshot = thread;
@@ -1440,20 +1441,21 @@ export function App() {
           undoUntil,
         })
         .then((mutation) => {
-          undoRef.current = async () => {
-            await runtime.sync.cancelOutbox(mutation.id);
-            setThreads((items) =>
-              items.map((item) => (item.id === thread.id ? snapshot : item)),
-            );
-            toast.success("Archive undone");
-          };
+          presentUndoToast({
+            title: "Archived",
+            undoRef,
+            undoneTitle: "Archive undone",
+            performUndo: async () => {
+              await runtime.sync.cancelOutbox(mutation.id);
+              setThreads((items) =>
+                items.map((item) => (item.id === thread.id ? snapshot : item)),
+              );
+            },
+          });
           setTimeout(
             () => void runtime.sync.flushOutbox(thread.accountId),
-            5_000,
+            UNDO_WINDOW_MS,
           );
-          toast.success("Archived", {
-            description: "Undo available for 5 seconds",
-          });
         });
       return;
     }
@@ -1477,20 +1479,21 @@ export function App() {
           undoUntil,
         })
         .then((mutation) => {
-          undoRef.current = async () => {
-            await runtime.sync.cancelOutbox(mutation.id);
-            setThreads((items) =>
-              items.map((item) => (item.id === thread.id ? snapshot : item)),
-            );
-            toast.success("Trash undone");
-          };
+          presentUndoToast({
+            title: "Moved to Trash",
+            undoRef,
+            undoneTitle: "Trash undone",
+            performUndo: async () => {
+              await runtime.sync.cancelOutbox(mutation.id);
+              setThreads((items) =>
+                items.map((item) => (item.id === thread.id ? snapshot : item)),
+              );
+            },
+          });
           setTimeout(
             () => void runtime.sync.flushOutbox(thread.accountId),
-            5_000,
+            UNDO_WINDOW_MS,
           );
-          toast.success("Moved to Trash", {
-            description: "Undo available for 5 seconds",
-          });
         });
       return;
     }
@@ -1514,20 +1517,21 @@ export function App() {
           undoUntil,
         })
         .then((mutation) => {
-          undoRef.current = async () => {
-            await runtime.sync.cancelOutbox(mutation.id);
-            setThreads((items) =>
-              items.map((item) => (item.id === thread.id ? snapshot : item)),
-            );
-            toast.success("Spam undone");
-          };
+          presentUndoToast({
+            title: "Reported as spam",
+            undoRef,
+            undoneTitle: "Spam undone",
+            performUndo: async () => {
+              await runtime.sync.cancelOutbox(mutation.id);
+              setThreads((items) =>
+                items.map((item) => (item.id === thread.id ? snapshot : item)),
+              );
+            },
+          });
           setTimeout(
             () => void runtime.sync.flushOutbox(thread.accountId),
-            5_000,
+            UNDO_WINDOW_MS,
           );
-          toast.success("Reported as spam", {
-            description: "Undo available for 5 seconds",
-          });
         });
       return;
     }
@@ -1638,10 +1642,7 @@ export function App() {
       pullDistanceRef.current = distance;
       setPullDistance(distance);
       if (distance > 0) event.preventDefault();
-      if (
-        shouldTriggerRefresh(distance) &&
-        !pullArmedHapticRef.current
-      ) {
+      if (shouldTriggerRefresh(distance) && !pullArmedHapticRef.current) {
         pullArmedHapticRef.current = true;
         haptic("selection");
       } else if (
@@ -1654,7 +1655,8 @@ export function App() {
 
     const onEnd = () => {
       if (!active && !pulling) return;
-      const shouldRefresh = pulling && shouldTriggerRefresh(pullDistanceRef.current);
+      const shouldRefresh =
+        pulling && shouldTriggerRefresh(pullDistanceRef.current);
       reset();
       if (shouldRefresh) {
         void refreshInbox();
@@ -1829,13 +1831,7 @@ export function App() {
     return byAccount.filter((thread) =>
       thread.labelIds.includes(activeLabel as never),
     );
-  }, [
-    threads,
-    searchQuery,
-    searchMessageIds,
-    activeLabel,
-    inboxAccountFilter,
-  ]);
+  }, [threads, searchQuery, searchMessageIds, activeLabel, inboxAccountFilter]);
   filteredThreadsRef.current = filteredThreads;
 
   const setAccountFilter = (filter: InboxAccountFilter) => {
@@ -1848,8 +1844,7 @@ export function App() {
     resolveDefaultComposeAccountId(
       runtime?.accounts.map((account) => String(account.accountId)) ?? [],
       inboxAccountFilter,
-    ) ??
-    (runtime ? String(runtime.defaultAccountId) : null);
+    ) ?? (runtime ? String(runtime.defaultAccountId) : null);
   const bulkSelecting = bulkSelection.size > 0;
 
   const applyBulkRangeSelect = (threadId: string) => {
@@ -2079,8 +2074,13 @@ export function App() {
       .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
       .sort((a, b) => a.start.localeCompare(b.start));
     const errors = settled
-      .filter((result): result is PromiseRejectedResult => result.status === "rejected")
-      .map((result) => invokeErrorMessage(result.reason, "Calendar sync failed"));
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      )
+      .map((result) =>
+        invokeErrorMessage(result.reason, "Calendar sync failed"),
+      );
     setCalendarEvents(events);
     if (errors.length > 0 && events.length === 0) {
       const message = errors.join(" ");
@@ -2245,7 +2245,7 @@ export function App() {
     payload?: Record<string, unknown>,
   ) => {
     if (!runtime || !message) return;
-    const undoUntil = new Date(Date.now() + 5_000).toISOString();
+    const undoUntil = undoDeadline();
     const mutation = await runtime.sync.enqueue({
       accountId: message.accountId,
       kind,
@@ -2264,6 +2264,10 @@ export function App() {
             availableAt: payload.until,
           })
         : undefined;
+    const threadSnapshot =
+      kind === "snooze" || kind === "spam"
+        ? threads.find((item) => item.id === message.threadId)
+        : undefined;
     if (kind === "star" || kind === "unstar") {
       setMessage((current) =>
         current ? { ...current, starred: kind === "star" } : current,
@@ -2281,32 +2285,48 @@ export function App() {
         ),
       );
     }
-    undoRef.current = async () => {
-      await runtime.sync.cancelOutbox(mutation.id);
-      if (wakeMutation) await runtime.sync.cancelOutbox(wakeMutation.id);
-      setMessage((current) =>
-        current && (kind === "star" || kind === "unstar")
-          ? { ...current, starred: kind !== "star" }
-          : current,
+    if (kind === "spam") {
+      setThreads((items) =>
+        items.map((item) =>
+          item.id === message.threadId
+            ? { ...item, labelIds: ["SPAM" as never] }
+            : item,
+        ),
       );
-      if (kind === "snooze") {
-        setThreads((items) =>
-          items.map((item) =>
-            item.id === message.threadId
-              ? {
-                  ...item,
-                  labelIds: [...new Set([...item.labelIds, "INBOX" as never])],
-                }
-              : item,
-          ),
-        );
-      }
-      toast.success("Action undone");
+      setOpenedId(null);
+    }
+    const titles: Record<typeof kind, string> = {
+      star: "Starred",
+      unstar: "Unstarred",
+      spam: "Reported as spam",
+      snooze: "Snoozed until tomorrow",
+      apply_label: "Label applied",
     };
-    setTimeout(() => void runtime.sync.flushOutbox(message.accountId), 5_000);
-    toast.success(`${kind.replace("_", " ")} queued`, {
-      description: "Undo available for 5 seconds",
+    presentUndoToast({
+      title: titles[kind],
+      undoRef,
+      undoneTitle: "Action undone",
+      performUndo: async () => {
+        await runtime.sync.cancelOutbox(mutation.id);
+        if (wakeMutation) await runtime.sync.cancelOutbox(wakeMutation.id);
+        setMessage((current) =>
+          current && (kind === "star" || kind === "unstar")
+            ? { ...current, starred: kind !== "star" }
+            : current,
+        );
+        if (threadSnapshot) {
+          setThreads((items) =>
+            items.map((item) =>
+              item.id === threadSnapshot.id ? threadSnapshot : item,
+            ),
+          );
+        }
+      },
     });
+    setTimeout(
+      () => void runtime.sync.flushOutbox(message.accountId),
+      UNDO_WINDOW_MS,
+    );
   };
 
   const bulkMutate = async (
@@ -2316,13 +2336,18 @@ export function App() {
   ) => {
     if (!runtime || bulkSelection.size === 0) return;
     const targets = threads.filter((thread) => bulkSelection.has(thread.id));
-    await Promise.all(
+    const snapshots = new Map(targets.map((thread) => [thread.id, thread]));
+    const needsUndo =
+      kind === "archive" || kind === "apply_label" || kind === "move_folder";
+    const until = needsUndo ? undoDeadline() : undefined;
+    const mutations = await Promise.all(
       targets.map((thread) =>
         runtime.sync.enqueue({
           accountId: thread.accountId,
           kind,
           targetIds: thread.messageIds,
           payload,
+          ...(until ? { availableAt: until, undoUntil: until } : {}),
         }),
       ),
     );
@@ -2347,16 +2372,34 @@ export function App() {
             };
       }),
     );
-    await runtime.sync.flushOutbox();
-    toast.success(
-      `${kind.replace("_", " ")} applied to ${targets.length} thread(s)`,
-    );
+    if (needsUndo) {
+      presentUndoToast({
+        title: `${kind.replace("_", " ")} applied to ${targets.length} thread(s)`,
+        undoRef,
+        undoneTitle: "Bulk action undone",
+        performUndo: async () => {
+          await Promise.all(
+            mutations.map((mutation) => runtime.sync.cancelOutbox(mutation.id)),
+          );
+          setThreads((items) =>
+            items.map((item) => snapshots.get(item.id) ?? item),
+          );
+        },
+      });
+      setTimeout(() => void runtime.sync.flushOutbox(), UNDO_WINDOW_MS);
+    } else {
+      await runtime.sync.flushOutbox();
+      toast.success(
+        `${kind.replace("_", " ")} applied to ${targets.length} thread(s)`,
+      );
+    }
     setBulkSelection(new Set());
   };
 
   const trashThread = (thread: MailThread, statusMessage: string) => {
     if (!runtime) return;
     const snapshot = thread;
+    const until = undoDeadline();
     setThreads((items) =>
       items.map((item) =>
         item.id === thread.id
@@ -2369,21 +2412,22 @@ export function App() {
         accountId: thread.accountId,
         kind: "trash",
         targetIds: thread.messageIds,
-        availableAt: new Date(Date.now() + 5_000).toISOString(),
-        undoUntil: new Date(Date.now() + 5_000).toISOString(),
+        availableAt: until,
+        undoUntil: until,
       })
       .then((mutation) => {
-        undoRef.current = async () => {
-          await runtime.sync.cancelOutbox(mutation.id);
-          setThreads((items) =>
-            items.map((item) => (item.id === thread.id ? snapshot : item)),
-          );
-          toast.success("Trash undone");
-        };
-        setTimeout(() => void runtime.sync.flushOutbox(), 5_000);
-        toast.success(statusMessage, {
-          description: "Undo available for 5 seconds",
+        presentUndoToast({
+          title: statusMessage,
+          undoRef,
+          undoneTitle: "Trash undone",
+          performUndo: async () => {
+            await runtime.sync.cancelOutbox(mutation.id);
+            setThreads((items) =>
+              items.map((item) => (item.id === thread.id ? snapshot : item)),
+            );
+          },
         });
+        setTimeout(() => void runtime.sync.flushOutbox(), UNDO_WINDOW_MS);
       });
   };
 
@@ -2407,7 +2451,7 @@ export function App() {
         }),
         accountId: message.accountId,
       };
-      const undoUntil = new Date(Date.now() + 5_000).toISOString();
+      const undoUntil = undoDeadline();
       const mutation = await runtime.sync.enqueue({
         accountId: message.accountId,
         kind: "send",
@@ -2416,22 +2460,24 @@ export function App() {
         availableAt: undoUntil,
         undoUntil,
       });
-      undoRef.current = async () => {
-        await runtime.sync.cancelOutbox(mutation.id);
-        toast.message("Unsubscribe send cancelled");
-      };
+      presentUndoToast({
+        title: "Unsubscribe send queued",
+        undoRef,
+        undoneTitle: "Unsubscribe send cancelled",
+        performUndo: async () => {
+          await runtime.sync.cancelOutbox(mutation.id);
+        },
+      });
       setTimeout(
         () => void runtime.sync.flushOutbox(message.accountId),
-        5_000,
+        UNDO_WINDOW_MS,
       );
     }
 
     const success = unsubscribeSuccessStatus(sender);
     if (settings.trashAfterUnsubscribe) {
       const thread =
-        (openedId
-          ? threads.find((item) => item.id === openedId)
-          : undefined) ??
+        (openedId ? threads.find((item) => item.id === openedId) : undefined) ??
         threads.find((item) => item.messageIds.includes(message.id));
       if (thread) {
         trashThread(thread, `${success} · Moved to Trash`);
@@ -2440,9 +2486,7 @@ export function App() {
     }
 
     if (result.status === "mailto") {
-      toast.success(success, {
-        description: "Undo available for 5 seconds",
-      });
+      // Undo toast already presented for the queued send above.
       return;
     }
     toast.success(success);
@@ -2452,7 +2496,7 @@ export function App() {
     const d = drafts.find((x) => x.id === id);
     if (!d || !runtime) return;
     const draft = domainDraft(d);
-    const undoUntil = new Date(Date.now() + 5_000).toISOString();
+    const undoUntil = undoDeadline();
     const mutation = await runtime.sync.enqueue({
       accountId: draft.accountId,
       kind: "send",
@@ -2462,18 +2506,19 @@ export function App() {
       undoUntil,
     });
     setDrafts((x) => x.filter((p) => p.id !== id));
-    undoRef.current = async () => {
-      await runtime.sync.cancelOutbox(mutation.id);
-      setDrafts((items) => [...items, d]);
-      toast.message("Send cancelled");
-    };
+    presentUndoToast({
+      title: "Send queued",
+      undoRef,
+      undoneTitle: "Send cancelled",
+      performUndo: async () => {
+        await runtime.sync.cancelOutbox(mutation.id);
+        setDrafts((items) => [...items, d]);
+      },
+    });
     setTimeout(
       () => void runtime.sync.flushOutbox(draft.accountId),
-      5_000,
+      UNDO_WINDOW_MS,
     );
-    toast.success("Send queued", {
-      description: "Undo available for 5 seconds",
-    });
   };
 
   if (awaitingSignIn) {
@@ -2488,9 +2533,7 @@ export function App() {
           error={gmailConnectError}
           nativeShell={isNativeShell()}
           canConnectGmail={isNativeShell() && Boolean(googleOAuthClientId())}
-          canConnectMicrosoft={
-            isNativeShell() && Boolean(microsoftClientId())
-          }
+          canConnectMicrosoft={isNativeShell() && Boolean(microsoftClientId())}
           showDemoOption
           recoveryRequired={recoveryRequired}
           recoveryResetting={recoveryResetting}
@@ -2523,9 +2566,7 @@ export function App() {
       className="app"
       data-theme={resolvedTheme}
       data-layout={settings.layout}
-      data-sidebar={
-        isMobile || !sidebarCollapsed ? "expanded" : "collapsed"
-      }
+      data-sidebar={isMobile || !sidebarCollapsed ? "expanded" : "collapsed"}
       data-mobile={isMobile ? "true" : "false"}
       data-mobile-surface={mobileSurface}
       data-mobile-nav={mobileNavOpen ? "open" : "closed"}
@@ -2808,250 +2849,549 @@ export function App() {
           />
         ) : (
           <>
-        <section
-          className="thread-list panel"
-          aria-label="Thread list"
-          tabIndex={-1}
-          ref={threadListRef}
-          onScroll={onThreadListScroll}
-          data-fullscreen={fullscreenList ? "true" : "false"}
-          data-header-hidden={listHeaderHidden ? "true" : "false"}
-        >
-          {!(layout === "fullscreen" && openedId) && (
-            <div
-              className={`thread-list-head${listHeaderHidden ? " is-hidden" : ""}`}
+            <section
+              className="thread-list panel"
+              aria-label="Thread list"
+              tabIndex={-1}
+              ref={threadListRef}
+              onScroll={onThreadListScroll}
+              data-fullscreen={fullscreenList ? "true" : "false"}
+              data-header-hidden={listHeaderHidden ? "true" : "false"}
             >
+              {!(layout === "fullscreen" && openedId) && (
+                <div
+                  className={`thread-list-head${listHeaderHidden ? " is-hidden" : ""}`}
+                >
+                  {isMobile ? (
+                    <div className="mobile-list-title">
+                      <strong>{folderTitle}</strong>
+                      <span>
+                        {unreadCount > 0
+                          ? `${unreadCount} unread`
+                          : `${filteredThreads.length}`}
+                      </span>
+                    </div>
+                  ) : null}
+                  <label className="thread-search">
+                    <span className="sr-only">Search mail</span>
+                    <span className="thread-search-icon" aria-hidden="true">
+                      <Icons.search />
+                    </span>
+                    <input
+                      ref={searchInputRef}
+                      className="field-input"
+                      type="search"
+                      inputMode="search"
+                      enterKeyHint="search"
+                      placeholder={
+                        isMobile
+                          ? "Search all mail"
+                          : "Search all mail · from: subject: label:"
+                      }
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      onFocus={() => setInputMode("insert")}
+                    />
+                  </label>
+                </div>
+              )}
               {isMobile ? (
-                <div className="mobile-list-title">
-                  <strong>{folderTitle}</strong>
-                  <span>
-                    {unreadCount > 0 ? `${unreadCount} unread` : `${filteredThreads.length}`}
-                  </span>
+                <div
+                  className={`pull-refresh${refreshing || pullDistance > 8 ? " is-visible" : ""}${refreshing ? " is-refreshing" : ""}`}
+                  aria-live="polite"
+                >
+                  <div
+                    className="pull-refresh-inner"
+                    style={
+                      refreshing
+                        ? undefined
+                        : {
+                            transform: `translate3d(0, ${Math.max(0, pullDistance)}px, 0)`,
+                            opacity: Math.min(1, pullDistance / 24),
+                          }
+                    }
+                  >
+                    <Icons.refresh />
+                    <span>
+                      {refreshing
+                        ? "Refreshing…"
+                        : pullDistance >= PULL_TRIGGER_PX
+                          ? "Release to refresh"
+                          : "Pull to refresh"}
+                    </span>
+                  </div>
                 </div>
               ) : null}
-              <label className="thread-search">
-                <span className="sr-only">Search mail</span>
-                <span className="thread-search-icon" aria-hidden="true">
-                  <Icons.search />
-                </span>
-                <input
-                  ref={searchInputRef}
-                  className="field-input"
-                  type="search"
-                  inputMode="search"
-                  enterKeyHint="search"
-                  placeholder={
-                    isMobile
-                      ? "Search all mail"
-                      : "Search all mail · from: subject: label:"
-                  }
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  onFocus={() => setInputMode("insert")}
-                />
-              </label>
-            </div>
-          )}
-          {isMobile ? (
-            <div
-              className={`pull-refresh${refreshing || pullDistance > 8 ? " is-visible" : ""}${refreshing ? " is-refreshing" : ""}`}
-              aria-live="polite"
-            >
-              <div
-                className="pull-refresh-inner"
-                style={
-                  refreshing
-                    ? undefined
-                    : {
-                        transform: `translate3d(0, ${Math.max(0, pullDistance)}px, 0)`,
-                        opacity: Math.min(1, pullDistance / 24),
-                      }
-                }
-              >
-                <Icons.refresh />
-                <span>
-                  {refreshing
-                    ? "Refreshing…"
-                    : pullDistance >= PULL_TRIGGER_PX
-                      ? "Release to refresh"
-                      : "Pull to refresh"}
-                </span>
-              </div>
-            </div>
-          ) : null}
-          {bulkSelection.size > 0 && (
-            <div className="bulk-toolbar" aria-label="Bulk actions">
-              <span className="bulk-toolbar-count">
-                {bulkSelection.size} selected
-              </span>
-              <div className="bulk-toolbar-actions">
-                <ActionButton
-                  label="Archive selected"
-                  icon={<Icons.archive />}
-                  onClick={() => void bulkMutate("archive")}
-                />
-                <ActionButton
-                  label="Mark selected read"
-                  icon={<Icons.mailOpen />}
-                  onClick={() => void bulkMutate("mark_read")}
-                />
-                {labels.find((label) => label.kind === "label") && (
-                  <ActionButton
-                    label={`Apply ${labels.find((label) => label.kind === "label")!.name}`}
-                    icon={<Icons.tag />}
-                    onClick={() =>
-                      void bulkMutate("apply_label", {
-                        labelId: labels.find((label) => label.kind === "label")!
-                          .id,
-                      })
-                    }
-                  />
-                )}
-              </div>
-            </div>
-          )}
-          <div aria-hidden style={{ height: virtualStart * threadRowHeight }} />
-          {virtualThreads.map((t) => {
-            const name = decodeHtmlEntities(
-              t.participants[0]?.name ?? t.participants[0]?.email ?? "Unknown",
-            );
-            const subject = decodeHtmlEntities(t.subject);
-            const snippet = decodeHtmlEntities(t.snippet);
-            return (
-              <div
-                className={`thread-shell${bulkSelecting ? " is-selecting" : ""}`}
-                key={`${t.accountId}:${t.id}`}
-              >
-                <label className="bulk-select" aria-hidden={!bulkSelecting}>
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${subject}`}
-                    checked={bulkSelection.has(t.id)}
-                    tabIndex={bulkSelecting ? 0 : -1}
-                    disabled={!bulkSelecting}
-                    onChange={(event) =>
-                      setBulkSelection((current) => {
-                        const next = new Set(current);
-                        if (event.target.checked) {
-                          next.add(t.id);
-                          bulkAnchorIdRef.current = t.id;
-                        } else {
-                          next.delete(t.id);
+              {bulkSelection.size > 0 && (
+                <div className="bulk-toolbar" aria-label="Bulk actions">
+                  <span className="bulk-toolbar-count">
+                    {bulkSelection.size} selected
+                  </span>
+                  <div className="bulk-toolbar-actions">
+                    <ActionButton
+                      label="Archive selected"
+                      icon={<Icons.archive />}
+                      onClick={() => void bulkMutate("archive")}
+                    />
+                    <ActionButton
+                      label="Mark selected read"
+                      icon={<Icons.mailOpen />}
+                      onClick={() => void bulkMutate("mark_read")}
+                    />
+                    {labels.find((label) => label.kind === "label") && (
+                      <ActionButton
+                        label={`Apply ${labels.find((label) => label.kind === "label")!.name}`}
+                        icon={<Icons.tag />}
+                        onClick={() =>
+                          void bulkMutate("apply_label", {
+                            labelId: labels.find(
+                              (label) => label.kind === "label",
+                            )!.id,
+                          })
                         }
-                        return next;
-                      })
-                    }
-                  />
-                </label>
-                <SwipeableThreadRow
-                  enabled={isMobile && !bulkSelecting}
-                  settings={settings.swipeActions}
-                  onAction={(action) => applyThreadSwipeAction(t, action)}
-                >
-                  <button
-                    type="button"
-                    className={`thread ${selectedId === t.id ? "selected" : ""} ${
-                      t.unreadCount > 0 ? "unread" : ""
-                    }`}
-                    aria-current={selectedId === t.id ? "true" : undefined}
-                    title={`Open ${subject} · Enter`}
-                    onClick={(event) => {
-                      if (event.shiftKey) {
-                        event.preventDefault();
-                        applyBulkRangeSelect(t.id);
-                        setSelectedId(t.id);
-                        return;
-                      }
-                      setSelectedId(t.id);
-                      setOpenedId(t.id);
-                      if (isMobile) haptic("selection");
-                    }}
-                  >
-                    <div className="thread-row">
-                      <div className="thread-main">
-                        <div className="thread-top">
-                          <span className="thread-from">
-                            {name}
-                            <span className="provider-pill">{t.provider}</span>
-                          </span>
-                          <span className="thread-meta">
-                            {new Date(t.lastMessageAt).toLocaleDateString(
-                              undefined,
-                              {
-                                month: "short",
-                                day: "numeric",
-                              },
-                            )}
-                          </span>
-                        </div>
-                        <div className="thread-subject">{subject}</div>
-                        <div className="thread-snippet">{snippet}</div>
-                      </div>
-                    </div>
-                  </button>
-                </SwipeableThreadRow>
-              </div>
-            );
-          })}
-          <div
-            aria-hidden
-            style={{
-              height:
-                Math.max(
-                  0,
-                  filteredThreads.length - virtualStart - virtualThreads.length,
-                ) * threadRowHeight,
-            }}
-          />
-        </section>
-
-        <section
-          className="reading-pane panel reading"
-          aria-label="Reading pane"
-          ref={readingPaneRef}
-          data-fullscreen={
-            Boolean(openedId) && (isMobile || layout === "fullscreen")
-              ? "true"
-              : "false"
-          }
-          data-swiping-back={backSwipeX > 0 ? "true" : "false"}
-          style={
-            isMobile && backSwipeX > 0
-              ? {
-                  transform: `translate3d(${backSwipeX}px, 0, 0)`,
-                  transition: "none",
-                }
-              : undefined
-          }
-        >
-          {message ? (
-            <>
-              {isMobile ? (
-                <header className="reading-mobile-header">
-                  <ActionButton
-                    className="back-btn"
-                    label="Back to inbox"
-                    icon={<Icons.back />}
-                    command="back"
-                    iconOnly
-                    onClick={() => closeReading()}
-                  />
-                  <div className="reading-mobile-heading">
-                    <h1 className="reading-mobile-subject">
-                      {message.subject}
-                    </h1>
-                    <p className="reading-mobile-meta">
-                      {message.from.name ?? message.from.email}
-                      {threadMessages.length > 1
-                        ? ` · ${threadMessages.length} messages`
-                        : ""}
-                    </p>
+                      />
+                    )}
                   </div>
-                </header>
-              ) : (
+                </div>
+              )}
+              <div
+                aria-hidden
+                style={{ height: virtualStart * threadRowHeight }}
+              />
+              {virtualThreads.map((t) => {
+                const name = decodeHtmlEntities(
+                  t.participants[0]?.name ??
+                    t.participants[0]?.email ??
+                    "Unknown",
+                );
+                const subject = decodeHtmlEntities(t.subject);
+                const snippet = decodeHtmlEntities(t.snippet);
+                return (
+                  <div
+                    className={`thread-shell${bulkSelecting ? " is-selecting" : ""}`}
+                    key={`${t.accountId}:${t.id}`}
+                  >
+                    <label className="bulk-select" aria-hidden={!bulkSelecting}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${subject}`}
+                        checked={bulkSelection.has(t.id)}
+                        tabIndex={bulkSelecting ? 0 : -1}
+                        disabled={!bulkSelecting}
+                        onChange={(event) =>
+                          setBulkSelection((current) => {
+                            const next = new Set(current);
+                            if (event.target.checked) {
+                              next.add(t.id);
+                              bulkAnchorIdRef.current = t.id;
+                            } else {
+                              next.delete(t.id);
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                    </label>
+                    <SwipeableThreadRow
+                      enabled={isMobile && !bulkSelecting}
+                      settings={settings.swipeActions}
+                      onAction={(action) => applyThreadSwipeAction(t, action)}
+                    >
+                      <button
+                        type="button"
+                        className={`thread ${selectedId === t.id ? "selected" : ""} ${
+                          t.unreadCount > 0 ? "unread" : ""
+                        }`}
+                        aria-current={selectedId === t.id ? "true" : undefined}
+                        title={`Open ${subject} · Enter`}
+                        onClick={(event) => {
+                          if (event.shiftKey) {
+                            event.preventDefault();
+                            applyBulkRangeSelect(t.id);
+                            setSelectedId(t.id);
+                            return;
+                          }
+                          setSelectedId(t.id);
+                          setOpenedId(t.id);
+                          if (isMobile) haptic("selection");
+                        }}
+                      >
+                        <div className="thread-row">
+                          <div className="thread-main">
+                            <div className="thread-top">
+                              <span className="thread-from">
+                                {name}
+                                <span className="provider-pill">
+                                  {t.provider}
+                                </span>
+                              </span>
+                              <span className="thread-meta">
+                                {new Date(t.lastMessageAt).toLocaleDateString(
+                                  undefined,
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                  },
+                                )}
+                              </span>
+                            </div>
+                            <div className="thread-subject">{subject}</div>
+                            <div className="thread-snippet">{snippet}</div>
+                          </div>
+                        </div>
+                      </button>
+                    </SwipeableThreadRow>
+                  </div>
+                );
+              })}
+              <div
+                aria-hidden
+                style={{
+                  height:
+                    Math.max(
+                      0,
+                      filteredThreads.length -
+                        virtualStart -
+                        virtualThreads.length,
+                    ) * threadRowHeight,
+                }}
+              />
+            </section>
+
+            <section
+              className="reading-pane panel reading"
+              aria-label="Reading pane"
+              ref={readingPaneRef}
+              data-fullscreen={
+                Boolean(openedId) && (isMobile || layout === "fullscreen")
+                  ? "true"
+                  : "false"
+              }
+              data-swiping-back={backSwipeX > 0 ? "true" : "false"}
+              style={
+                isMobile && backSwipeX > 0
+                  ? {
+                      transform: `translate3d(${backSwipeX}px, 0, 0)`,
+                      transition: "none",
+                    }
+                  : undefined
+              }
+            >
+              {message ? (
                 <>
+                  {isMobile ? (
+                    <header className="reading-mobile-header">
+                      <ActionButton
+                        className="back-btn"
+                        label="Back to inbox"
+                        icon={<Icons.back />}
+                        command="back"
+                        iconOnly
+                        onClick={() => closeReading()}
+                      />
+                      <div className="reading-mobile-heading">
+                        <h1 className="reading-mobile-subject">
+                          {message.subject}
+                        </h1>
+                        <p className="reading-mobile-meta">
+                          {message.from.name ?? message.from.email}
+                          {threadMessages.length > 1
+                            ? ` · ${threadMessages.length} messages`
+                            : ""}
+                        </p>
+                      </div>
+                    </header>
+                  ) : (
+                    <>
+                      {showReadingBack && (
+                        <div>
+                          <ActionButton
+                            className="back-btn"
+                            label="Back to inbox"
+                            icon={<Icons.back />}
+                            command="back"
+                            onClick={() => closeReading()}
+                          />
+                        </div>
+                      )}
+                      <div className="reading-toolbar">
+                        <ActionButton
+                          label="Archive"
+                          icon={<Icons.archive />}
+                          command="archive"
+                          onClick={() => runtime.commands.dispatch("archive")}
+                        />
+                        <ActionButton
+                          label={message.unread ? "Mark read" : "Mark unread"}
+                          icon={
+                            message.unread ? <Icons.mailOpen /> : <Icons.mail />
+                          }
+                          command="mark_read_toggle"
+                          onClick={() =>
+                            runtime.commands.dispatch("mark_read_toggle")
+                          }
+                        />
+                        <ActionButton
+                          label="Reply"
+                          icon={<Icons.reply />}
+                          command="reply"
+                          onClick={() => runtime.commands.dispatch("reply")}
+                        />
+                        <ActionButton
+                          label="Reply all"
+                          icon={<Icons.replyAll />}
+                          onClick={() =>
+                            openCompose({
+                              to: [
+                                message.from.email,
+                                ...message.to.map((address) => address.email),
+                              ].join(", "),
+                              cc: message.cc
+                                ?.map((address) => address.email)
+                                .join(", "),
+                              subject: message.subject.startsWith("Re:")
+                                ? message.subject
+                                : `Re: ${message.subject}`,
+                              body: "",
+                              inReplyTo: message.id,
+                              references: [
+                                ...(message.references ?? []),
+                                message.id,
+                              ],
+                            })
+                          }
+                        />
+                        <ActionButton
+                          label="Forward"
+                          icon={<Icons.forward />}
+                          onClick={() =>
+                            openCompose({
+                              to: "",
+                              subject: message.subject.startsWith("Fwd:")
+                                ? message.subject
+                                : `Fwd: ${message.subject}`,
+                              body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
+                            })
+                          }
+                        />
+                        <ActionButton
+                          label={message.starred ? "Unstar" : "Star"}
+                          icon={<Icons.star />}
+                          onClick={() =>
+                            void mutateOpened(
+                              message.starred ? "unstar" : "star",
+                            )
+                          }
+                        />
+                        <ActionButton
+                          label="Snooze until tomorrow"
+                          icon={<Icons.snooze />}
+                          command="snooze"
+                          onClick={() =>
+                            void mutateOpened("snooze", {
+                              until: new Date(
+                                Date.now() + 86_400_000,
+                              ).toISOString(),
+                            })
+                          }
+                        />
+                        <ActionButton
+                          label="Report spam"
+                          icon={<Icons.warning />}
+                          onClick={() => void mutateOpened("spam")}
+                        />
+                        {unsubscribeCapability &&
+                          unsubscribeButtonVisible(unsubscribeCapability) && (
+                            <ActionButton
+                              label="Unsubscribe"
+                              icon={<Icons.unsubscribe />}
+                              tooltip={unsubscribeTooltip(
+                                unsubscribeCapability,
+                              )}
+                              onClick={() => void handleUnsubscribe()}
+                            />
+                          )}
+                      </div>
+                      <h1>{message.subject}</h1>
+                      <div className="conversation-heading">
+                        <span>
+                          {threadMessages.length}{" "}
+                          {threadMessages.length === 1 ? "message" : "messages"}
+                        </span>
+                        <span className="provider-pill">
+                          {message.provider}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div
+                    className="conversation"
+                    aria-label="Conversation history"
+                  >
+                    {threadMessages.map((item, index) => (
+                      <MessageCard
+                        key={item.id}
+                        message={item}
+                        defaultExpanded={index === threadMessages.length - 1}
+                        developerMode={settings.developerMode}
+                        theme={resolvedTheme}
+                        compact={isMobile}
+                        loadRemoteImages={
+                          settings.remoteImagePolicy === "allow"
+                        }
+                        askRemoteImages={settings.remoteImagePolicy === "ask"}
+                        resolveCidMap={async (source) => {
+                          const account = runtime.accounts.find(
+                            (entry) => entry.accountId === source.accountId,
+                          );
+                          if (!account) return {};
+                          return resolveCidImageMap(source, (attachment) =>
+                            account.provider.fetchAttachment(
+                              source.accountId,
+                              attachment,
+                            ),
+                          );
+                        }}
+                        onDownloadAttachment={async (source, attachment) => {
+                          const account = runtime.accounts.find(
+                            (entry) => entry.accountId === source.accountId,
+                          );
+                          if (!account) return;
+                          const stream = account.provider.fetchAttachment(
+                            source.accountId,
+                            attachment,
+                          );
+                          if (runtime.nativeStore) {
+                            const size =
+                              await runtime.nativeStore.putAttachmentStream(
+                                source.accountId,
+                                attachment.id,
+                                stream,
+                              );
+                            toast.success(`Stored ${attachment.filename}`, {
+                              description: `${size.toLocaleString()} bytes in encrypted quarantine`,
+                            });
+                          } else {
+                            let size = 0;
+                            for await (const chunk of stream)
+                              size += chunk.byteLength;
+                            toast.success("Attachment streamed", {
+                              description: `${size.toLocaleString()} bytes`,
+                            });
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {isMobile && (
+                    <footer
+                      className="reading-action-bar"
+                      aria-label="Message actions"
+                    >
+                      <ActionButton
+                        label="Archive"
+                        icon={<Icons.archive />}
+                        command="archive"
+                        iconOnly
+                        onClick={() => {
+                          haptic("impact-medium");
+                          runtime.commands.dispatch("archive");
+                        }}
+                      />
+                      <ActionButton
+                        label="Trash"
+                        icon={<Icons.trash />}
+                        iconOnly
+                        onClick={() => {
+                          haptic("warning");
+                          runtime.commands.dispatch("trash");
+                        }}
+                      />
+                      <ActionButton
+                        label="Snooze until tomorrow"
+                        icon={<Icons.snooze />}
+                        command="snooze"
+                        iconOnly
+                        onClick={() => {
+                          haptic("impact-light");
+                          void mutateOpened("snooze", {
+                            until: new Date(
+                              Date.now() + 86_400_000,
+                            ).toISOString(),
+                          });
+                        }}
+                      />
+                      <ActionButton
+                        className="reading-action-primary"
+                        label="Reply"
+                        icon={<Icons.reply />}
+                        command="reply"
+                        iconOnly
+                        variant="primary"
+                        onClick={() => {
+                          haptic("selection");
+                          runtime.commands.dispatch("reply");
+                        }}
+                      />
+                      <ActionButton
+                        label="Reply all"
+                        icon={<Icons.replyAll />}
+                        iconOnly
+                        onClick={() => {
+                          haptic("selection");
+                          openCompose({
+                            to: [
+                              message.from.email,
+                              ...message.to.map((address) => address.email),
+                            ].join(", "),
+                            cc: message.cc
+                              ?.map((address) => address.email)
+                              .join(", "),
+                            subject: message.subject.startsWith("Re:")
+                              ? message.subject
+                              : `Re: ${message.subject}`,
+                            body: "",
+                            inReplyTo: message.id,
+                            references: [
+                              ...(message.references ?? []),
+                              message.id,
+                            ],
+                          });
+                        }}
+                      />
+                      <ActionButton
+                        label={message.starred ? "Unstar" : "Star"}
+                        icon={<Icons.star />}
+                        iconOnly
+                        onClick={() => {
+                          haptic("selection");
+                          void mutateOpened(
+                            message.starred ? "unstar" : "star",
+                          );
+                        }}
+                      />
+                      <ActionButton
+                        label="Forward"
+                        icon={<Icons.forward />}
+                        iconOnly
+                        onClick={() => {
+                          haptic("selection");
+                          openCompose({
+                            to: "",
+                            subject: message.subject.startsWith("Fwd:")
+                              ? message.subject
+                              : `Fwd: ${message.subject}`,
+                            body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
+                          });
+                        }}
+                      />
+                    </footer>
+                  )}
+                </>
+              ) : openedId ? (
+                <div className="reading-empty reading-loading">
                   {showReadingBack && (
-                    <div>
+                    <div className={isMobile ? "mobile-back-row" : undefined}>
                       <ActionButton
                         className="back-btn"
                         label="Back to inbox"
@@ -3061,308 +3401,47 @@ export function App() {
                       />
                     </div>
                   )}
-                  <div className="reading-toolbar">
-                    <ActionButton
-                      label="Archive"
-                      icon={<Icons.archive />}
-                      command="archive"
-                      onClick={() => runtime.commands.dispatch("archive")}
-                    />
-                    <ActionButton
-                      label={message.unread ? "Mark read" : "Mark unread"}
-                      icon={
-                        message.unread ? <Icons.mailOpen /> : <Icons.mail />
-                      }
-                      command="mark_read_toggle"
-                      onClick={() =>
-                        runtime.commands.dispatch("mark_read_toggle")
-                      }
-                    />
-                    <ActionButton
-                      label="Reply"
-                      icon={<Icons.reply />}
-                      command="reply"
-                      onClick={() => runtime.commands.dispatch("reply")}
-                    />
-                    <ActionButton
-                      label="Reply all"
-                      icon={<Icons.replyAll />}
-                      onClick={() =>
-                        openCompose({
-                          to: [
-                            message.from.email,
-                            ...message.to.map((address) => address.email),
-                          ].join(", "),
-                          cc: message.cc
-                            ?.map((address) => address.email)
-                            .join(", "),
-                          subject: message.subject.startsWith("Re:")
-                            ? message.subject
-                            : `Re: ${message.subject}`,
-                          body: "",
-                          inReplyTo: message.id,
-                          references: [
-                            ...(message.references ?? []),
-                            message.id,
-                          ],
-                        })
-                      }
-                    />
-                    <ActionButton
-                      label="Forward"
-                      icon={<Icons.forward />}
-                      onClick={() =>
-                        openCompose({
-                          to: "",
-                          subject: message.subject.startsWith("Fwd:")
-                            ? message.subject
-                            : `Fwd: ${message.subject}`,
-                          body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
-                        })
-                      }
-                    />
-                    <ActionButton
-                      label={message.starred ? "Unstar" : "Star"}
-                      icon={<Icons.star />}
-                      onClick={() =>
-                        void mutateOpened(
-                          message.starred ? "unstar" : "star",
-                        )
-                      }
-                    />
-                    <ActionButton
-                      label="Snooze until tomorrow"
-                      icon={<Icons.snooze />}
-                      command="snooze"
-                      onClick={() =>
-                        void mutateOpened("snooze", {
-                          until: new Date(
-                            Date.now() + 86_400_000,
-                          ).toISOString(),
-                        })
-                      }
-                    />
-                    <ActionButton
-                      label="Report spam"
-                      icon={<Icons.warning />}
-                      onClick={() => void mutateOpened("spam")}
-                    />
-                    {unsubscribeCapability &&
-                      unsubscribeButtonVisible(unsubscribeCapability) && (
-                        <ActionButton
-                          label="Unsubscribe"
-                          icon={<Icons.unsubscribe />}
-                          tooltip={unsubscribeTooltip(unsubscribeCapability)}
-                          onClick={() => void handleUnsubscribe()}
-                        />
-                      )}
-                  </div>
-                  <h1>{message.subject}</h1>
-                  <div className="conversation-heading">
-                    <span>
-                      {threadMessages.length}{" "}
-                      {threadMessages.length === 1 ? "message" : "messages"}
-                    </span>
-                    <span className="provider-pill">{message.provider}</span>
-                  </div>
-                </>
-              )}
-              <div className="conversation" aria-label="Conversation history">
-                {threadMessages.map((item, index) => (
-                  <MessageCard
-                    key={item.id}
-                    message={item}
-                    defaultExpanded={index === threadMessages.length - 1}
-                    developerMode={settings.developerMode}
-                    theme={resolvedTheme}
-                    compact={isMobile}
-                    loadRemoteImages={settings.remoteImagePolicy === "allow"}
-                    askRemoteImages={settings.remoteImagePolicy === "ask"}
-                    resolveCidMap={async (source) => {
-                      const account = runtime.accounts.find(
-                        (entry) => entry.accountId === source.accountId,
-                      );
-                      if (!account) return {};
-                      return resolveCidImageMap(source, (attachment) =>
-                        account.provider.fetchAttachment(
-                          source.accountId,
-                          attachment,
-                        ),
-                      );
-                    }}
-                    onDownloadAttachment={async (source, attachment) => {
-                      const account = runtime.accounts.find(
-                        (entry) => entry.accountId === source.accountId,
-                      );
-                      if (!account) return;
-                      const stream = account.provider.fetchAttachment(
-                        source.accountId,
-                        attachment,
-                      );
-                      if (runtime.nativeStore) {
-                        const size =
-                          await runtime.nativeStore.putAttachmentStream(
-                            source.accountId,
-                            attachment.id,
-                            stream,
-                          );
-                        toast.success(`Stored ${attachment.filename}`, {
-                          description: `${size.toLocaleString()} bytes in encrypted quarantine`,
-                        });
-                      } else {
-                        let size = 0;
-                        for await (const chunk of stream)
-                          size += chunk.byteLength;
-                        toast.success("Attachment streamed", {
-                          description: `${size.toLocaleString()} bytes`,
-                        });
-                      }
-                    }}
-                  />
-                ))}
-              </div>
-              {isMobile && (
-                <footer
-                  className="reading-action-bar"
-                  aria-label="Message actions"
-                >
-                  <ActionButton
-                    label="Archive"
-                    icon={<Icons.archive />}
-                    command="archive"
-                    iconOnly
-                    onClick={() => runtime.commands.dispatch("archive")}
-                  />
-                  <ActionButton
-                    label="Trash"
-                    icon={<Icons.trash />}
-                    iconOnly
-                    onClick={() => runtime.commands.dispatch("trash")}
-                  />
-                  <ActionButton
-                    label="Snooze until tomorrow"
-                    icon={<Icons.snooze />}
-                    command="snooze"
-                    iconOnly
-                    onClick={() =>
-                      void mutateOpened("snooze", {
-                        until: new Date(
-                          Date.now() + 86_400_000,
-                        ).toISOString(),
-                      })
-                    }
-                  />
-                  <ActionButton
-                    className="reading-action-primary"
-                    label="Reply"
-                    icon={<Icons.reply />}
-                    command="reply"
-                    iconOnly
-                    variant="primary"
-                    onClick={() => runtime.commands.dispatch("reply")}
-                  />
-                  <ActionButton
-                    label="Reply all"
-                    icon={<Icons.replyAll />}
-                    iconOnly
-                    onClick={() =>
-                      openCompose({
-                        to: [
-                          message.from.email,
-                          ...message.to.map((address) => address.email),
-                        ].join(", "),
-                        cc: message.cc
-                          ?.map((address) => address.email)
-                          .join(", "),
-                        subject: message.subject.startsWith("Re:")
-                          ? message.subject
-                          : `Re: ${message.subject}`,
-                        body: "",
-                        inReplyTo: message.id,
-                        references: [
-                          ...(message.references ?? []),
-                          message.id,
-                        ],
-                      })
-                    }
-                  />
-                  <ActionButton
-                    label={message.starred ? "Unstar" : "Star"}
-                    icon={<Icons.star />}
-                    iconOnly
-                    onClick={() =>
-                      void mutateOpened(message.starred ? "unstar" : "star")
-                    }
-                  />
-                  <ActionButton
-                    label="Forward"
-                    icon={<Icons.forward />}
-                    iconOnly
-                    onClick={() =>
-                      openCompose({
-                        to: "",
-                        subject: message.subject.startsWith("Fwd:")
-                          ? message.subject
-                          : `Fwd: ${message.subject}`,
-                        body: `\n\n---------- Forwarded message ----------\nFrom: ${formatAddress(message.from)}\nDate: ${message.date}\nSubject: ${message.subject}\nTo: ${message.to.map(formatAddress).join(", ")}\n${message.attachments?.length ? `Attachments (download before forwarding): ${message.attachments.map((item) => item.filename).join(", ")}\n` : ""}\n${message.bodyText ?? message.snippet}`,
-                      })
-                    }
-                  />
-                </footer>
-              )}
-            </>
-          ) : openedId ? (
-            <div className="reading-empty reading-loading">
-              {showReadingBack && (
-                <div className={isMobile ? "mobile-back-row" : undefined}>
-                  <ActionButton
-                    className="back-btn"
-                    label="Back to inbox"
-                    icon={<Icons.back />}
-                    command="back"
-                    onClick={() => closeReading()}
-                  />
+                  {threadLoadError ? (
+                    <>
+                      <p className="meta">Could not load this email.</p>
+                      <p className="meta meta-hint">{threadLoadError}</p>
+                      <ActionButton
+                        label="Retry"
+                        icon={<Icons.refresh />}
+                        onClick={() => {
+                          setStatus("Retrying…");
+                          setThreadLoadNonce((value) => value + 1);
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p className="meta">
+                        {threadLoading ? "Loading email…" : "Opening…"}
+                      </p>
+                      <p className="meta meta-hint">
+                        {threads.find((item) => item.id === openedId)
+                          ?.subject ?? "Fetching message body"}
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="reading-empty">
+                  <p className="meta">No thread selected.</p>
+                  <p className="meta meta-hint">
+                    <span className="kbd">J</span>{" "}
+                    <span className="kbd">K</span> navigate in Normal ·{" "}
+                    <span className="kbd">I</span> or{" "}
+                    <span className="kbd">/</span> Insert ·{" "}
+                    <span className="kbd">Esc</span> Normal ·{" "}
+                    <span className="kbd">G</span>{" "}
+                    <span className="kbd">I</span> inbox ·{" "}
+                    <span className="kbd">⌘K</span> commands
+                  </p>
                 </div>
               )}
-              {threadLoadError ? (
-                <>
-                  <p className="meta">Could not load this email.</p>
-                  <p className="meta meta-hint">{threadLoadError}</p>
-                  <ActionButton
-                    label="Retry"
-                    icon={<Icons.refresh />}
-                    onClick={() => {
-                      setStatus("Retrying…");
-                      setThreadLoadNonce((value) => value + 1);
-                    }}
-                  />
-                </>
-              ) : (
-                <>
-                  <p className="meta">
-                    {threadLoading ? "Loading email…" : "Opening…"}
-                  </p>
-                  <p className="meta meta-hint">
-                    {threads.find((item) => item.id === openedId)?.subject ??
-                      "Fetching message body"}
-                  </p>
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="reading-empty">
-              <p className="meta">No thread selected.</p>
-              <p className="meta meta-hint">
-                <span className="kbd">J</span> <span className="kbd">K</span>{" "}
-                navigate in Normal · <span className="kbd">I</span> or{" "}
-                <span className="kbd">/</span> Insert ·{" "}
-                <span className="kbd">Esc</span> Normal ·{" "}
-                <span className="kbd">G</span> <span className="kbd">I</span>{" "}
-                inbox · <span className="kbd">⌘K</span> commands
-              </p>
-            </div>
-          )}
-        </section>
+            </section>
           </>
         )}
       </div>
@@ -3374,7 +3453,10 @@ export function App() {
             className={mobileNavOpen ? "is-active" : undefined}
             aria-label="Folders"
             aria-expanded={mobileNavOpen}
-            onClick={() => setMobileNavOpen((open) => !open)}
+            onClick={() => {
+              haptic("selection");
+              setMobileNavOpen((open) => !open);
+            }}
           >
             <Icons.menu />
           </button>
@@ -3399,6 +3481,7 @@ export function App() {
                 : undefined
             }
             onClick={() => {
+              haptic("selection");
               setMobileNavOpen(false);
               setMainView("mail");
               setActiveLabel("INBOX");
@@ -3413,6 +3496,7 @@ export function App() {
             className="mobile-nav-compose"
             aria-label="Compose"
             onClick={() => {
+              haptic("impact-light");
               setMobileNavOpen(false);
               setComposeInitial(undefined);
               setComposeOpen(true);
@@ -3425,6 +3509,7 @@ export function App() {
             type="button"
             aria-label="Search"
             onClick={() => {
+              haptic("selection");
               setMobileNavOpen(false);
               setSettingsOpen(false);
               if (openedId) {
@@ -3445,6 +3530,7 @@ export function App() {
             aria-label="Settings"
             aria-current={settingsOpen ? "page" : undefined}
             onClick={() => {
+              haptic("selection");
               setMobileNavOpen(false);
               setSettingsOpen(true);
             }}
@@ -3462,10 +3548,7 @@ export function App() {
             mainView === "calendar"
               ? "Calendar"
               : labelStatusName(activeLabel, labels),
-          unread:
-            mainView === "calendar"
-              ? 0
-              : unreadCount,
+          unread: mainView === "calendar" ? 0 : unreadCount,
           total:
             mainView === "calendar"
               ? calendarEvents.length
@@ -3475,7 +3558,7 @@ export function App() {
 
       <Toaster
         theme={resolvedTheme}
-        position="bottom-right"
+        position={isMobile ? "bottom-center" : "bottom-right"}
         closeButton
         richColors={false}
         className="galmail-toaster"
@@ -3558,7 +3641,7 @@ export function App() {
               sendAt.getTime() > Date.now() + 1_000;
             const availableAt = scheduled
               ? sendAt.toISOString()
-              : new Date(Date.now() + 5_000).toISOString();
+              : undoDeadline();
             const mutation = await runtime.sync.enqueue({
               accountId: normalized.accountId,
               kind: "send",
@@ -3574,23 +3657,27 @@ export function App() {
             setComposeInitial(undefined);
             setInputMode("normal");
             if (scheduled) {
-              toast.success(`Scheduled for ${formatScheduleToast(availableAt)}`, {
-                description: "Sends when GalMail is open",
-              });
+              toast.success(
+                `Scheduled for ${formatScheduleToast(availableAt)}`,
+                {
+                  description: "Sends when GalMail is open",
+                },
+              );
               return;
             }
-            undoRef.current = async () => {
-              await runtime.sync.cancelOutbox(mutation.id);
-              openCompose(draft);
-              toast.message("Send cancelled");
-            };
+            presentUndoToast({
+              title: "Send queued",
+              undoRef,
+              undoneTitle: "Send cancelled",
+              performUndo: async () => {
+                await runtime.sync.cancelOutbox(mutation.id);
+                openCompose(draft);
+              },
+            });
             setTimeout(
               () => void runtime.sync.flushOutbox(normalized.accountId),
-              5_000,
+              UNDO_WINDOW_MS,
             );
-            toast.success("Send queued", {
-              description: "Undo available for 5 seconds",
-            });
           }}
         />
       )}

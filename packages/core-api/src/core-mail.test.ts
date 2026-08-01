@@ -159,7 +159,7 @@ describe("mail content security", () => {
       colorScheme: "dark",
     });
     expect(document).toContain("color-scheme:dark");
-    expect(document).toContain("#0d0e10");
+    expect(document).toContain("#08090a");
     expect(document).toContain("<p>Hello</p>");
     expect(document).toContain("<body>");
   });
@@ -176,7 +176,7 @@ describe("mail content security", () => {
     );
     expect(document).toContain('src="data:image/png;base64,abc"');
     expect(document).not.toContain("cid:inline-logo@mail");
-    expect(document).toContain("overflow-x:hidden");
+    expect(document).toContain("overflow:hidden");
   });
 
   test("flags tracking and dangerous attachments", () => {
