@@ -1,10 +1,34 @@
-/** Defense-in-depth sanitizer. Mail HTML must additionally render in a sandboxed iframe. */
-const ALLOWED_TAGS = new Set([
+/**
+ * Defense-in-depth mail HTML sanitizer.
+ *
+ * Mail must still render inside a sandboxed iframe. Prefer
+ * `sandbox="allow-same-origin"` without `allow-scripts` so the parent can
+ * measure layout while attacker script cannot run even if sanitization fails.
+ */
+import createDOMPurify from "dompurify";
+import { JSDOM } from "jsdom";
+
+export type MailColorScheme = "light" | "dark";
+
+export interface HtmlSanitizeOptions {
+  allowRemoteImages?: boolean;
+  stripTrackingParameters?: boolean;
+  /** Base chrome for the sandboxed reading document. Defaults to light. */
+  colorScheme?: MailColorScheme;
+  /**
+   * Map Content-ID (with or without angle brackets / cid: prefix) to a
+   * `data:` or `blob:` URL so inline images render inside the sandboxed iframe.
+   */
+  cidMap?: Record<string, string>;
+}
+
+const ALLOWED_TAGS = [
   "a",
   "abbr",
   "b",
   "blockquote",
   "br",
+  "center",
   "code",
   "div",
   "em",
@@ -33,46 +57,35 @@ const ALLOWED_TAGS = new Set([
   "tr",
   "u",
   "ul",
-]);
-const VOID_TAGS = new Set(["br", "hr", "img"]);
-const SUPPRESSED_CONTENT_TAGS = new Set([
-  "script",
-  "style",
-  "iframe",
-  "object",
-  "embed",
-  "svg",
-  "math",
-  "form",
-]);
-const ALLOWED_ATTRIBUTES = new Set([
+] as const;
+
+/** Legacy mail layout attrs + modern safe presentation attrs. */
+const ALLOWED_ATTR = [
+  "align",
   "alt",
   "aria-label",
+  "bgcolor",
+  "border",
+  "cellpadding",
+  "cellspacing",
   "class",
+  "color",
   "colspan",
+  "dir",
+  "face",
   "height",
   "href",
   "rel",
   "role",
   "rowspan",
+  "size",
   "src",
+  "style",
+  "target",
   "title",
+  "valign",
   "width",
-]);
-
-export type MailColorScheme = "light" | "dark";
-
-export interface HtmlSanitizeOptions {
-  allowRemoteImages?: boolean;
-  stripTrackingParameters?: boolean;
-  /** Base chrome for the sandboxed reading document. Defaults to light. */
-  colorScheme?: MailColorScheme;
-  /**
-   * Map Content-ID (with or without angle brackets / cid: prefix) to a
-   * `data:` or `blob:` URL so inline images render inside the sandboxed iframe.
-   */
-  cidMap?: Record<string, string>;
-}
+] as const;
 
 const MAIL_DOCUMENT_THEME: Record<
   MailColorScheme,
@@ -88,7 +101,6 @@ const MAIL_DOCUMENT_THEME: Record<
   }
 > = {
   dark: {
-    // Match app `--bg0` (mobile reading canvas / shell), not elevated cards.
     bg: "#08090a",
     fg: "#e6e8ec",
     muted: "#969cab",
@@ -110,18 +122,37 @@ const MAIL_DOCUMENT_THEME: Record<
   },
 };
 
+type PurifyWindow = Parameters<typeof createDOMPurify>[0];
+let purify: ReturnType<typeof createDOMPurify> | undefined;
+
+function resolveWindow(): PurifyWindow {
+  const existing = (globalThis as typeof globalThis & { window?: PurifyWindow })
+    .window;
+  if (existing && "document" in existing) return existing;
+  return new JSDOM("<!doctype html><html><body></body></html>")
+    .window as unknown as PurifyWindow;
+}
+
+function getPurify(): ReturnType<typeof createDOMPurify> {
+  if (!purify) {
+    // jsdom Window and DOM lib Window differ slightly from DOMPurify's WindowLike.
+    purify = createDOMPurify(resolveWindow() as never);
+  }
+  return purify;
+}
+
 function mailDocumentBaseStyles(scheme: MailColorScheme): string {
   const t = MAIL_DOCUMENT_THEME[scheme];
   return [
     `html{color-scheme:${scheme};background:${t.bg};width:100%;max-width:100%;height:auto;overflow:hidden}`,
-    `body{margin:0;padding:0;width:100%;max-width:100%;height:auto;overflow:hidden;background:${t.bg};color:${t.fg};font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
+    `body{margin:0;padding:12px 0;width:100%;max-width:100%;height:auto;overflow:hidden;background:${t.bg};color:${t.fg};font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
     `a{color:${t.link}}`,
     `a:visited{color:${t.linkVisited}}`,
-    /* Force marketing-mail fixed widths into the reading canvas. */
-    "img,video{max-width:100%!important;height:auto!important;display:block}",
-    "table{border-collapse:collapse;max-width:100%!important;width:auto!important}",
-    "td,th{vertical-align:top;word-break:break-word}",
-    "div,p,span,font,center{max-width:100%}",
+    /* Fluid marketing-mail layout: keep structure, kill fixed desktop widths. */
+    "img,video{max-width:100%!important;height:auto!important}",
+    "table{border-collapse:collapse;max-width:100%!important}",
+    "td,th{word-break:break-word}",
+    "div,p,span,font,center,table{max-width:100%!important}",
     "ul,ol{padding-left:1.4em}",
     "p,li{margin:0.55em 0}",
     "h1,h2,h3,h4,h5,h6{line-height:1.25;margin:0.8em 0 0.4em;font-weight:600}",
@@ -129,14 +160,12 @@ function mailDocumentBaseStyles(scheme: MailColorScheme): string {
     `pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.92em}`,
     `pre{margin:0.7em 0;padding:10px 12px;border-radius:6px;background:${t.preBg};overflow-x:auto;white-space:pre-wrap}`,
     `blockquote{margin:0.6em 0;padding:0 0 0 12px;border-left:3px solid ${t.quote};color:${t.muted}}`,
+    "@media (max-width:640px){",
+    "body{padding:10px 0;font-size:16px}",
+    "table,td,th{width:auto!important}",
+    "img{width:auto!important}",
+    "}",
   ].join("");
-}
-
-function escapeText(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 export function stripTrackingParameters(value: string): string {
@@ -169,94 +198,103 @@ function resolveCidSrc(
   );
 }
 
-function safeAttribute(
-  name: string,
+export function isSafeHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (
+      u.protocol === "http:" ||
+      u.protocol === "https:" ||
+      u.protocol === "mailto:"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function rewriteSrc(
   value: string,
   options: HtmlSanitizeOptions,
-): string | undefined {
-  if (!ALLOWED_ATTRIBUTES.has(name) || name.startsWith("on")) return undefined;
-  if (name === "src") {
-    if (/^cid:/i.test(value)) {
-      return resolveCidSrc(value, options.cidMap) ?? value;
-    }
-    if (/^data:/i.test(value)) return value;
-    if (!options.allowRemoteImages || !/^https?:/i.test(value))
-      return undefined;
+): string | null {
+  if (/^cid:/i.test(value)) {
+    return resolveCidSrc(value, options.cidMap) ?? null;
   }
-  if (name === "href") {
-    if (!isSafeHttpUrl(value)) return "#";
-    return options.stripTrackingParameters === false
-      ? value
-      : stripTrackingParameters(value);
+  if (/^data:image\//i.test(value)) return value;
+  if (/^https?:/i.test(value)) {
+    return options.allowRemoteImages ? value : null;
   }
-  return value;
+  return null;
 }
 
 export function sanitizeHtml(
   input: string,
   options: HtmlSanitizeOptions = {},
 ): string {
-  const tokens =
-    input.match(/<!--[\s\S]*?-->|<![^>]*>|<\/?[^>]+>|[^<]+|</g) ?? [];
-  const output: string[] = [];
-  const suppressed: string[] = [];
-  for (const token of tokens) {
-    if (token.startsWith("<!--") || /^<!/i.test(token)) continue;
-    if (!token.startsWith("<")) {
-      if (suppressed.length === 0) output.push(token);
-      continue;
+  const DOMPurify = getPurify();
+  const stripTracking = options.stripTrackingParameters !== false;
+
+  DOMPurify.clearConfig();
+  DOMPurify.setConfig({
+    ALLOWED_TAGS: [...ALLOWED_TAGS],
+    ALLOWED_ATTR: [...ALLOWED_ATTR],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_UNKNOWN_PROTOCOLS: false,
+    FORCE_BODY: true,
+    RETURN_DOM: false,
+    RETURN_DOM_FRAGMENT: false,
+    SAFE_FOR_TEMPLATES: false,
+    WHOLE_DOCUMENT: false,
+  });
+
+  DOMPurify.removeAllHooks();
+  DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+    const name = data.attrName?.toLowerCase() ?? "";
+    const value = data.attrValue ?? "";
+
+    if (name.startsWith("on")) {
+      data.keepAttr = false;
+      return;
     }
-    const close = token.match(/^<\s*\/\s*([a-z0-9-]+)/i);
-    if (close) {
-      const tag = close[1]!.toLowerCase();
-      if (suppressed.at(-1) === tag) {
-        suppressed.pop();
-      } else if (
-        suppressed.length === 0 &&
-        ALLOWED_TAGS.has(tag) &&
-        !VOID_TAGS.has(tag)
-      ) {
-        output.push(`</${tag}>`);
+
+    if (name === "href") {
+      if (!isSafeHttpUrl(value)) {
+        data.attrValue = "#";
+        return;
       }
-      continue;
+      data.attrValue = stripTracking ? stripTrackingParameters(value) : value;
+      return;
     }
-    const open = token.match(/^<\s*([a-z0-9-]+)/i);
-    if (!open) {
-      if (suppressed.length === 0) output.push(escapeText(token));
-      continue;
-    }
-    const tag = open[1]!.toLowerCase();
-    if (!ALLOWED_TAGS.has(tag)) {
-      if (SUPPRESSED_CONTENT_TAGS.has(tag) && !/\/\s*>$/.test(token)) {
-        suppressed.push(tag);
+
+    if (name === "src") {
+      const next = rewriteSrc(value, options);
+      if (next == null) {
+        data.keepAttr = false;
+        return;
       }
-      continue;
+      data.attrValue = next;
+      return;
     }
-    if (suppressed.length > 0) continue;
-    const attributes: string[] = [];
-    const source = token.slice(open[0].length, token.lastIndexOf(">"));
-    for (const match of source.matchAll(
-      /([:\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g,
-    )) {
-      const name = match[1]!.toLowerCase();
-      const safe = safeAttribute(
-        name,
-        match[2] ?? match[3] ?? match[4] ?? "",
-        options,
-      );
-      if (safe !== undefined) {
-        attributes.push(
-          `${name}="${escapeText(safe).replace(/"/g, "&quot;")}"`,
-        );
-      }
+
+    if (name === "style") {
+      // DOMPurify already strips expression()/url(javascript:). Drop leftover
+      // position tricks that break the reading canvas height/scroll model.
+      data.attrValue = value
+        .replace(/expression\s*\(/gi, "")
+        .replace(/-moz-binding\s*:/gi, "")
+        .replace(/position\s*:\s*(fixed|sticky)/gi, "position:relative");
     }
-    if (tag === "a")
-      attributes.push('target="_blank"', 'rel="noopener noreferrer"');
-    output.push(
-      `<${tag}${attributes.length ? ` ${attributes.join(" ")}` : ""}>`,
-    );
-  }
-  return output.join("");
+  });
+
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.nodeName === "A") {
+      const el = node as unknown as Element;
+      el.setAttribute("target", "_blank");
+      el.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+
+  const clean = DOMPurify.sanitize(input);
+  DOMPurify.removeAllHooks();
+  return typeof clean === "string" ? clean : "";
 }
 
 export function buildIsolatedMailDocument(
@@ -266,8 +304,12 @@ export function buildIsolatedMailDocument(
   const sanitized = sanitizeHtml(html, options);
   const scheme: MailColorScheme =
     options.colorScheme === "dark" ? "dark" : "light";
-  const csp = `default-src 'none'; img-src ${options.allowRemoteImages ? "https: http:" : "'none'"} cid: data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles(scheme)}</style></head><body>${sanitized}</body></html>`;
+  // No script-src: the reading iframe must not execute mail (or bridge) script.
+  const imgSrc = options.allowRemoteImages
+    ? "https: http: data: cid:"
+    : "data: cid:";
+  const csp = `default-src 'none'; img-src ${imgSrc}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles(scheme)}</style></head><body>${sanitized}</body></html>`;
 }
 
 export function isTrackingImage(input: {
@@ -304,17 +346,4 @@ export function attachmentQuarantineReason(input: {
     return "Potentially executable content type";
   }
   return undefined;
-}
-
-export function isSafeHttpUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return (
-      u.protocol === "http:" ||
-      u.protocol === "https:" ||
-      u.protocol === "mailto:"
-    );
-  } catch {
-    return false;
-  }
 }

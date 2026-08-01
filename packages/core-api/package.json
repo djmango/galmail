@@ -18,7 +18,13 @@
     "bench": "vitest bench --run"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.2.0",
+    "@types/jsdom": "^28.0.3",
     "typescript": "^5.7.2",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.12",
+    "jsdom": "^30.0.1"
   }
 }
