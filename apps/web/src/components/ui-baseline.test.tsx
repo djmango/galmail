@@ -202,8 +202,8 @@ describe("current UI baseline", () => {
         loadRemoteImages
       />,
     );
-    expect(html).toContain('sandbox="allow-scripts"');
-    expect(html).not.toContain("allow-same-origin");
+    expect(html).toContain('sandbox="allow-same-origin"');
+    expect(html).not.toContain("allow-scripts");
     expect(html).toContain('referrerPolicy="strict-origin-when-cross-origin"');
     expect(html).toContain("Message options");
     expect(html).toContain("mail-body-menu");
@@ -215,8 +215,11 @@ describe("current UI baseline", () => {
     expect(html).toContain("color-scheme:dark");
     expect(html).toContain('data-mail-scheme="dark"');
     expect(html).toContain("#08090a");
-    expect(html).toContain("galmail:open-url");
+    expect(html).not.toContain("galmail:open-url");
+    // React escapes quotes inside srcDoc (`script-src &#x27;none&#x27;`).
     expect(html).toContain("script-src");
+    expect(html).toContain("&#x27;none&#x27;");
+    expect(html).toContain("viewport");
   });
 
   it("blocks remote images when the setting defaults off", () => {

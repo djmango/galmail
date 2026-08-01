@@ -3325,7 +3325,7 @@ select:focus-visible {
 }
 
 .app[data-mobile="true"] .message-card.is-compact .mail-html-frame {
-  min-height: min(55vh, 28rem);
+  min-height: 8rem;
   background: var(--bg0);
 }
 

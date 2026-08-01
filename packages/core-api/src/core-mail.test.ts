@@ -150,8 +150,10 @@ describe("mail content security", () => {
       '<img src="https://tracker.invalid/pixel"><p>body</p>',
     );
     expect(document).toContain("default-src 'none'");
+    expect(document).toContain("script-src 'none'");
     expect(document).not.toContain("tracker.invalid");
     expect(document).toContain("color-scheme:light");
+    expect(document).toContain('name="viewport"');
   });
 
   test("builds a dark reading document when colorScheme is dark", () => {

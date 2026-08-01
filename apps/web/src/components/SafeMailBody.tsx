@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   buildIsolatedMailDocument,
   isSafeHttpUrl,
@@ -9,95 +9,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { isNativeShell } from "../lib/account-session";
 import { ActionButton } from "./ActionButton";
 import { Icons } from "./Icons";
-
-const OPEN_URL_MESSAGE = "galmail:open-url";
-const FRAME_HEIGHT_MESSAGE = "galmail:frame-height";
-
-/** Click bridge: post safe link navigations to the parent (no same-origin). */
-const LINK_BRIDGE_SCRIPT = `<script>(function(){
-  function hrefFromEvent(event){
-    var el=event.target;
-    if(!el||!el.closest)return null;
-    var a=el.closest("a");
-    if(!a)return null;
-    return a.getAttribute("href");
-  }
-  function onActivate(event){
-    var href=hrefFromEvent(event);
-    if(!href||href==="#"||href.indexOf("javascript:")===0)return;
-    event.preventDefault();
-    event.stopPropagation();
-    window.parent.postMessage({type:${JSON.stringify(OPEN_URL_MESSAGE)},href:href},"*");
-  }
-  document.addEventListener("click",onActivate,true);
-  document.addEventListener("auxclick",onActivate,true);
-})();</script>`;
-
-/** Report content height so the parent can size the iframe (no inner scroll). */
-const HEIGHT_BRIDGE_SCRIPT = `<script>(function(){
-  var TYPE=${JSON.stringify(FRAME_HEIGHT_MESSAGE)};
-  function measure(){
-    var root=document.documentElement;
-    var body=document.body;
-    if(root){root.style.overflow="hidden";root.style.height="auto";}
-    if(body){body.style.overflow="hidden";body.style.height="auto";}
-    var bottom=0;
-    if(body){
-      var kids=body.children;
-      for(var i=0;i<kids.length;i++){
-        var r=kids[i].getBoundingClientRect();
-        if(r.bottom>bottom)bottom=r.bottom;
-      }
-    }
-    var h=Math.max(
-      bottom,
-      root?root.scrollHeight:0,
-      root?root.offsetHeight:0,
-      body?body.scrollHeight:0,
-      body?body.offsetHeight:0
-    );
-    window.parent.postMessage({type:TYPE,height:h},"*");
-  }
-  function schedule(){
-    if(window.requestAnimationFrame)requestAnimationFrame(function(){
-      requestAnimationFrame(measure);
-    });
-    else setTimeout(measure,0);
-  }
-  window.addEventListener("load",schedule);
-  document.addEventListener("DOMContentLoaded",schedule);
-  if(window.ResizeObserver&&document.body){
-    try{new ResizeObserver(schedule).observe(document.body);}catch(e){}
-  }
-  if(window.MutationObserver&&document.body){
-    try{
-      new MutationObserver(schedule).observe(document.body,{
-        childList:true,subtree:true,attributes:true,characterData:true
-      });
-    }catch(e){}
-  }
-  var imgs=document.images||[];
-  for(var i=0;i<imgs.length;i++){
-    imgs[i].addEventListener("load",schedule);
-    imgs[i].addEventListener("error",schedule);
-  }
-  schedule();
-  setTimeout(schedule,80);
-  setTimeout(schedule,240);
-  setTimeout(schedule,800);
-})();</script>`;
-
-function withMailBridges(htmlDocument: string): string {
-  const withCsp = htmlDocument.replace(
-    "style-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'; script-src 'unsafe-inline'",
-  );
-  const inject = `${HEIGHT_BRIDGE_SCRIPT}${LINK_BRIDGE_SCRIPT}`;
-  if (withCsp.includes("</body>")) {
-    return withCsp.replace("</body>", `${inject}</body>`);
-  }
-  return `${withCsp}${inject}`;
-}
 
 async function openExternalUrl(url: string): Promise<void> {
   if (isNativeShell()) {
@@ -196,6 +107,29 @@ function MailBodyOverflowMenu(props: {
   );
 }
 
+function measureMailDocument(doc: Document): number {
+  const body = doc.body;
+  const root = doc.documentElement;
+  if (!body) return 0;
+  body.style.overflow = "hidden";
+  body.style.height = "auto";
+  root.style.overflow = "hidden";
+  root.style.height = "auto";
+
+  let bottom = 0;
+  for (const child of Array.from(body.children)) {
+    const rect = child.getBoundingClientRect();
+    if (rect.bottom > bottom) bottom = rect.bottom;
+  }
+  return Math.max(
+    bottom,
+    body.scrollHeight,
+    body.offsetHeight,
+    root.scrollHeight,
+    root.offsetHeight,
+  );
+}
+
 export function SafeMailBody(props: {
   html?: string;
   text?: string;
@@ -215,49 +149,107 @@ export function SafeMailBody(props: {
     props.askRemoteImages ? false : (props.loadRemoteImages ?? true),
   );
   const [asked, setAsked] = useState(false);
-  const [frameHeight, setFrameHeight] = useState(240);
+  const [frameHeight, setFrameHeight] = useState(160);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const document = useMemo(
+  const documentHtml = useMemo(
     () =>
       props.html
-        ? withMailBridges(
-            buildIsolatedMailDocument(props.html, {
-              allowRemoteImages,
-              stripTrackingParameters: true,
-              colorScheme,
-              cidMap: props.cidMap,
-            }),
-          )
+        ? buildIsolatedMailDocument(props.html, {
+            allowRemoteImages,
+            stripTrackingParameters: true,
+            colorScheme,
+            cidMap: props.cidMap,
+          })
         : "",
     [props.html, allowRemoteImages, colorScheme, props.cidMap],
   );
 
   useEffect(() => {
-    setFrameHeight(240);
-  }, [document]);
+    setFrameHeight(160);
+  }, [documentHtml]);
 
-  useEffect(() => {
-    function onMessage(event: MessageEvent) {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data;
-      if (!data || typeof data !== "object") return;
-      const type = (data as { type?: unknown }).type;
-      if (type === OPEN_URL_MESSAGE) {
-        const href = (data as { href?: unknown }).href;
-        if (typeof href !== "string" || !isSafeHttpUrl(href)) return;
-        void openExternalUrl(href);
+  useLayoutEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe || !documentHtml) return;
+
+    let cancelled = false;
+    let observer: ResizeObserver | undefined;
+    const cleanups: Array<() => void> = [];
+
+    const syncHeight = () => {
+      if (cancelled) return;
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc?.body) return;
+        const next = Math.max(120, Math.ceil(measureMailDocument(doc)) + 8);
+        setFrameHeight((prev) => (Math.abs(prev - next) < 2 ? prev : next));
+      } catch {
+        // Sandbox / access errors - leave prior height.
+      }
+    };
+
+    const onLinkActivate = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || href === "#" || href.startsWith("javascript:")) {
+        event.preventDefault();
         return;
       }
-      if (type === FRAME_HEIGHT_MESSAGE) {
-        const height = (data as { height?: unknown }).height;
-        if (typeof height !== "number" || !Number.isFinite(height)) return;
-        const next = Math.max(120, Math.ceil(height) + 8);
-        setFrameHeight((prev) => (Math.abs(prev - next) < 2 ? prev : next));
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isSafeHttpUrl(href)) return;
+      void openExternalUrl(href);
+    };
+
+    const bindDocument = () => {
+      const doc = iframe.contentDocument;
+      if (!doc?.body || cancelled) return;
+
+      doc.addEventListener("click", onLinkActivate, true);
+      cleanups.push(() =>
+        doc.removeEventListener("click", onLinkActivate, true),
+      );
+
+      if (typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(() => syncHeight());
+        observer.observe(doc.body);
       }
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
+
+      for (const img of Array.from(doc.images)) {
+        const onImg = () => syncHeight();
+        img.addEventListener("load", onImg);
+        img.addEventListener("error", onImg);
+        cleanups.push(() => {
+          img.removeEventListener("load", onImg);
+          img.removeEventListener("error", onImg);
+        });
+      }
+
+      syncHeight();
+      requestAnimationFrame(syncHeight);
+      const t1 = window.setTimeout(syncHeight, 80);
+      const t2 = window.setTimeout(syncHeight, 320);
+      cleanups.push(() => {
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      });
+    };
+
+    const onLoad = () => bindDocument();
+    iframe.addEventListener("load", onLoad);
+    // srcDoc may already be parsed before listeners attach.
+    bindDocument();
+
+    return () => {
+      cancelled = true;
+      iframe.removeEventListener("load", onLoad);
+      observer?.disconnect();
+      for (const cleanup of cleanups) cleanup();
+    };
+  }, [documentHtml]);
 
   const overflowMenu = props.html ? (
     <div className="mail-body-chrome">
@@ -312,11 +304,11 @@ export function SafeMailBody(props: {
         ref={iframeRef}
         className="mail-html-frame"
         title="Sanitized message body"
-        sandbox="allow-scripts"
-        // Allow image hosts that require a referrer while still avoiding
-        // leaking full path for most navigations.
+        // Same-origin so the parent can measure + intercept links.
+        // Scripts stay disabled - CSP also sets script-src 'none'.
+        sandbox="allow-same-origin"
         referrerPolicy="strict-origin-when-cross-origin"
-        srcDoc={document}
+        srcDoc={documentHtml}
         style={{ height: `${frameHeight}px` }}
       />
     </div>
