@@ -214,7 +214,7 @@ describe("current UI baseline", () => {
     expect(html).not.toContain("mail-security-controls");
     expect(html).toContain("color-scheme:dark");
     expect(html).toContain('data-mail-scheme="dark"');
-    expect(html).toContain("#0d0e10");
+    expect(html).toContain("#08090a");
     expect(html).toContain("galmail:open-url");
     expect(html).toContain("script-src");
   });

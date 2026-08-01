@@ -39,7 +39,18 @@ const HEIGHT_BRIDGE_SCRIPT = `<script>(function(){
   function measure(){
     var root=document.documentElement;
     var body=document.body;
+    if(root){root.style.overflow="hidden";root.style.height="auto";}
+    if(body){body.style.overflow="hidden";body.style.height="auto";}
+    var bottom=0;
+    if(body){
+      var kids=body.children;
+      for(var i=0;i<kids.length;i++){
+        var r=kids[i].getBoundingClientRect();
+        if(r.bottom>bottom)bottom=r.bottom;
+      }
+    }
     var h=Math.max(
+      bottom,
       root?root.scrollHeight:0,
       root?root.offsetHeight:0,
       body?body.scrollHeight:0,
@@ -48,13 +59,22 @@ const HEIGHT_BRIDGE_SCRIPT = `<script>(function(){
     window.parent.postMessage({type:TYPE,height:h},"*");
   }
   function schedule(){
-    if(window.requestAnimationFrame)requestAnimationFrame(measure);
+    if(window.requestAnimationFrame)requestAnimationFrame(function(){
+      requestAnimationFrame(measure);
+    });
     else setTimeout(measure,0);
   }
   window.addEventListener("load",schedule);
   document.addEventListener("DOMContentLoaded",schedule);
-  if(window.ResizeObserver&&document.documentElement){
-    try{new ResizeObserver(schedule).observe(document.documentElement);}catch(e){}
+  if(window.ResizeObserver&&document.body){
+    try{new ResizeObserver(schedule).observe(document.body);}catch(e){}
+  }
+  if(window.MutationObserver&&document.body){
+    try{
+      new MutationObserver(schedule).observe(document.body,{
+        childList:true,subtree:true,attributes:true,characterData:true
+      });
+    }catch(e){}
   }
   var imgs=document.images||[];
   for(var i=0;i<imgs.length;i++){
@@ -62,8 +82,9 @@ const HEIGHT_BRIDGE_SCRIPT = `<script>(function(){
     imgs[i].addEventListener("error",schedule);
   }
   schedule();
-  setTimeout(schedule,120);
-  setTimeout(schedule,480);
+  setTimeout(schedule,80);
+  setTimeout(schedule,240);
+  setTimeout(schedule,800);
 })();</script>`;
 
 function withMailBridges(htmlDocument: string): string {
@@ -190,11 +211,11 @@ export function SafeMailBody(props: {
   const colorScheme: MailColorScheme =
     props.theme === "light" ? "light" : "dark";
   const [showHtml, setShowHtml] = useState(Boolean(props.html));
-  const [allowRemoteImages, setAllowRemoteImages] = useState(
-    () => (props.askRemoteImages ? false : (props.loadRemoteImages ?? true)),
+  const [allowRemoteImages, setAllowRemoteImages] = useState(() =>
+    props.askRemoteImages ? false : (props.loadRemoteImages ?? true),
   );
   const [asked, setAsked] = useState(false);
-  const [frameHeight, setFrameHeight] = useState(160);
+  const [frameHeight, setFrameHeight] = useState(240);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const document = useMemo(
     () =>
@@ -212,7 +233,7 @@ export function SafeMailBody(props: {
   );
 
   useEffect(() => {
-    setFrameHeight(160);
+    setFrameHeight(240);
   }, [document]);
 
   useEffect(() => {
@@ -230,7 +251,7 @@ export function SafeMailBody(props: {
       if (type === FRAME_HEIGHT_MESSAGE) {
         const height = (data as { height?: unknown }).height;
         if (typeof height !== "number" || !Number.isFinite(height)) return;
-        const next = Math.max(80, Math.ceil(height) + 2);
+        const next = Math.max(120, Math.ceil(height) + 8);
         setFrameHeight((prev) => (Math.abs(prev - next) < 2 ? prev : next));
       }
     }
@@ -245,9 +266,7 @@ export function SafeMailBody(props: {
         showHtml={showHtml}
         hasHtml={Boolean(props.html)}
         sender={props.sender}
-        onToggleRemoteImages={() =>
-          setAllowRemoteImages((value) => !value)
-        }
+        onToggleRemoteImages={() => setAllowRemoteImages((value) => !value)}
         onTogglePlainText={() => setShowHtml((value) => !value)}
       />
     </div>
