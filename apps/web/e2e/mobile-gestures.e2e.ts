@@ -415,4 +415,58 @@ test.describe("mobile gestures and chrome", () => {
     );
     void reading;
   });
+
+  test("bottom nav Inbox dismisses Settings and Compose", async ({
+    page,
+  }, testInfo) => {
+    const nav = page.getByRole("navigation", { name: "Primary" });
+    await nav.getByLabel("Settings").click();
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await nav.getByLabel("Inbox").click();
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeHidden();
+    await expect(nav.getByLabel("Compose")).toBeVisible();
+    await captureMobileShot(
+      page,
+      "15-inbox-from-settings",
+      "Inbox from Settings returns to list",
+      testInfo.title,
+    );
+
+    await nav.getByLabel("Compose").click();
+    await expect(page.getByRole("dialog", { name: "Compose" })).toBeVisible();
+    await nav.getByLabel("Inbox").click();
+    await expect(page.getByRole("dialog", { name: "Compose" })).toBeHidden();
+  });
+
+  test("inbox unread badge sits on the nav icon", async ({ page }) => {
+    const icon = page
+      .getByRole("navigation", { name: "Primary" })
+      .locator(".mobile-nav-icon")
+      .first();
+    await icon.evaluate((el) => {
+      el.setAttribute("data-count", "3");
+    });
+    await expect(icon).toHaveAttribute("data-count", "3");
+
+    const geometry = await icon.evaluate((el) => {
+      const iconBox = el.getBoundingClientRect();
+      const style = getComputedStyle(el, "::after");
+      return {
+        iconWidth: iconBox.width,
+        iconHeight: iconBox.height,
+        afterPosition: style.position,
+        afterTop: Number.parseFloat(style.top),
+        afterRight: Number.parseFloat(style.right),
+        afterContent: style.content,
+      };
+    });
+
+    expect(geometry.afterPosition).toBe("absolute");
+    expect(geometry.afterContent).not.toBe("none");
+    // Badge is pinned to the compact icon box, not the full nav cell.
+    expect(geometry.iconWidth).toBeLessThan(40);
+    expect(geometry.iconHeight).toBeLessThan(40);
+    expect(geometry.afterTop).toBeLessThan(0);
+    expect(geometry.afterRight).toBeLessThan(0);
+  });
 });

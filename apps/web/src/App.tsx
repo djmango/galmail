@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -1005,6 +1006,28 @@ export function App() {
     threadListRef.current?.focus();
   };
 
+  /** Close modals/drawers that would otherwise sit on top of the inbox. */
+  const dismissOverlays = useCallback(() => {
+    setPaletteOpen(false);
+    setComposeOpen(false);
+    setOptInOpen(false);
+    setSettingsOpen(false);
+    setMobileNavOpen(false);
+  }, []);
+
+  /** Shared by keyboard `go_to_inbox` and the mobile bottom-nav Inbox control. */
+  const goToInbox = useCallback(() => {
+    dismissOverlays();
+    setMainView("mail");
+    setSelectedId(threadsRef.current[0]?.id ?? null);
+    setActiveLabel("INBOX");
+    setOpenedId(null);
+    setListHeaderHidden(false);
+    setInputMode("normal");
+    setStatus("Inbox");
+    requestAnimationFrame(() => threadListRef.current?.focus());
+  }, [dismissOverlays]);
+
   const enterInsertMode = () => {
     setInputMode("insert");
     requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -1114,20 +1137,6 @@ export function App() {
         .then(() =>
           toast.success(markingUnread ? "Marked unread" : "Marked read"),
         );
-    };
-
-    const goToInbox = () => {
-      setPaletteOpen(false);
-      setComposeOpen(false);
-      setOptInOpen(false);
-      setSettingsOpen(false);
-      setMobileNavOpen(false);
-      setMainView("mail");
-      setSelectedId(threads[0]?.id ?? null);
-      setActiveLabel("INBOX");
-      setOpenedId(null);
-      setStatus("Inbox");
-      requestAnimationFrame(() => focusThreadList());
     };
 
     const handleBack = () => {
@@ -1385,6 +1394,7 @@ export function App() {
     openedId,
     message,
     bulkSelection,
+    goToInbox,
   ]);
 
   const layout = settings.layout;
@@ -1396,6 +1406,7 @@ export function App() {
   const closeMobileNav = () => setMobileNavOpen(false);
 
   const openMobileFolder = (labelId: string) => {
+    dismissOverlays();
     setMainView("mail");
     setActiveLabel(labelId);
     setOpenedId(null);
@@ -1403,6 +1414,7 @@ export function App() {
   };
 
   const openMobileCalendar = () => {
+    dismissOverlays();
     setMainView("calendar");
     setOpenedId(null);
     closeMobileNav();
@@ -3523,6 +3535,9 @@ export function App() {
             aria-expanded={mobileNavOpen}
             onClick={() => {
               haptic("selection");
+              setSettingsOpen(false);
+              setComposeOpen(false);
+              setPaletteOpen(false);
               setMobileNavOpen((open) => !open);
             }}
           >
@@ -3531,33 +3546,39 @@ export function App() {
           <button
             type="button"
             className={
-              mainView === "mail" && activeLabel === "INBOX" && !openedId
-                ? "is-active mobile-nav-badge"
-                : "mobile-nav-badge"
+              mainView === "mail" &&
+              activeLabel === "INBOX" &&
+              !openedId &&
+              !settingsOpen
+                ? "is-active"
+                : undefined
             }
             aria-label="Inbox"
             aria-current={
-              mainView === "mail" && activeLabel === "INBOX" && !openedId
+              mainView === "mail" &&
+              activeLabel === "INBOX" &&
+              !openedId &&
+              !settingsOpen
                 ? "page"
-                : undefined
-            }
-            data-count={
-              unreadCount > 0
-                ? unreadCount > 99
-                  ? "99+"
-                  : String(unreadCount)
                 : undefined
             }
             onClick={() => {
               haptic("selection");
-              setMobileNavOpen(false);
-              setMainView("mail");
-              setActiveLabel("INBOX");
-              closeReading();
-              setStatus("Inbox");
+              goToInbox();
             }}
           >
-            <Icons.inbox />
+            <span
+              className="mobile-nav-icon"
+              data-count={
+                unreadCount > 0
+                  ? unreadCount > 99
+                    ? "99+"
+                    : String(unreadCount)
+                  : undefined
+              }
+            >
+              <Icons.inbox />
+            </span>
           </button>
           <button
             type="button"
@@ -3566,6 +3587,8 @@ export function App() {
             onClick={() => {
               haptic("impact-light");
               setMobileNavOpen(false);
+              setSettingsOpen(false);
+              setPaletteOpen(false);
               setComposeInitial(undefined);
               setComposeOpen(true);
               setInputMode("insert");
@@ -3580,6 +3603,8 @@ export function App() {
               haptic("selection");
               setMobileNavOpen(false);
               setSettingsOpen(false);
+              setComposeOpen(false);
+              setPaletteOpen(false);
               if (openedId) {
                 closeReading({ refocusList: false, status: "Search" });
               }
@@ -3596,11 +3621,14 @@ export function App() {
             type="button"
             className={settingsOpen ? "is-active" : undefined}
             aria-label="Settings"
+            aria-expanded={settingsOpen}
             aria-current={settingsOpen ? "page" : undefined}
             onClick={() => {
               haptic("selection");
               setMobileNavOpen(false);
-              setSettingsOpen(true);
+              setComposeOpen(false);
+              setPaletteOpen(false);
+              setSettingsOpen((open) => !open);
             }}
           >
             <Icons.settings />
