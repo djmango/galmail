@@ -1,5 +1,15 @@
 # GalMail Reproducible Deployment
 
+## Mobile UX e2e (screenshots + videos)
+
+Fixture-backed Playwright coverage for the mobile shell (gestures, HTML reader,
+safe area, undo) lives in [`docs/mobile-e2e.md`](./mobile-e2e.md). Quick loop:
+
+```bash
+bun run e2e:mobile
+# gallery: /opt/cursor/artifacts/mobile-ux/index.html (or apps/web/test-results/mobile-ux)
+```
+
 ## Client (web)
 
 ```bash

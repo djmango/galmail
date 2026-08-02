@@ -62,7 +62,35 @@ jobs:
       # locked package (repo-root `bunx playwright` can install a newer one).
       - working-directory: apps/web
         run: bun x playwright install --with-deps chromium
-      - run: bun run e2e
+      - name: Run Playwright e2e
+        env:
+          # Keep gallery under the workspace so CI can upload it.
+          GALMAIL_E2E_ARTIFACT_DIR: ${{ github.workspace }}/apps/web/test-results/mobile-ux
+        run: bun run e2e
+      - name: Upload mobile UX gallery
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-ux-artifacts
+          path: apps/web/test-results/mobile-ux/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Playwright test-results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 14
 
   rust:
     runs-on: ubuntu-latest

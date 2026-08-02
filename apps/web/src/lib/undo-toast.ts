@@ -87,7 +87,8 @@ export function presentUndoToast(input: {
     {
       duration: UNDO_WINDOW_MS,
       className: "galmail-toast galmail-undo-toast",
-      unstyled: true,
+      // Keep Sonner positioning; our snackbar owns the inner chrome.
+      unstyled: false,
       dismissible: false,
       onDismiss: () => {
         if (token !== activeUndoToken) return;

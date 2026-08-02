@@ -2072,11 +2072,27 @@ select:focus-visible {
 }
 
 .galmail-undo-toast[data-sonner-toast] {
-  width: min(100% - 1.25rem, 26rem);
+  width: min(100% - 1.25rem, 26rem) !important;
   padding: 0 !important;
   border: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
+  gap: 0 !important;
+  align-items: stretch !important;
+}
+
+/* Custom jsx is mounted under [data-title]; collapse Sonner chrome around it. */
+.galmail-undo-toast[data-sonner-toast] [data-icon],
+.galmail-undo-toast[data-sonner-toast] [data-close-button],
+.galmail-undo-toast[data-sonner-toast] [data-button] {
+  display: none !important;
+}
+
+.galmail-undo-toast[data-sonner-toast] [data-content],
+.galmail-undo-toast[data-sonner-toast] [data-title] {
+  width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 .galmail-undo-snackbar {
