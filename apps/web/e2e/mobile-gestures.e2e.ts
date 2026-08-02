@@ -296,6 +296,29 @@ test.describe("mobile gestures and chrome", () => {
       )
       .toMatch(/^data:image\//);
 
+    // Canvas matches the app shell (light --bg0), not a nested white card.
+    await expect
+      .poll(async () =>
+        frame.evaluate((node) => {
+          const doc = (node as HTMLIFrameElement).contentDocument;
+          return doc ? getComputedStyle(doc.body).backgroundColor : "";
+        }),
+      )
+      .toMatch(/rgb\(\s*244,\s*237,\s*224\s*\)/i);
+
+    // Marketing tables must not spill past the iframe viewport.
+    await expect
+      .poll(async () =>
+        frame.evaluate((node) => {
+          const doc = (node as HTMLIFrameElement).contentDocument;
+          if (!doc?.documentElement) return 0;
+          return (
+            doc.documentElement.scrollWidth - doc.documentElement.clientWidth
+          );
+        }),
+      )
+      .toBeLessThanOrEqual(2);
+
     // Conversation scrollport is flush to the right edge.
     const conversationPadRight = await reading
       .locator(".conversation")

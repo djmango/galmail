@@ -202,9 +202,7 @@ describe("Gmail live provider contract", () => {
     expect(
       requests.some((item) => {
         const url = new URL(item.url);
-        return (
-          url.searchParams.get("q") === "-in:inbox -in:trash -in:spam"
-        );
+        return url.searchParams.get("q") === "-in:inbox -in:trash -in:spam";
       }),
     ).toBe(true);
   });
@@ -312,11 +310,54 @@ describe("Gmail live provider contract", () => {
     );
   });
 
+  test("skips vanished messages during history upsert without failing sync", async () => {
+    const { http } = scripted((input) => {
+      const url = new URL(input.url);
+      if (url.pathname.endsWith("/history")) {
+        return response(200, {
+          historyId: "30",
+          history: [
+            {
+              messagesAdded: [
+                { message: { id: "alive" } },
+                { message: { id: "ghost" } },
+              ],
+            },
+          ],
+        });
+      }
+      if (url.pathname.endsWith("/messages/alive")) {
+        return response(200, message("alive", "30"));
+      }
+      if (url.pathname.endsWith("/messages/ghost")) {
+        return response(404, {
+          error: {
+            message: "Requested entity was not found.",
+            status: "NOT_FOUND",
+          },
+        });
+      }
+      throw new Error(`Unexpected request: ${input.url}`);
+    });
+    const provider = createGmailLiveProvider({ tokens, http });
+    const result = await provider.fetchDeltas(accountId, {
+      accountId,
+      provider: "gmail",
+      token: "29",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(result.upserts.map((item) => item.id)).toEqual(["alive"]);
+    expect(result.nextCursor.token).toBe("30");
+  });
+
   test("hydrates HTML bodies stored as Gmail attachment parts", async () => {
     const html = "<p>Styled <strong>body</strong></p>";
     const { http, requests } = scripted((input) => {
       const url = new URL(input.url);
-      if (url.pathname.endsWith("/messages/m-html") && !url.pathname.includes("/attachments/")) {
+      if (
+        url.pathname.endsWith("/messages/m-html") &&
+        !url.pathname.includes("/attachments/")
+      ) {
         return response(200, {
           id: "m-html",
           threadId: "t-html",
@@ -410,7 +451,9 @@ describe("Gmail live provider contract", () => {
       response(400, {
         error: {
           message: "Invalid From header",
-          errors: [{ reason: "invalidArgument", message: "Invalid From header" }],
+          errors: [
+            { reason: "invalidArgument", message: "Invalid From header" },
+          ],
         },
       }),
     );

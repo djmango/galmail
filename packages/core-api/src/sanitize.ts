@@ -101,20 +101,43 @@ const ALLOWED_ATTR = [
 ] as const;
 
 /**
- * HTML email is authored for a light paper surface. Keep the reading canvas
- * light even when the app chrome is dark so dark text / marketing CSS remains
- * readable.
+ * Match apps/web themes.css `--bg0` / `--ink` so the sandboxed canvas does not
+ * read as a nested white card against the shell.
  */
-const MAIL_DOCUMENT_THEME = {
-  bg: "#ffffff",
-  fg: "#1a1a1a",
-  muted: "#5c5c5c",
-  link: "#0b57d0",
-  linkVisited: "#681da8",
-  quote: "rgba(0, 0, 0, 0.18)",
-  preBg: "rgba(0, 0, 0, 0.04)",
-  hr: "rgba(0, 0, 0, 0.12)",
-} as const;
+const MAIL_DOCUMENT_THEME: Record<
+  MailColorScheme,
+  {
+    bg: string;
+    fg: string;
+    muted: string;
+    link: string;
+    linkVisited: string;
+    quote: string;
+    preBg: string;
+    hr: string;
+  }
+> = {
+  light: {
+    bg: "#f4ede0",
+    fg: "#2b2620",
+    muted: "#5d5346",
+    link: "#955e0a",
+    linkVisited: "#7d4d06",
+    quote: "rgba(43, 38, 32, 0.2)",
+    preBg: "rgba(43, 38, 32, 0.05)",
+    hr: "rgba(43, 38, 32, 0.12)",
+  },
+  dark: {
+    bg: "#08090a",
+    fg: "#e6e8ec",
+    muted: "#969cab",
+    link: "#6d78dd",
+    linkVisited: "#8b93e0",
+    quote: "rgba(255, 255, 255, 0.18)",
+    preBg: "rgba(255, 255, 255, 0.05)",
+    hr: "rgba(255, 255, 255, 0.12)",
+  },
+};
 
 type PurifyWindow = Parameters<typeof createDOMPurify>[0];
 let purify: ReturnType<typeof createDOMPurify> | undefined;
@@ -135,29 +158,40 @@ function getPurify(): ReturnType<typeof createDOMPurify> {
   return purify;
 }
 
-function mailDocumentBaseStyles(): string {
-  const t = MAIL_DOCUMENT_THEME;
+function mailDocumentBaseStyles(scheme: MailColorScheme): string {
+  const t = MAIL_DOCUMENT_THEME[scheme];
   return [
-    `html{color-scheme:light;background:${t.bg};width:100%;max-width:100%;height:auto;overflow:hidden}`,
-    `body{margin:0;padding:12px 14px;width:100%;max-width:100%;height:auto;overflow:hidden;background:${t.bg};color:${t.fg};font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
+    `html{color-scheme:${scheme};background:${t.bg};width:100%;max-width:100%;min-width:0;height:auto;overflow-x:hidden;overflow-y:hidden;box-sizing:border-box}`,
+    `body{margin:0;padding:12px 14px;width:100%;max-width:100%;min-width:0;height:auto;overflow-x:hidden;overflow-y:hidden;background:${t.bg};color:${t.fg};font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%;box-sizing:border-box}`,
+    "*,*::before,*::after{box-sizing:border-box;max-width:100%}",
     `a{color:${t.link}}`,
     `a:visited{color:${t.linkVisited}}`,
     "img,video{max-width:100%!important;height:auto!important}",
-    "table{border-collapse:collapse;max-width:100%!important}",
-    "td,th{word-break:break-word}",
-    "div,p,span,font,center,table{max-width:100%!important}",
+    "table{border-collapse:collapse;width:100%!important;max-width:100%!important;table-layout:fixed!important}",
+    "td,th{word-break:break-word;overflow-wrap:anywhere;max-width:100%!important}",
+    "div,p,span,font,center,section,article,header,footer,main{max-width:100%!important;min-width:0!important}",
     "ul,ol{padding-left:1.4em}",
     "p,li{margin:0.55em 0}",
     "h1,h2,h3,h4,h5,h6{line-height:1.25;margin:0.8em 0 0.4em;font-weight:600}",
     `hr{border:0;border-top:1px solid ${t.hr};margin:1em 0}`,
     `pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.92em}`,
-    `pre{margin:0.7em 0;padding:10px 12px;border-radius:6px;background:${t.preBg};overflow-x:auto;white-space:pre-wrap}`,
+    `pre{margin:0.7em 0;padding:10px 12px;border-radius:6px;background:${t.preBg};overflow-x:auto;white-space:pre-wrap;max-width:100%}`,
     `blockquote{margin:0.6em 0;padding:0 0 0 12px;border-left:3px solid ${t.quote};color:${t.muted}}`,
     "@media (max-width:640px){",
     "body{padding:10px 12px;font-size:16px}",
     "table,td,th{width:auto!important}",
-    "img{width:auto!important}",
+    "img,video{width:auto!important;max-width:100%!important}",
     "}",
+  ].join("");
+}
+
+/** Final fluid overrides so author CSS cannot force desktop-width layouts. */
+function mailDocumentFluidOverrides(): string {
+  return [
+    "html,body{overflow-x:hidden!important;max-width:100%!important}",
+    "table{width:100%!important;max-width:100%!important;table-layout:fixed!important}",
+    "img,video,svg{max-width:100%!important;height:auto!important}",
+    "td,th,div,p,section,article{max-width:100%!important;overflow-wrap:anywhere!important}",
   ].join("");
 }
 
@@ -175,6 +209,12 @@ export function sanitizeMailCss(
     .replace(/javascript\s*:/gi, "")
     .replace(/vbscript\s*:/gi, "")
     .replace(/-webkit-binding\s*:[^;]*/gi, "");
+  // Kill fixed desktop widths that shove content past the mobile viewport.
+  next = next.replace(/(^|[,{;\s])width\s*:\s*\d{3,}\s*px/gi, "$1width:100%");
+  next = next.replace(
+    /(^|[,{;\s])min-width\s*:\s*\d{3,}\s*px/gi,
+    "$1min-width:0",
+  );
   if (!options.allowRemoteImages) {
     next = next.replace(
       /url\s*\(\s*(['"]?)(https?:\/\/[^)'"\s]+)\1\s*\)/gi,
@@ -314,6 +354,14 @@ export function sanitizeHtml(
       return;
     }
 
+    if (name === "width") {
+      // Drop fixed desktop widths (e.g. width="600"); keep relative / small.
+      if (/^\d{3,}$/.test(value.trim())) {
+        data.keepAttr = false;
+        return;
+      }
+    }
+
     if (name === "style") {
       data.attrValue = sanitizeMailCss(value, options).replace(
         /position\s*:\s*(fixed|sticky)/gi,
@@ -343,6 +391,8 @@ export function buildIsolatedMailDocument(
   // idempotent on style-stripped markup.
   const prepared = prepareMailHtml(html);
   const sanitized = sanitizeHtml(html, options);
+  const scheme: MailColorScheme =
+    options.colorScheme === "dark" ? "dark" : "light";
   const authorStyles = prepared.styles
     .map((css) => sanitizeMailCss(css, options))
     .filter((css) => css.trim().length > 0)
@@ -353,7 +403,7 @@ export function buildIsolatedMailDocument(
     ? "https: http: data: blob:"
     : "data: blob:";
   const csp = `default-src 'none'; img-src ${imgSrc}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles()}</style>${authorStyles}</head><body>${sanitized}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles(scheme)}</style>${authorStyles}<style>${mailDocumentFluidOverrides()}</style></head><body>${sanitized}</body></html>`;
 }
 
 export function isTrackingImage(input: {

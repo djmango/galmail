@@ -14,7 +14,8 @@ describe("sanitizeHtml", () => {
     const clean = sanitizeHtml(
       '<table width="600" bgcolor="#ffffff"><tr><td align="center" style="color:#111;font-size:16px">Hello</td></tr></table>',
     );
-    expect(clean).toContain("width=");
+    // Fixed desktop widths are dropped so mobile layout stays fluid.
+    expect(clean).not.toContain('width="600"');
     expect(clean).toContain("bgcolor=");
     expect(clean).toContain("align=");
     expect(clean).toContain("style=");

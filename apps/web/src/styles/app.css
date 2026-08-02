@@ -3402,7 +3402,11 @@ select:focus-visible {
   border-radius: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
-  overflow: visible;
+  /* Contain wide marketing tables so they cannot widen the scrollport. */
+  overflow-x: hidden;
+  overflow-y: visible;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .app[data-mobile="true"] .message-card.is-compact.is-expanded {
@@ -3416,6 +3420,9 @@ select:focus-visible {
 
 .app[data-mobile="true"] .message-card.is-compact .message-content {
   padding: 0 0 1.25rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .app[data-mobile="true"] .message-card.is-compact .participant-details-fold {
@@ -3423,9 +3430,11 @@ select:focus-visible {
 }
 
 .app[data-mobile="true"] .message-card.is-compact .safe-mail-body {
-  /* Match the light paper surface used inside the mail iframe. */
-  background: #ffffff;
+  background: var(--bg0);
   gap: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .app[data-mobile="true"] .message-card.is-compact .mail-body-chrome {
@@ -3435,7 +3444,9 @@ select:focus-visible {
 
 .app[data-mobile="true"] .message-card.is-compact .mail-html-frame {
   min-height: 8rem;
-  background: #ffffff;
+  width: 100%;
+  max-width: 100%;
+  background: var(--bg0);
 }
 
 .app[data-mobile="true"] .message-card.is-compact .mail-plain-text {
@@ -3465,7 +3476,8 @@ select:focus-visible {
   padding: 0 0 0.25rem;
   overflow-x: hidden;
   overflow-y: auto;
-  scrollbar-gutter: auto;
+  /* Do not reserve gutter space; that insets the scrollbar from the edge. */
+  scrollbar-gutter: unset;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
@@ -3492,7 +3504,7 @@ select:focus-visible {
   margin: 0;
   padding: 0 0 0.35rem;
   overflow: auto;
-  scrollbar-gutter: auto;
+  scrollbar-gutter: unset;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: none;
   touch-action: pan-y;

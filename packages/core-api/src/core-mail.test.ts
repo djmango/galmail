@@ -156,15 +156,30 @@ describe("mail content security", () => {
     expect(document).toContain('name="viewport"');
   });
 
-  test("builds a light paper reading document for HTML mail", () => {
-    const document = buildIsolatedMailDocument("<p>Hello</p>", {
+  test("builds a theme-matched reading document for HTML mail", () => {
+    const light = buildIsolatedMailDocument("<p>Hello</p>", {
+      colorScheme: "light",
+    });
+    expect(light).toContain("color-scheme:light");
+    expect(light).toContain("#f4ede0");
+    expect(light).toContain("<p>Hello</p>");
+
+    const dark = buildIsolatedMailDocument("<p>Hello</p>", {
       colorScheme: "dark",
     });
-    // HTML email is always rendered on a light paper surface for fidelity.
-    expect(document).toContain("color-scheme:light");
-    expect(document).toContain("#ffffff");
-    expect(document).toContain("<p>Hello</p>");
-    expect(document).toContain("<body>");
+    expect(dark).toContain("color-scheme:dark");
+    expect(dark).toContain("#08090a");
+    expect(dark).toContain("table-layout:fixed");
+  });
+
+  test("fluid overrides beat author fixed-width CSS", () => {
+    const document = buildIsolatedMailDocument(
+      '<style>.wrap{width:900px}</style><table width="900"><tr><td>Wide</td></tr></table>',
+      { colorScheme: "light" },
+    );
+    expect(document).toContain("width:100%");
+    expect(document).not.toContain('width="900"');
+    expect(document).toContain("overflow-x:hidden!important");
   });
 
   test("preserves author style blocks in the isolated document", () => {
@@ -188,7 +203,7 @@ describe("mail content security", () => {
     );
     expect(document).toContain('src="data:image/png;base64,abc"');
     expect(document).not.toContain("cid:inline-logo@mail");
-    expect(document).toContain("overflow:hidden");
+    expect(document).toContain("overflow-x:hidden");
   });
 
   test("flags tracking and dangerous attachments", () => {

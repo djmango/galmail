@@ -212,9 +212,9 @@ describe("current UI baseline", () => {
     expect(html).not.toContain("Remote images enabled");
     expect(html).not.toContain("Block remote images");
     expect(html).not.toContain("mail-security-controls");
-    expect(html).toContain("color-scheme:light");
+    expect(html).toContain("color-scheme:dark");
     expect(html).toContain('data-mail-scheme="dark"');
-    expect(html).toContain("#ffffff");
+    expect(html).toContain("#08090a");
     expect(html).not.toContain("galmail:open-url");
     // React escapes quotes inside srcDoc (`script-src &#x27;none&#x27;`).
     expect(html).toContain("script-src");
