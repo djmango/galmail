@@ -439,7 +439,9 @@ export function createGmailLiveProvider(
             "backendError",
           ].includes(parsed.reason ?? ""));
       if (!retryable || attempt >= maxRetries) {
-        const error = new Error(formatGmailRequestError(response.status, parsed));
+        const error = new Error(
+          formatGmailRequestError(response.status, parsed),
+        );
         Object.assign(error, {
           status: response.status,
           reason: parsed.reason,
@@ -455,14 +457,24 @@ export function createGmailLiveProvider(
     }
   }
 
+  function isNotFoundError(error: unknown): boolean {
+    return (error as { status?: number } | undefined)?.status === 404;
+  }
+
   async function loadBodyAttachment(
     messageId: string,
     attachmentId: string,
   ): Promise<string | undefined> {
-    const result = await request<{ data?: string }>(
-      `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
-    );
-    return decodeBase64Url(result.data);
+    try {
+      const result = await request<{ data?: string }>(
+        `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      );
+      return decodeBase64Url(result.data);
+    } catch (error) {
+      // Large bodies can vanish between metadata sync and hydrate.
+      if (isNotFoundError(error)) return undefined;
+      throw error;
+    }
   }
 
   async function hydrateMessageBodies(
@@ -531,12 +543,19 @@ export function createGmailLiveProvider(
   ): Promise<MailMessage[]> {
     const upserts: MailMessage[] = [];
     for (let offset = 0; offset < ids.length; offset += 10) {
-      const batch = await Promise.all(
-        ids
-          .slice(offset, offset + 10)
-          .map((id) => loadMessage(accountId, id, format)),
+      const chunk = ids.slice(offset, offset + 10);
+      const settled = await Promise.allSettled(
+        chunk.map((id) => loadMessage(accountId, id, format)),
       );
-      upserts.push(...batch);
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          upserts.push(result.value);
+          continue;
+        }
+        // History/list can mention messages already expunged.
+        if (isNotFoundError(result.reason)) continue;
+        throw result.reason;
+      }
     }
     return upserts;
   }
@@ -570,8 +589,7 @@ export function createGmailLiveProvider(
         if (item.id) ids.push(item.id);
         if (ids.length >= options.limit) break;
       }
-      pageToken =
-        ids.length >= options.limit ? undefined : page.nextPageToken;
+      pageToken = ids.length >= options.limit ? undefined : page.nextPageToken;
     } while (pageToken);
     const upserts = await loadMessageBatch(accountId, ids, "metadata");
     return {
@@ -621,7 +639,9 @@ export function createGmailLiveProvider(
       return { threads: normalized, nextPageToken: page.nextPageToken };
     },
     async getThread(accountId, threadId: ThreadId) {
-      return threads.get(threadId) ?? loadThread(accountId, threadId);
+      // Always refresh from Gmail so open/read uses the current message set.
+      // Stale local IDs after delete/expunge are a common "entity not found" 404.
+      return loadThread(accountId, threadId);
     },
     async getMessage(accountId, messageId: MessageId) {
       const cached = messages.get(messageId);
@@ -631,9 +651,19 @@ export function createGmailLiveProvider(
       return loadMessage(accountId, messageId, "full");
     },
     async hydrateBodies(accountId, messageIds) {
-      return Promise.all(
+      const settled = await Promise.allSettled(
         messageIds.map((id) => loadMessage(accountId, id, "full")),
       );
+      const loaded: MailMessage[] = [];
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          loaded.push(result.value);
+          continue;
+        }
+        if (isNotFoundError(result.reason)) continue;
+        throw result.reason;
+      }
+      return loaded;
     },
     async applyMutation(accountId, mutation) {
       const mutationId =

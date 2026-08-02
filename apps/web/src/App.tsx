@@ -895,25 +895,73 @@ export function App() {
     setThreadLoadError(null);
     setMessage(null);
     setThreadMessages([]);
-    Promise.all(
-      thread.messageIds.map((id) =>
-        account.provider.getMessage(thread.accountId, id),
-      ),
-    )
-      .then((messages) => {
+    void (async () => {
+      try {
+        // Refresh membership from the provider first so deleted messages do not
+        // 404 the whole open (Gmail: "Requested entity was not found").
+        let ids = thread.messageIds;
+        try {
+          const live = await account.provider.getThread(
+            thread.accountId,
+            thread.id,
+          );
+          if (live.messageIds.length > 0) {
+            ids = live.messageIds;
+            if (live.messageIds.join("\0") !== thread.messageIds.join("\0")) {
+              setThreads((prev) =>
+                prev.map((item) =>
+                  item.id === thread.id
+                    ? { ...item, messageIds: live.messageIds }
+                    : item,
+                ),
+              );
+            }
+          }
+        } catch (error) {
+          const status = (error as { status?: number } | undefined)?.status;
+          if (status !== 404) throw error;
+        }
+
+        const settled = await Promise.allSettled(
+          ids.map((id) => account.provider.getMessage(thread.accountId, id)),
+        );
         if (cancelled) return;
-        const ordered = messages.sort((a, b) => a.date.localeCompare(b.date));
+        const loaded = settled.flatMap((result) =>
+          result.status === "fulfilled" ? [result.value] : [],
+        );
+        if (loaded.length === 0) {
+          const firstReject = settled.find(
+            (result): result is PromiseRejectedResult =>
+              result.status === "rejected",
+          );
+          const messageText = invokeErrorMessage(
+            firstReject?.reason,
+            "Could not load message",
+          );
+          const missing =
+            /404|not found|entity/i.test(messageText) ||
+            (firstReject?.reason as { status?: number } | undefined)?.status ===
+              404;
+          const friendly = missing
+            ? "This email is no longer on the server"
+            : messageText;
+          setThreadLoadError(friendly);
+          setThreadLoading(false);
+          toast.error(friendly);
+          return;
+        }
+        const ordered = loaded.sort((a, b) => a.date.localeCompare(b.date));
         setThreadMessages(ordered);
         setMessage(ordered.at(-1) ?? null);
         setThreadLoading(false);
-      })
-      .catch((error) => {
+      } catch (error) {
         if (cancelled) return;
         const messageText = invokeErrorMessage(error, "Could not load message");
         setThreadLoadError(messageText);
         setThreadLoading(false);
         toast.error(messageText);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
