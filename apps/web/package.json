@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test src",
     "e2e": "playwright test",
+    "e2e:mobile": "playwright test --project=mobile-chrome",
+    "e2e:mobile:artifacts": "bun ./e2e/publish-artifacts.ts",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "ios:sync-web-assets": "bun ../../scripts/sync-ios-web-assets.ts"

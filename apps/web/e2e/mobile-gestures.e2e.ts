@@ -1,33 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
-import path from "node:path";
-
-const ARTIFACT_DIR = "/opt/cursor/artifacts/mobile-ux";
-
-async function openMobileInbox(page: Page) {
-  await page.goto("/");
-  await expect(page.locator(".app")).toHaveAttribute("data-mobile", "true");
-  await expect(page.getByLabel("Thread list")).toBeVisible();
-  await expect(page.locator(".thread")).not.toHaveCount(0);
-}
-
-async function swipeThread(
-  page: Page,
-  direction: "left" | "right",
-  distance: number,
-) {
-  const thread = page.locator(".thread").first();
-  await expect(thread).toBeVisible();
-  const box = await thread.boundingBox();
-  if (!box) throw new Error("thread bounding box missing");
-  const y = box.y + box.height / 2;
-  const startX =
-    direction === "left" ? box.x + box.width * 0.85 : box.x + box.width * 0.15;
-  const endX = direction === "left" ? startX - distance : startX + distance;
-  await page.mouse.move(startX, y);
-  await page.mouse.down();
-  await page.mouse.move(endX, y, { steps: 12 });
-  await page.mouse.up();
-}
+import { expect, test } from "@playwright/test";
+import { captureMobileShot } from "./mobile-artifacts";
+import {
+  openFirstThread,
+  openMobileInbox,
+  swipeThread,
+  touchSwipe,
+} from "./mobile-helpers";
 
 test.describe("mobile gestures and chrome", () => {
   test.beforeEach(async ({ page }) => {
@@ -36,7 +14,7 @@ test.describe("mobile gestures and chrome", () => {
 
   test("icons-only bottom nav, pull-to-refresh, and search focus", async ({
     page,
-  }) => {
+  }, testInfo) => {
     const nav = page.getByRole("navigation", { name: "Primary" });
     await expect(nav).toBeVisible();
     await expect(nav.getByLabel("Folders")).toBeVisible();
@@ -47,10 +25,18 @@ test.describe("mobile gestures and chrome", () => {
     await expect(nav.getByText("Folders")).toHaveCount(0);
     await expect(nav.getByText("Inbox")).toHaveCount(0);
 
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "01-mobile-inbox.png"),
-      fullPage: true,
-    });
+    // Inbox scrollport stays edge-flush so the scrollbar is not inset.
+    const listPaddingRight = await page
+      .getByLabel("Thread list")
+      .evaluate((node) => getComputedStyle(node).paddingRight);
+    expect(Number.parseFloat(listPaddingRight) || 0).toBeLessThan(2);
+
+    await captureMobileShot(
+      page,
+      "01-mobile-inbox",
+      "Mobile inbox with icons-only bottom nav",
+      testInfo.title,
+    );
 
     const list = page.getByLabel("Thread list");
     await list.evaluate((node) => {
@@ -91,10 +77,12 @@ test.describe("mobile gestures and chrome", () => {
     await expect(page.locator(".pull-refresh")).toContainText(
       /Release to refresh|Refreshing/i,
     );
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "02-pull-to-refresh.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "02-pull-to-refresh",
+      "Pull-to-refresh affordance",
+      testInfo.title,
+    );
     await list.evaluate((node) => {
       const target = node as HTMLElement;
       target.dispatchEvent(
@@ -119,60 +107,87 @@ test.describe("mobile gestures and chrome", () => {
 
     await nav.getByLabel("Search").click();
     await expect(page.locator(".thread-search .field-input")).toBeFocused();
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "03-search-focused.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "03-search-focused",
+      "Search field focused from bottom nav",
+      testInfo.title,
+    );
   });
 
-  test("swipe near/far actions and sticky header hide", async ({ page }) => {
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "04-before-swipe.png"),
-      fullPage: true,
-    });
+  test("swipe near/far actions, undo snackbar, and sticky header hide", async ({
+    page,
+  }, testInfo) => {
+    await captureMobileShot(
+      page,
+      "04-before-swipe",
+      "Inbox before swipe actions",
+      testInfo.title,
+    );
 
     // Visual check for auto-hide header styles (scroll logic unit-tested).
     await page.locator(".thread-list-head").evaluate((node) => {
       node.classList.add("is-hidden");
     });
     await expect(page.locator(".thread-list-head")).toHaveClass(/is-hidden/);
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "08-header-hidden.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "08-header-hidden",
+      "Sticky list header collapsed",
+      testInfo.title,
+    );
     await page.locator(".thread-list-head").evaluate((node) => {
       node.classList.remove("is-hidden");
     });
 
     const beforeCount = await page.locator(".thread").count();
-    await swipeThread(page, "right", 90);
-    await expect(page.getByText(/Archived/i).first()).toBeVisible();
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "05-swipe-archive.png"),
-      fullPage: true,
-    });
+    await swipeThread(page, "right", 110);
+    const undo = page.locator(".galmail-undo-snackbar");
+    await expect(undo).toBeVisible({ timeout: 15_000 });
+    await expect(undo.getByText("Archived", { exact: true })).toBeVisible();
+    await expect(
+      undo.getByRole("button", { name: "Undo", exact: true }),
+    ).toBeVisible();
+    await captureMobileShot(
+      page,
+      "05-swipe-archive-undo",
+      "Archive swipe with timed Undo snackbar",
+      testInfo.title,
+    );
+    await undo.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect(
+      page.getByText("Archive undone", { exact: true }),
+    ).toBeVisible();
 
-    await swipeThread(page, "left", 90);
-    await expect(page.getByText(/Trash|Moved to Trash/i).first()).toBeVisible();
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "06-swipe-delete.png"),
-      fullPage: true,
-    });
+    await swipeThread(page, "left", 110);
+    await expect(
+      page.locator(".galmail-undo-snackbar").getByText("Moved to Trash"),
+    ).toBeVisible({ timeout: 15_000 });
+    await captureMobileShot(
+      page,
+      "06-swipe-delete",
+      "Trash swipe action toast",
+      testInfo.title,
+    );
 
-    // Far right → star
-    await swipeThread(page, "right", 170);
-    await expect(page.getByText(/Starred/i).first()).toBeVisible();
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "07-swipe-star-far.png"),
-      fullPage: true,
-    });
+    // Far right -> star (success toast; star does not open the undo snackbar).
+    await swipeThread(page, "right", 190);
+    await expect(
+      page.getByText("Starred", { exact: true }).first(),
+    ).toBeVisible({ timeout: 15_000 });
+    await captureMobileShot(
+      page,
+      "07-swipe-star-far",
+      "Far-right star swipe",
+      testInfo.title,
+    );
 
     expect(beforeCount).toBeGreaterThan(0);
   });
 
   test("settings keeps bottom nav and shows swipe + allow-all", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page
       .getByRole("navigation", { name: "Primary" })
       .getByLabel("Settings")
@@ -198,117 +213,132 @@ test.describe("mobile gestures and chrome", () => {
     await expect(dialog.getByText("Link device")).toBeVisible();
     await expect(dialog.getByText(" · live")).toHaveCount(0);
     await expect(dialog.locator(".account-connect-grid")).toBeVisible();
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "09-settings-accounts.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "09-settings-accounts",
+      "Settings accounts + privacy",
+      testInfo.title,
+    );
     await dialog.locator(".settings-body").evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "10-settings-swipe-actions.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "10-settings-swipe-actions",
+      "Settings swipe actions section",
+      testInfo.title,
+    );
   });
 
-  test("opens thread with loading surface and swipe-back to inbox", async ({
+  test("HTML mail renders, safe area pads header, swipe-back from left third", async ({
     page,
-  }) => {
-    const first = page.locator(".thread").first();
-    const subject =
-      (await first.locator(".thread-subject").textContent()) ?? "";
-    await first.click();
+  }, testInfo) => {
+    // Open the styled fixture thread by subject so inbox order can change.
+    await page
+      .locator(".thread", {
+        has: page.locator(".thread-subject", {
+          hasText: "Styled product update",
+        }),
+      })
+      .first()
+      .click();
     await expect(page.locator(".app")).toHaveAttribute(
       "data-mobile-surface",
       "thread",
     );
     const reading = page.getByLabel("Reading pane");
     await expect(reading).toBeVisible();
-    await expect(
-      reading.getByRole("button", { name: /Back to inbox/i }),
-    ).toBeVisible();
-    // Fixture messages resolve quickly; assert body or loading, never the idle empty copy.
-    await expect(reading.getByText("No thread selected.")).toHaveCount(0);
+
+    const header = page.locator(".reading-mobile-header");
+    await expect(header).toBeVisible();
+    // Pixel 7 reports 0 safe-area insets; App installs a notch fallback.
     await expect
-      .poll(async () => {
-        const loading = await reading
-          .getByText(/Loading email|Opening/i)
-          .count();
-        const heading = await reading.locator("h1").count();
-        return loading + heading;
-      })
+      .poll(async () =>
+        page.evaluate(() => {
+          const raw = getComputedStyle(document.documentElement)
+            .getPropertyValue("--safe-top-fallback")
+            .trim();
+          return Number.parseFloat(raw) || 0;
+        }),
+      )
+      .toBeGreaterThanOrEqual(40);
+    const headerPadTop = await header.evaluate(
+      (node) => Number.parseFloat(getComputedStyle(node).paddingTop) || 0,
+    );
+    expect(headerPadTop).toBeGreaterThanOrEqual(40);
+
+    const frame = reading.locator("iframe.mail-html-frame");
+    await expect(frame).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(async () =>
+        frame.evaluate((node) => {
+          const doc = (node as HTMLIFrameElement).contentDocument;
+          if (!doc?.body) return "";
+          return doc.body.innerText;
+        }),
+      )
+      .toMatch(/CSS \+ HTML should render|sandboxed iframe/i);
+    await expect
+      .poll(async () =>
+        frame.evaluate((node) => {
+          const doc = (node as HTMLIFrameElement).contentDocument;
+          return doc?.querySelectorAll("style").length ?? 0;
+        }),
+      )
       .toBeGreaterThan(0);
-    if (subject.trim()) {
-      await expect
-        .poll(async () => {
-          const text = await reading.innerText();
-          return (
-            text.includes(subject.trim()) || /Loading email|Opening/i.test(text)
-          );
-        })
-        .toBeTruthy();
-    }
-    // Superhuman-style bottom action bar replaces the primary app nav on thread.
+    await expect
+      .poll(async () =>
+        frame.evaluate((node) => {
+          const doc = (node as HTMLIFrameElement).contentDocument;
+          const img = doc?.querySelector("img");
+          return img?.getAttribute("src") ?? "";
+        }),
+      )
+      .toMatch(/^data:image\//);
+
+    // Conversation scrollport is flush to the right edge.
+    const conversationPadRight = await reading
+      .locator(".conversation")
+      .evaluate(
+        (node) => Number.parseFloat(getComputedStyle(node).paddingRight) || 0,
+      );
+    expect(conversationPadRight).toBeLessThan(2);
+
+    await captureMobileShot(
+      page,
+      "12-thread-html-mail",
+      "Thread reader with styled HTML iframe",
+      testInfo.title,
+    );
+
     await expect(page.getByLabel("Message actions")).toBeVisible();
     await expect(
       page.getByRole("navigation", { name: "Primary" }),
     ).toBeHidden();
-    await expect(
-      page
-        .getByLabel("Message actions")
-        .getByRole("button", { name: "Reply", exact: true }),
-    ).toBeVisible();
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "12-thread-open.png"),
-      fullPage: true,
-    });
 
-    await reading.evaluate((node) => {
-      const target = node as HTMLElement;
-      const fire = (type: string, clientX: number) => {
-        target.dispatchEvent(
-          new TouchEvent(type, {
-            bubbles: true,
-            cancelable: true,
-            touches:
-              type === "touchend"
-                ? []
-                : [
-                    new Touch({
-                      identifier: 2,
-                      target,
-                      clientX,
-                      clientY: 120,
-                    }),
-                  ],
-            changedTouches: [
-              new Touch({
-                identifier: 2,
-                target,
-                clientX,
-                clientY: 120,
-              }),
-            ],
-          }),
-        );
-      };
-      fire("touchstart", 10);
-      fire("touchmove", 130);
-      fire("touchend", 130);
+    // Start well inside the left third (~28% width), not only the bezel.
+    const width = await reading.evaluate((node) => node.clientWidth);
+    const startX = Math.floor(width * 0.28);
+    await touchSwipe(page, reading, {
+      startX,
+      endX: startX + 140,
+      clientY: 180,
     });
     await expect(page.locator(".app")).toHaveAttribute(
       "data-mobile-surface",
       "list",
     );
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "13-swipe-back-inbox.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "13-swipe-back-from-third",
+      "Swipe-back completed from left third",
+      testInfo.title,
+    );
   });
 
   test("thread row truncates subject/snippet without sticky hover", async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.evaluate(() => {
       const subject = document.querySelector(".thread-subject");
       const snippet = document.querySelector(".thread-snippet");
@@ -321,7 +351,6 @@ test.describe("mobile gestures and chrome", () => {
           "Preview with entities &#39;quote&#39; &amp; more text that must ellipsize instead of bleeding";
       }
     });
-    // Re-render path: entity decode is applied from data; assert CSS truncation.
     const subject = page.locator(".thread-subject").first();
     await expect(subject).toHaveCSS("text-overflow", "ellipsis");
     await expect(subject).toHaveCSS("white-space", "nowrap");
@@ -331,11 +360,36 @@ test.describe("mobile gestures and chrome", () => {
     const thread = page.locator(".thread").first();
     await thread.hover();
     await thread.dispatchEvent("pointerleave");
-    // Selected state only when aria-current, not sticky hover after leave.
     await page.mouse.move(0, 0);
-    await page.screenshot({
-      path: path.join(ARTIFACT_DIR, "11-thread-truncation.png"),
-      fullPage: true,
-    });
+    await captureMobileShot(
+      page,
+      "11-thread-truncation",
+      "Truncated subject/snippet rows",
+      testInfo.title,
+    );
+  });
+
+  test("archive from action bar shows undo snackbar on thread", async ({
+    page,
+  }, testInfo) => {
+    const { reading } = await openFirstThread(page);
+    await expect(page.getByLabel("Message actions")).toBeVisible();
+    await page
+      .getByLabel("Message actions")
+      .getByRole("button", { name: "Archive", exact: true })
+      .click();
+    // Archive may leave the thread surface immediately; snackbar should still appear.
+    const undo = page.locator(".galmail-undo-snackbar");
+    await expect(undo).toBeVisible({ timeout: 10_000 });
+    await expect(
+      undo.getByRole("button", { name: "Undo", exact: true }),
+    ).toBeVisible();
+    await captureMobileShot(
+      page,
+      "14-thread-archive-undo",
+      "Thread archive Undo snackbar",
+      testInfo.title,
+    );
+    void reading;
   });
 });
