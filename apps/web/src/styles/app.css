@@ -3779,22 +3779,36 @@ select:focus-visible {
   color: var(--accent-ink);
 }
 
-.app[data-mobile="true"] .mobile-nav-badge {
+/* Badge anchors to the icon box, not the tall full-cell tap target. */
+.app[data-mobile="true"] .mobile-nav-icon {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
 }
 
-.app[data-mobile="true"] .mobile-nav-badge[data-count]::after {
+.app[data-mobile="true"] .mobile-nav-icon svg {
+  width: 1.65rem;
+  height: 1.65rem;
+}
+
+.app[data-mobile="true"] .mobile-nav-icon[data-count]::after {
   content: attr(data-count);
   position: absolute;
-  top: -0.2rem;
-  right: calc(50% - 1.1rem);
-  min-width: 1rem;
-  padding: 0 0.25rem;
+  top: -0.4rem;
+  right: -0.55rem;
+  z-index: 1;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.28rem;
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-ink);
-  font: 0.58rem/1.15 var(--mono);
+  font: 650 0.62rem/1.05rem var(--mono);
   text-align: center;
+  box-shadow: 0 0 0 1.5px var(--bg1);
 }
 
 .app[data-mobile="true"] .compose,
