@@ -2071,6 +2071,90 @@ select:focus-visible {
   font-size: 0.85rem;
 }
 
+.galmail-undo-toast[data-sonner-toast] {
+  width: min(100% - 1.25rem, 26rem);
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.galmail-undo-snackbar {
+  position: relative;
+  display: grid;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.9rem 1rem 0.85rem;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg2);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink);
+}
+
+.galmail-undo-snackbar-copy {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.galmail-undo-snackbar-title {
+  font-size: 0.98rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.galmail-undo-snackbar-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.galmail-undo-snackbar-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.galmail-undo-snackbar-action:active {
+  filter: brightness(0.96);
+}
+
+.galmail-undo-snackbar-timer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--accent) 75%, transparent);
+  animation-name: galmail-undo-timer;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes galmail-undo-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 .settings-modal {
   align-items: start;
   overflow: auto;
@@ -3019,9 +3103,13 @@ select:focus-visible {
    ============================================================================= */
 
 .app[data-mobile="true"] {
-  --safe-top: env(safe-area-inset-top, 0px);
+  /* Prefer env(); fall back when WKWebView reports 0 while edge-to-edge. */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-top-fallback, 0px));
   --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-bottom: max(
+    env(safe-area-inset-bottom, 0px),
+    var(--safe-bottom-fallback, 0px)
+  );
   --safe-left: env(safe-area-inset-left, 0px);
   /* Icons-only nav + home-indicator. Include vertical padding + 1px border so
      the shell reserve matches the real fixed chrome height. */
@@ -3177,8 +3265,8 @@ select:focus-visible {
   width: auto;
   height: auto;
   max-height: none;
-  /* Bottom action bar owns the home-indicator inset; hide primary app nav. */
-  padding: var(--safe-top) 0 0 0;
+  /* Header owns the notch inset; action bar owns the home-indicator. */
+  padding: 0;
   background: var(--bg0);
 }
 
@@ -3196,7 +3284,8 @@ select:focus-visible {
   gap: 0.35rem;
   flex-shrink: 0;
   min-height: 3rem;
-  padding: 0.35rem 0.65rem 0.45rem;
+  padding: calc(0.35rem + var(--safe-top)) calc(0.65rem + var(--safe-right))
+    0.45rem calc(0.65rem + var(--safe-left));
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg0) 92%, transparent);
   backdrop-filter: blur(12px);
@@ -3316,17 +3405,19 @@ select:focus-visible {
 }
 
 .app[data-mobile="true"] .message-card.is-compact .safe-mail-body {
-  background: var(--bg0);
+  /* Match the light paper surface used inside the mail iframe. */
+  background: #ffffff;
   gap: 0;
 }
 
 .app[data-mobile="true"] .message-card.is-compact .mail-body-chrome {
   padding: 0 0.55rem 0.25rem;
+  background: var(--bg0);
 }
 
 .app[data-mobile="true"] .message-card.is-compact .mail-html-frame {
   min-height: 8rem;
-  background: var(--bg0);
+  background: #ffffff;
 }
 
 .app[data-mobile="true"] .message-card.is-compact .mail-plain-text {
@@ -3351,12 +3442,15 @@ select:focus-visible {
   flex: 1 1 auto;
   min-height: 0;
   gap: 0;
+  margin: 0;
+  /* Flush to the screen edge so the scrollbar sits on the true right edge. */
+  padding: 0 0 0.25rem;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding-bottom: 0.25rem;
 }
 
 .app[data-mobile="true"][data-mobile-surface="thread"]
@@ -3376,9 +3470,11 @@ select:focus-visible {
 .app[data-mobile="true"] .thread-list.panel {
   display: flex;
   flex-direction: column;
-  padding: 0 calc(0.45rem + var(--safe-right)) 0.35rem
-    calc(0.2rem + var(--safe-left));
+  /* Keep the scrollport flush to the screen edge so the scrollbar isn't inset. */
+  margin: 0;
+  padding: 0 0 0.35rem;
   overflow: auto;
+  scrollbar-gutter: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: none;
   touch-action: pan-y;
@@ -3392,7 +3488,8 @@ select:focus-visible {
   flex-direction: column;
   gap: 0.45rem;
   margin: 0 0 0.35rem;
-  padding: calc(0.35rem + var(--safe-top)) 0.45rem 0.55rem;
+  padding: calc(0.35rem + var(--safe-top)) calc(0.45rem + var(--safe-right))
+    0.55rem calc(0.2rem + var(--safe-left));
   background: var(--bg0);
   backdrop-filter: blur(8px);
   /* Collapse without transform - transforming sticky nodes glitches in WKWebView. */
@@ -3447,6 +3544,8 @@ select:focus-visible {
   height: var(--thread-row-h);
   min-height: var(--thread-row-h);
   max-height: var(--thread-row-h);
+  padding-left: calc(0.2rem + var(--safe-left));
+  padding-right: calc(0.45rem + var(--safe-right));
 }
 
 .app[data-mobile="true"] .thread {
@@ -3786,6 +3885,19 @@ select:focus-visible {
   [data-sonner-toast] {
   width: min(100% - 1.25rem, 26rem);
   margin-inline: auto;
+}
+
+.app[data-mobile="true"] .galmail-undo-toast[data-sonner-toast] {
+  width: min(100% - 1rem, 26rem);
+}
+
+.app[data-mobile="true"] .galmail-undo-snackbar {
+  padding: 1rem 1rem 0.95rem;
+}
+
+.app[data-mobile="true"] .galmail-undo-snackbar-action {
+  min-height: 52px;
+  font-size: 1.05rem;
 }
 
 /* Mobile list: selection is for keyboard triage; taps should not leave a sticky highlight. */

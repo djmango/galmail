@@ -6,9 +6,11 @@ import {
 } from "./swipe-back";
 
 describe("swipe-back helpers", () => {
-  test("only starts from the left edge", () => {
+  test("starts from roughly the left third of the screen", () => {
     expect(canBeginSwipeBack(12, 390)).toBe(true);
-    expect(canBeginSwipeBack(40, 390)).toBe(false);
+    expect(canBeginSwipeBack(40, 390)).toBe(true);
+    expect(canBeginSwipeBack(120, 390)).toBe(true);
+    expect(canBeginSwipeBack(140, 390)).toBe(false);
   });
 
   test("progress clamps to 1", () => {
@@ -20,6 +22,6 @@ describe("swipe-back helpers", () => {
   test("completes by distance or flick", () => {
     expect(shouldCompleteSwipeBack(40)).toBe(false);
     expect(shouldCompleteSwipeBack(90)).toBe(true);
-    expect(shouldCompleteSwipeBack(60, 0.6)).toBe(true);
+    expect(shouldCompleteSwipeBack(50, 0.6)).toBe(true);
   });
 });

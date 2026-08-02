@@ -156,14 +156,24 @@ describe("mail content security", () => {
     expect(document).toContain('name="viewport"');
   });
 
-  test("builds a dark reading document when colorScheme is dark", () => {
+  test("builds a light paper reading document for HTML mail", () => {
     const document = buildIsolatedMailDocument("<p>Hello</p>", {
       colorScheme: "dark",
     });
-    expect(document).toContain("color-scheme:dark");
-    expect(document).toContain("#08090a");
+    // HTML email is always rendered on a light paper surface for fidelity.
+    expect(document).toContain("color-scheme:light");
+    expect(document).toContain("#ffffff");
     expect(document).toContain("<p>Hello</p>");
     expect(document).toContain("<body>");
+  });
+
+  test("preserves author style blocks in the isolated document", () => {
+    const document = buildIsolatedMailDocument(
+      '<style>.hero{color:#c00}</style><p class="hero">Hello</p>',
+      { allowRemoteImages: true },
+    );
+    expect(document).toContain(".hero{color:#c00}");
+    expect(document).toContain('class="hero"');
   });
 
   test("rewrites cid: image sources when a cidMap is provided", () => {
