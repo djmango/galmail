@@ -21,6 +21,13 @@ describe("sanitizeHtml", () => {
     expect(clean).toContain("Hello");
   });
 
+  it("wraps orphan table cells so they are not collapsed to text", () => {
+    const clean = sanitizeHtml('<td style="color:#111">Hello world</td>');
+    expect(clean).toContain("<table>");
+    expect(clean).toContain("<td");
+    expect(clean).toContain("Hello world");
+  });
+
   it("rewrites cid images and drops remote images when blocked", () => {
     const withCid = sanitizeHtml('<img src="cid:logo@x" alt="logo">', {
       cidMap: { "logo@x": "data:image/png;base64,abc" },

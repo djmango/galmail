@@ -164,6 +164,11 @@ export function SafeMailBody(props: {
     [props.html, allowRemoteImages, colorScheme, props.cidMap],
   );
 
+  // bodyHtml can arrive after the card mounts (hydrate); switch to HTML mode.
+  useEffect(() => {
+    if (props.html) setShowHtml(true);
+  }, [props.html]);
+
   useEffect(() => {
     setFrameHeight(160);
   }, [documentHtml]);

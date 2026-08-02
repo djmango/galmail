@@ -203,6 +203,27 @@ function bodyPart(
   return undefined;
 }
 
+/** Large Gmail bodies often ship as attachmentId with no inline `data`. */
+function bodyAttachmentId(
+  part: GmailPart | undefined,
+  mimeType: string,
+): string | undefined {
+  if (!part) return undefined;
+  if (
+    part.mimeType === mimeType &&
+    part.body?.attachmentId &&
+    !part.body.data &&
+    !part.filename
+  ) {
+    return part.body.attachmentId;
+  }
+  for (const child of part.parts ?? []) {
+    const found = bodyAttachmentId(child, mimeType);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 function normalizeMessage(
   accountId: AccountId,
   raw: GmailMessage,
@@ -434,6 +455,39 @@ export function createGmailLiveProvider(
     }
   }
 
+  async function loadBodyAttachment(
+    messageId: string,
+    attachmentId: string,
+  ): Promise<string | undefined> {
+    const result = await request<{ data?: string }>(
+      `/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    );
+    return decodeBase64Url(result.data);
+  }
+
+  async function hydrateMessageBodies(
+    accountId: AccountId,
+    raw: GmailMessage,
+  ): Promise<MailMessage> {
+    let normalized = normalizeMessage(accountId, raw);
+    if (!raw.id) return normalized;
+    if (!normalized.bodyHtml) {
+      const htmlAtt = bodyAttachmentId(raw.payload, "text/html");
+      if (htmlAtt) {
+        const bodyHtml = await loadBodyAttachment(raw.id, htmlAtt);
+        if (bodyHtml) normalized = { ...normalized, bodyHtml };
+      }
+    }
+    if (!normalized.bodyText) {
+      const textAtt = bodyAttachmentId(raw.payload, "text/plain");
+      if (textAtt) {
+        const bodyText = await loadBodyAttachment(raw.id, textAtt);
+        if (bodyText) normalized = { ...normalized, bodyText };
+      }
+    }
+    return normalized;
+  }
+
   async function loadMessage(
     accountId: AccountId,
     id: string,
@@ -446,7 +500,10 @@ export function createGmailLiveProvider(
     const raw = await request<GmailMessage>(
       `/messages/${encodeURIComponent(id)}?${query}`,
     );
-    const normalized = normalizeMessage(accountId, raw);
+    const normalized =
+      format === "full"
+        ? await hydrateMessageBodies(accountId, raw)
+        : normalizeMessage(accountId, raw);
     messages.set(normalized.id, normalized);
     return normalized;
   }
@@ -459,7 +516,7 @@ export function createGmailLiveProvider(
       `/threads/${encodeURIComponent(id)}?format=full`,
     );
     for (const item of raw.messages ?? []) {
-      const normalized = normalizeMessage(accountId, item);
+      const normalized = await hydrateMessageBodies(accountId, item);
       messages.set(normalized.id, normalized);
     }
     const normalized = normalizeThread(accountId, raw);
@@ -568,7 +625,9 @@ export function createGmailLiveProvider(
     },
     async getMessage(accountId, messageId: MessageId) {
       const cached = messages.get(messageId);
-      if (cached?.bodyHtml || cached?.bodyText) return cached;
+      // Prefer a full HTML body when opening mail; text-only cache hits used to
+      // skip the format=full fetch and leave the reader stuck on plain text.
+      if (cached?.bodyHtml) return cached;
       return loadMessage(accountId, messageId, "full");
     },
     async hydrateBodies(accountId, messageIds) {

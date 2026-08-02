@@ -67,6 +67,7 @@ import { resolveMobileSurface, useIsMobileLayout } from "./lib/mobile-layout";
 import { decodeHtmlEntities } from "./lib/decode-entities";
 import { haptic } from "./lib/haptics";
 import { nextListHeaderHidden } from "./lib/list-header-visibility";
+import { ensureMobileSafeAreaFallback } from "./lib/mobile-safe-area";
 import {
   presentUndoToast,
   undoDeadline,
@@ -538,6 +539,25 @@ export function App() {
       );
     }
   }, [resolvedTheme]);
+
+  // Mobile WKWebView sometimes reports safe-area insets as 0 while drawing
+  // edge-to-edge: install a notch/status-bar fallback for chrome padding.
+  useEffect(() => {
+    if (!isMobile) {
+      document.documentElement.style.removeProperty("--safe-top-fallback");
+      document.documentElement.style.removeProperty("--safe-bottom-fallback");
+      delete document.documentElement.dataset.safeArea;
+      return;
+    }
+    ensureMobileSafeAreaFallback();
+    const onResize = () => ensureMobileSafeAreaFallback();
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+    };
+  }, [isMobile]);
 
   useEffect(() => {
     if (bulkSelection.size === 0) bulkAnchorIdRef.current = null;
@@ -3559,10 +3579,13 @@ export function App() {
       <Toaster
         theme={resolvedTheme}
         position={isMobile ? "bottom-center" : "bottom-right"}
-        closeButton
+        closeButton={!isMobile}
         richColors={false}
         className="galmail-toaster"
-        toastOptions={{ className: "galmail-toast" }}
+        toastOptions={{
+          className: "galmail-toast",
+          duration: 4_000,
+        }}
       />
 
       <CommandPalette

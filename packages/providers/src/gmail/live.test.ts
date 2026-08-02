@@ -312,6 +312,56 @@ describe("Gmail live provider contract", () => {
     );
   });
 
+  test("hydrates HTML bodies stored as Gmail attachment parts", async () => {
+    const html = "<p>Styled <strong>body</strong></p>";
+    const { http, requests } = scripted((input) => {
+      const url = new URL(input.url);
+      if (url.pathname.endsWith("/messages/m-html") && !url.pathname.includes("/attachments/")) {
+        return response(200, {
+          id: "m-html",
+          threadId: "t-html",
+          historyId: "11",
+          internalDate: "1700000000000",
+          labelIds: ["INBOX"],
+          snippet: "Styled body",
+          payload: {
+            mimeType: "multipart/alternative",
+            headers: [
+              { name: "Subject", value: "Rich" },
+              { name: "From", value: "Sender <sender@example.com>" },
+              { name: "To", value: "reader@example.com" },
+            ],
+            parts: [
+              {
+                mimeType: "text/plain",
+                body: {
+                  data: Buffer.from("Styled body").toString("base64url"),
+                },
+              },
+              {
+                mimeType: "text/html",
+                filename: "",
+                body: { attachmentId: "att-html", size: html.length },
+              },
+            ],
+          },
+        });
+      }
+      if (url.pathname.includes("/attachments/att-html")) {
+        return response(200, {
+          data: Buffer.from(html).toString("base64url"),
+        });
+      }
+      throw new Error(`Unexpected request: ${input.url}`);
+    });
+    const provider = createGmailLiveProvider({ tokens, http });
+    const message = await provider.getMessage(accountId, "m-html" as never);
+    expect(message.bodyHtml).toBe(html);
+    expect(
+      requests.some((item) => item.url.includes("/attachments/att-html")),
+    ).toBe(true);
+  });
+
   test("generates MIME drafts and streams attachment chunks", async () => {
     const data = Buffer.alloc(70 * 1024, 7).toString("base64url");
     const { http, requests } = scripted((input) => {

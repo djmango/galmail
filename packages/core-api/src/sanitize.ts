@@ -25,27 +25,40 @@ export interface HtmlSanitizeOptions {
 const ALLOWED_TAGS = [
   "a",
   "abbr",
+  "article",
+  "aside",
   "b",
   "blockquote",
   "br",
   "center",
   "code",
+  "col",
+  "colgroup",
   "div",
   "em",
+  "figcaption",
+  "figure",
   "font",
+  "footer",
   "h1",
   "h2",
   "h3",
   "h4",
   "h5",
   "h6",
+  "header",
   "hr",
   "i",
   "img",
   "li",
+  "main",
+  "nav",
   "ol",
   "p",
+  "picture",
   "pre",
+  "section",
+  "source",
   "span",
   "strong",
   "table",
@@ -87,40 +100,21 @@ const ALLOWED_ATTR = [
   "width",
 ] as const;
 
-const MAIL_DOCUMENT_THEME: Record<
-  MailColorScheme,
-  {
-    bg: string;
-    fg: string;
-    muted: string;
-    link: string;
-    linkVisited: string;
-    quote: string;
-    preBg: string;
-    hr: string;
-  }
-> = {
-  dark: {
-    bg: "#08090a",
-    fg: "#e6e8ec",
-    muted: "#969cab",
-    link: "#6d78dd",
-    linkVisited: "#8b93e0",
-    quote: "rgba(255, 255, 255, 0.18)",
-    preBg: "rgba(255, 255, 255, 0.05)",
-    hr: "rgba(255, 255, 255, 0.12)",
-  },
-  light: {
-    bg: "#f4ede0",
-    fg: "#2b2620",
-    muted: "#5d5346",
-    link: "#955e0a",
-    linkVisited: "#7d4d06",
-    quote: "rgba(43, 38, 32, 0.2)",
-    preBg: "rgba(43, 38, 32, 0.05)",
-    hr: "rgba(43, 38, 32, 0.12)",
-  },
-};
+/**
+ * HTML email is authored for a light paper surface. Keep the reading canvas
+ * light even when the app chrome is dark so dark text / marketing CSS remains
+ * readable.
+ */
+const MAIL_DOCUMENT_THEME = {
+  bg: "#ffffff",
+  fg: "#1a1a1a",
+  muted: "#5c5c5c",
+  link: "#0b57d0",
+  linkVisited: "#681da8",
+  quote: "rgba(0, 0, 0, 0.18)",
+  preBg: "rgba(0, 0, 0, 0.04)",
+  hr: "rgba(0, 0, 0, 0.12)",
+} as const;
 
 type PurifyWindow = Parameters<typeof createDOMPurify>[0];
 let purify: ReturnType<typeof createDOMPurify> | undefined;
@@ -141,14 +135,13 @@ function getPurify(): ReturnType<typeof createDOMPurify> {
   return purify;
 }
 
-function mailDocumentBaseStyles(scheme: MailColorScheme): string {
-  const t = MAIL_DOCUMENT_THEME[scheme];
+function mailDocumentBaseStyles(): string {
+  const t = MAIL_DOCUMENT_THEME;
   return [
-    `html{color-scheme:${scheme};background:${t.bg};width:100%;max-width:100%;height:auto;overflow:hidden}`,
-    `body{margin:0;padding:12px 0;width:100%;max-width:100%;height:auto;overflow:hidden;background:${t.bg};color:${t.fg};font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
+    `html{color-scheme:light;background:${t.bg};width:100%;max-width:100%;height:auto;overflow:hidden}`,
+    `body{margin:0;padding:12px 14px;width:100%;max-width:100%;height:auto;overflow:hidden;background:${t.bg};color:${t.fg};font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere;word-break:break-word;-webkit-text-size-adjust:100%}`,
     `a{color:${t.link}}`,
     `a:visited{color:${t.linkVisited}}`,
-    /* Fluid marketing-mail layout: keep structure, kill fixed desktop widths. */
     "img,video{max-width:100%!important;height:auto!important}",
     "table{border-collapse:collapse;max-width:100%!important}",
     "td,th{word-break:break-word}",
@@ -161,11 +154,57 @@ function mailDocumentBaseStyles(scheme: MailColorScheme): string {
     `pre{margin:0.7em 0;padding:10px 12px;border-radius:6px;background:${t.preBg};overflow-x:auto;white-space:pre-wrap}`,
     `blockquote{margin:0.6em 0;padding:0 0 0 12px;border-left:3px solid ${t.quote};color:${t.muted}}`,
     "@media (max-width:640px){",
-    "body{padding:10px 0;font-size:16px}",
+    "body{padding:10px 12px;font-size:16px}",
     "table,td,th{width:auto!important}",
     "img{width:auto!important}",
     "}",
   ].join("");
+}
+
+/** Strip dangerous CSS; gate remote url() behind the remote-image policy. */
+export function sanitizeMailCss(
+  css: string,
+  options: Pick<HtmlSanitizeOptions, "allowRemoteImages"> = {},
+): string {
+  let next = css
+    .replace(/<\/style/gi, "<\\/style")
+    .replace(/@import\b[^;]*;?/gi, "")
+    .replace(/expression\s*\(/gi, "")
+    .replace(/-moz-binding\s*:[^;]*/gi, "")
+    .replace(/behavior\s*:[^;]*/gi, "")
+    .replace(/javascript\s*:/gi, "")
+    .replace(/vbscript\s*:/gi, "")
+    .replace(/-webkit-binding\s*:[^;]*/gi, "");
+  if (!options.allowRemoteImages) {
+    next = next.replace(
+      /url\s*\(\s*(['"]?)(https?:\/\/[^)'"\s]+)\1\s*\)/gi,
+      "none",
+    );
+  }
+  return next;
+}
+
+/**
+ * Pull author `<style>` blocks out before DOMPurify (which drops them) and
+ * wrap orphan table fragments so FORCE_BODY does not collapse them to text.
+ */
+export function prepareMailHtml(input: string): {
+  html: string;
+  styles: string[];
+} {
+  const styles: string[] = [];
+  let html = input.replace(
+    /<style\b[^>]*>([\s\S]*?)<\/style>/gi,
+    (_match, css: string) => {
+      styles.push(css);
+      return "";
+    },
+  );
+  const trimmed = html.trim();
+  if (/^<(td|th|tr|tbody|thead|tfoot)\b/i.test(trimmed)) {
+    html = `<table>${trimmed}</table>`;
+  }
+  return { html, styles };
 }
 
 export function stripTrackingParameters(value: string): string {
@@ -231,6 +270,7 @@ export function sanitizeHtml(
 ): string {
   const DOMPurify = getPurify();
   const stripTracking = options.stripTrackingParameters !== false;
+  const prepared = prepareMailHtml(input);
 
   DOMPurify.clearConfig();
   DOMPurify.setConfig({
@@ -275,12 +315,10 @@ export function sanitizeHtml(
     }
 
     if (name === "style") {
-      // DOMPurify already strips expression()/url(javascript:). Drop leftover
-      // position tricks that break the reading canvas height/scroll model.
-      data.attrValue = value
-        .replace(/expression\s*\(/gi, "")
-        .replace(/-moz-binding\s*:/gi, "")
-        .replace(/position\s*:\s*(fixed|sticky)/gi, "position:relative");
+      data.attrValue = sanitizeMailCss(value, options).replace(
+        /position\s*:\s*(fixed|sticky)/gi,
+        "position:relative",
+      );
     }
   });
 
@@ -292,7 +330,7 @@ export function sanitizeHtml(
     }
   });
 
-  const clean = DOMPurify.sanitize(input);
+  const clean = DOMPurify.sanitize(prepared.html);
   DOMPurify.removeAllHooks();
   return typeof clean === "string" ? clean : "";
 }
@@ -301,15 +339,21 @@ export function buildIsolatedMailDocument(
   html: string,
   options: HtmlSanitizeOptions = {},
 ): string {
+  // Extract author CSS once; sanitizeHtml also runs prepareMailHtml, which is
+  // idempotent on style-stripped markup.
+  const prepared = prepareMailHtml(html);
   const sanitized = sanitizeHtml(html, options);
-  const scheme: MailColorScheme =
-    options.colorScheme === "dark" ? "dark" : "light";
+  const authorStyles = prepared.styles
+    .map((css) => sanitizeMailCss(css, options))
+    .filter((css) => css.trim().length > 0)
+    .map((css) => `<style>${css}</style>`)
+    .join("");
   // No script-src: the reading iframe must not execute mail (or bridge) script.
   const imgSrc = options.allowRemoteImages
-    ? "https: http: data: cid:"
-    : "data: cid:";
+    ? "https: http: data: blob:"
+    : "data: blob:";
   const csp = `default-src 'none'; img-src ${imgSrc}; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'`;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles(scheme)}</style></head><body>${sanitized}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${mailDocumentBaseStyles()}</style>${authorStyles}</head><body>${sanitized}</body></html>`;
 }
 
 export function isTrackingImage(input: {
